@@ -1,0 +1,7 @@
+{
+  "version": "2.1.6",
+  "build": 56,
+  "apk_url": "https://github.com/TU_USUARIO/TU_REPO/releases/download/v2.1.6+56/sin-rial-v2-flutter-2.1.6-release.apk",
+  "release_url": "https://github.com/TU_USUARIO/TU_REPO/releases/tag/v2.1.6+56",
+  "notes": "Mejoras y correcciones de Sin Rial."
+}

@@ -1,0 +1,20 @@
+# Sin Rial
+
+App personal de finanzas hecha con Flutter.
+
+## Actualizaciones por GitHub Releases
+
+La app revisa por defecto el ultimo release publico de:
+
+```text
+https://github.com/itsArtu/sin-rial-app
+```
+
+Para publicar una actualizacion:
+
+1. Sube el numero de version en `pubspec.yaml`.
+2. Compila el APK.
+3. Crea un GitHub Release con tag, por ejemplo `v2.1.6+56`.
+4. Adjunta el APK al release.
+
+Mas detalles en `release/GITHUB_RELEASES.md`.
