@@ -20,11 +20,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '2.1.6',
+  defaultValue: '2.1.7',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 56,
+  defaultValue: 57,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -272,9 +272,17 @@ class NativeStateStore {
     } catch (_) {}
   }
 
-  static Future<void> scheduleDailyReminder() async {
+  static Future<void> scheduleDailyReminder({
+    required bool enabled,
+    required int hour,
+    required int minute,
+  }) async {
     try {
-      await _storeChannel.invokeMethod<void>('scheduleDailyReminder');
+      await _storeChannel.invokeMethod<void>('scheduleDailyReminder', {
+        'enabled': enabled,
+        'hour': hour,
+        'minute': minute,
+      });
     } catch (_) {}
   }
 
@@ -341,6 +349,9 @@ Map<String, dynamic> defaultState() {
     'dismissedUpdateBuild': 0,
     'dismissedUpdateVersion': '',
     'dismissedUpdateMillis': 0,
+    'dailyMovementReminderEnabled': true,
+    'dailyReminderHour': 19,
+    'dailyReminderMinute': 0,
     'lastMovementAccountId': '',
     'homeSections': <dynamic>['metrics', 'accounts', 'upcoming', 'recent'],
     'homeQuickActions': <dynamic>['movement', 'transfer', 'account'],
@@ -427,6 +438,14 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
   }
   state['darkMode'] = state['darkMode'] == true;
   state['hideAmounts'] = state['hideAmounts'] == true;
+  state['dailyMovementReminderEnabled'] =
+      state['dailyMovementReminderEnabled'] != false;
+  state['dailyReminderHour'] = numberValue(state['dailyReminderHour'])
+      .round()
+      .clamp(0, 23);
+  state['dailyReminderMinute'] = numberValue(state['dailyReminderMinute'])
+      .round()
+      .clamp(0, 59);
   state['securitySetupComplete'] = state['securitySetupComplete'] == true;
   state['pinEnabled'] =
       state['pinEnabled'] == true &&
@@ -737,7 +756,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     locked = stateHasSecurity(state);
     WidgetsBinding.instance.addObserver(this);
     _pageController = PageController();
-    unawaited(NativeStateStore.scheduleDailyReminder());
+    scheduleDailyReminderFromState();
     unawaited(refreshRateIfNeeded());
     unawaited(checkNativeLaunchAction());
     rateRefreshTimer = Timer.periodic(
@@ -817,6 +836,15 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   }
 
   bool get hideAmounts => state['hideAmounts'] == true;
+  bool get dailyMovementReminderEnabled =>
+      state['dailyMovementReminderEnabled'] != false;
+  int get dailyReminderHour =>
+      numberValue(state['dailyReminderHour']).round().clamp(0, 23).toInt();
+  int get dailyReminderMinute =>
+      numberValue(state['dailyReminderMinute']).round().clamp(0, 59).toInt();
+  String get dailyReminderLabel => timeOnlyLabel(
+    DateTime(2000, 1, 1, dailyReminderHour, dailyReminderMinute),
+  );
   bool get securitySetupComplete => state['securitySetupComplete'] == true;
   bool get pinEnabled =>
       state['pinEnabled'] == true &&
@@ -870,6 +898,31 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     setState(action);
     revision.value++;
     unawaited(NativeStateStore.save(state));
+  }
+
+  void scheduleDailyReminderFromState() {
+    unawaited(
+      NativeStateStore.scheduleDailyReminder(
+        enabled: dailyMovementReminderEnabled,
+        hour: dailyReminderHour,
+        minute: dailyReminderMinute,
+      ),
+    );
+  }
+
+  Future<void> pickDailyReminderTime(BuildContext context) async {
+    final picked = await pickModernTime(
+      context: context,
+      theme: theme,
+      initial: DateTime(2000, 1, 1, dailyReminderHour, dailyReminderMinute),
+    );
+    if (picked == null) return;
+    mutate(() {
+      state['dailyReminderHour'] = picked.hour;
+      state['dailyReminderMinute'] = picked.minute;
+      state['dailyMovementReminderEnabled'] = true;
+    });
+    scheduleDailyReminderFromState();
   }
 
   void setTab(int index) {
@@ -8642,8 +8695,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         children: [
                           Text(
                             app.updateChecking
-                                ? 'Buscando actualizaciÃ³n'
-                                : 'Buscar actualizaciÃ³n',
+                                ? 'Buscando actualización'
+                                : 'Buscar actualización',
                             style: TextStyle(
                               color: t.ink,
                               fontSize: 17,
@@ -8652,7 +8705,78 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            'Instalada $_appVersionName+$_appBuildNumber',
+                            'Instalada $_appVersionName+$_appBuildNumber · automático cada 6 h',
+                            style: TextStyle(
+                              color: t.muted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      CupertinoIcons.chevron_right,
+                      color: t.muted,
+                      size: 18,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SectionHeader(theme: t, title: 'Recordatorios'),
+            SettingsSwitchTile(
+              theme: t,
+              icon: CupertinoIcons.bell_fill,
+              title: 'Registrar movimientos',
+              subtitle: app.dailyMovementReminderEnabled
+                  ? 'Aviso diario a las ${app.dailyReminderLabel}'
+                  : 'Aviso diario desactivado',
+              value: app.dailyMovementReminderEnabled,
+              onTap: () {
+                app.mutate(
+                  () => app.state['dailyMovementReminderEnabled'] =
+                      !app.dailyMovementReminderEnabled,
+                );
+                app.scheduleDailyReminderFromState();
+                setState(() {});
+              },
+            ),
+            GestureDetector(
+              onTap: () => unawaited(
+                app.pickDailyReminderTime(context).then((_) {
+                  if (mounted) setState(() {});
+                }),
+              ),
+              child: RCard(
+                theme: t,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: t.accent.withOpacity(.14),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(CupertinoIcons.clock_fill, color: t.accent),
+                    ),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hora del aviso',
+                            style: TextStyle(
+                              color: t.ink,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Todos los días a las ${app.dailyReminderLabel}',
                             style: TextStyle(
                               color: t.muted,
                               fontSize: 13,
@@ -11793,6 +11917,12 @@ String formatDateTime(DateTime date) {
   final hour12 = date.hour % 12 == 0 ? 12 : date.hour % 12;
   final ampm = date.hour < 12 ? 'AM' : 'PM';
   return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${hour12.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $ampm';
+}
+
+String timeOnlyLabel(DateTime date) {
+  final hour12 = date.hour % 12 == 0 ? 12 : date.hour % 12;
+  final ampm = date.hour < 12 ? 'AM' : 'PM';
+  return '$hour12:${date.minute.toString().padLeft(2, '0')} $ampm';
 }
 
 DateTime parseMovementDate(String? value) {

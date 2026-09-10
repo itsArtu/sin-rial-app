@@ -56,13 +56,17 @@ class MainActivity : FlutterFragmentActivity() {
                 "writeState" -> {
                     val state = call.argument<String>("state") ?: "{}"
                     prefs.edit().putString("state", state).apply()
+                    DailyReminderScheduler.schedule(this)
                     MovementWidgetProvider.updateAll(this)
                     UsdRateWidgetProvider.updateAll(this)
                     EurRateWidgetProvider.updateAll(this)
                     result.success(true)
                 }
                 "scheduleDailyReminder" -> {
-                    DailyReminderScheduler.schedule(this)
+                    val enabled = call.argument<Boolean>("enabled") ?: true
+                    val hour = (call.argument<Number>("hour")?.toInt() ?: 19).coerceIn(0, 23)
+                    val minute = (call.argument<Number>("minute")?.toInt() ?: 0).coerceIn(0, 59)
+                    DailyReminderScheduler.schedule(this, enabled, hour, minute)
                     result.success(true)
                 }
                 "consumeScreenOff" -> {

@@ -36,15 +36,17 @@ class DailyReminderReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        manager.notify(
-            1901,
-            notification(
-                context,
-                "Sin Rial",
-                "Registra tus movimientos de hoy.",
-                contentIntent
+        if (dailyMovementReminderEnabled(context)) {
+            manager.notify(
+                1901,
+                notification(
+                    context,
+                    "Sin Rial",
+                    "Registra tus movimientos de hoy.",
+                    contentIntent
+                )
             )
-        )
+        }
         notifyDebtDueDates(context, manager, contentIntent)
         DailyReminderScheduler.schedule(context)
     }
@@ -121,6 +123,15 @@ class DailyReminderReceiver : BroadcastReceiver() {
                 )
             )
         }
+    }
+
+    private fun dailyMovementReminderEnabled(context: Context): Boolean {
+        val rawState = context
+            .getSharedPreferences("la_caprichosa_native_010", Context.MODE_PRIVATE)
+            .getString("state", null)
+            ?: return true
+        val state = runCatching { JSONObject(rawState) }.getOrNull() ?: return true
+        return state.optBoolean("dailyMovementReminderEnabled", true)
     }
 
     private fun parseDueDate(value: String) =

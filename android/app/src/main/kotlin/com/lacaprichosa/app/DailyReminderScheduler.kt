@@ -7,13 +7,26 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import org.json.JSONObject
 import java.util.Calendar
 
 object DailyReminderScheduler {
     const val CHANNEL_ID = "sin_rial_daily_movements"
     private const val REQUEST_CODE = 1900
+    private const val STORE_NAME = "la_caprichosa_native_010"
 
     fun schedule(context: Context) {
+        val state = context
+            .getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
+            .getString("state", null)
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val enabled = state?.optBoolean("dailyMovementReminderEnabled", true) ?: true
+        val hour = (state?.optInt("dailyReminderHour", 19) ?: 19).coerceIn(0, 23)
+        val minute = (state?.optInt("dailyReminderMinute", 0) ?: 0).coerceIn(0, 59)
+        schedule(context, enabled, hour, minute)
+    }
+
+    fun schedule(context: Context, enabled: Boolean, hour: Int, minute: Int) {
         createChannel(context)
         val alarm = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val intent = Intent(context, DailyReminderReceiver::class.java)
@@ -23,9 +36,10 @@ object DailyReminderScheduler {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        alarm.cancel(pending)
         alarm.setInexactRepeating(
             AlarmManager.RTC_WAKEUP,
-            nextSevenPm(),
+            nextReminderTime(hour.coerceIn(0, 23), minute.coerceIn(0, 59)),
             AlarmManager.INTERVAL_DAY,
             pending
         )
@@ -39,15 +53,15 @@ object DailyReminderScheduler {
             "Recordatorio diario",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "Recordatorio para registrar movimientos a las 7 PM"
+            description = "Recordatorio para registrar movimientos"
         }
         manager.createNotificationChannel(channel)
     }
 
-    private fun nextSevenPm(): Long {
+    private fun nextReminderTime(hour: Int, minute: Int): Long {
         val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 19)
-            set(Calendar.MINUTE, 0)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
