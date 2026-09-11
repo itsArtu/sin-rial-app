@@ -1,8 +1,8 @@
 {
-  "version": "2.1.12",
-  "build": 62,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.1.12+62/sin-rial-v2-flutter-2.1.12.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.1.12+62",
-  "sha256": "82502666B38D0418F859227E7119363206C7DA8A3B1FE18DC0AC80978B1FFA27",
-  "notes": "Mejora el widget principal con botones mas grandes y menos espacio vacio. Agrega deteccion segura de WorkManager para que un fallo nativo no cierre la app. Mantiene la misma firma para actualizar sin desinstalar."
+  "version": "2.1.13",
+  "build": 63,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.1.13+63/sin-rial-v2-flutter-2.1.13.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.1.13+63",
+  "sha256": "2AC8B1B6B2290BE7BEF61DD8B570F1009CC04ABAF323F836F7FF87CAEC45FB29",
+  "notes": "Mejora por cobrar/pagar con detalles, edicion, pagos y cobros vinculados. Agrega comisiones configurables, logos nuevos, categoria Recarga saldo y ajustes de widgets."
 }

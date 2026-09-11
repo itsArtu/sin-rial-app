@@ -84,10 +84,35 @@ const List<String> budgetCategories = [
   'Salud',
   'Educación',
   'Compras',
+  'Recarga saldo',
   'Cuotas',
   'Comisiones bancarias',
   'Ahorro',
   'Otro',
+];
+
+const List<String> payableDebtParties = [
+  'Cashea',
+  'Krece',
+  'Weppa',
+  'Alguien',
+  'Otro',
+];
+
+const List<String> receivableDebtParties = ['Trabajo', 'Alguien', 'Otro'];
+
+const List<String> debtInstallmentCountOptions = [
+  '1',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '8',
+  '10',
+  '12',
+  '18',
+  '24',
 ];
 
 class ThemeColorOption {
@@ -156,6 +181,8 @@ IconData categoryIcon(String category) {
       return CupertinoIcons.book_fill;
     case 'compras':
       return CupertinoIcons.bag_fill;
+    case 'recarga saldo':
+      return CupertinoIcons.device_phone_portrait;
     case 'cuotas':
       return CupertinoIcons.calendar_badge_plus;
     case 'comisiones bancarias':
@@ -218,6 +245,9 @@ String? categoryFromDescription(String value) {
   }
   if (hasAny(['mercado', 'compras', 'tienda', 'zapato', 'ropa']))
     return 'Compras';
+  if (hasAny(['recarga', 'saldo', 'telefono', 'datos', 'prepago'])) {
+    return 'Recarga saldo';
+  }
   if (hasAny(['cuota', 'deuda', 'prestamo', 'credito'])) return 'Cuotas';
   if (hasAny(['comision', 'banco', 'mantenimiento']))
     return 'Comisiones bancarias';
@@ -1395,7 +1425,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (source != null) {
       final balance = numberValue(source['balance']);
       if (type == 'income') {
-        source['balance'] = balance + amount * direction;
+        source['balance'] = balance + (amount - fee) * direction;
       } else if (type == 'transfer') {
         source['balance'] = balance - (amount + fee) * direction;
       } else {
@@ -1445,6 +1475,45 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     debt['paidAt'] = paid + .0001 >= total
         ? formatDateTime(DateTime.now())
         : '';
+  }
+
+  void markDebtPaid(String id) {
+    if (id.isEmpty) return;
+    mutate(() {
+      for (final item in rawList('debts')) {
+        if (item is! Map || item['id'] != id) continue;
+        final debt = item.cast<String, dynamic>();
+        debt['paidAmount'] = numberValue(debt['amount']);
+        debt['status'] = 'paid';
+        debt['paidAt'] = formatDateTime(DateTime.now());
+        return;
+      }
+    });
+  }
+
+  void saveDebt(Map<String, dynamic> debt, {String? editingId}) {
+    mutate(() {
+      final list = rawList('debts');
+      if (editingId != null && editingId.isNotEmpty) {
+        for (var i = 0; i < list.length; i++) {
+          final item = list[i];
+          if (item is Map && item['id'] == editingId) {
+            debt['id'] = editingId;
+            list[i] = debt;
+            return;
+          }
+        }
+      }
+      debt['id'] = debt['id'] ?? id();
+      list.add(debt);
+    });
+  }
+
+  void deleteDebt(String id) {
+    if (id.isEmpty) return;
+    mutate(() {
+      rawList('debts').removeWhere((item) => item is Map && item['id'] == id);
+    });
   }
 
   void saveMovement(Map<String, dynamic> movement, {String? editingId}) {
@@ -1782,6 +1851,16 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       defaultDebtId: debt['id']?.toString() ?? '',
       defaultDescription: debt['title']?.toString(),
     );
+  }
+
+  void openDebtDetail(BuildContext context, Map<String, dynamic> debt) {
+    final id = debt['id']?.toString() ?? '';
+    if (id.isEmpty) return;
+    pushPage(context, (_) => DebtDetailPage(app: this, debtId: id));
+  }
+
+  void openDebtEditor(BuildContext context, {Map<String, dynamic>? debt}) {
+    pushPage(context, (_) => DebtEditorPage(app: this, debt: debt));
   }
 
   void openAccountEditor(
@@ -4729,7 +4808,10 @@ class HomePage extends StatelessWidget {
           (sum, m) =>
               sum +
               app.toUsd(
-                numberValue(m['amount']),
+                math.max(
+                  0.0,
+                  numberValue(m['amount']) - numberValue(m['feeAmount']),
+                ),
                 m['currency']?.toString() ?? 'USD',
               ),
         );
@@ -5352,8 +5434,13 @@ class UpcomingPaymentsSection extends StatelessWidget {
             final color = kind == 'Por cobrar' ? t.green : t.amber;
             final currency = item['currency']?.toString() ?? 'USD';
             final amount = debtNextPaymentAmount(item);
+            final dueDate =
+                item['nextDueDate']?.toString() ?? debtUpcomingDate(item);
+            final dueLabel = displayDateOnly(dueDate).isEmpty
+                ? 'Sin fecha'
+                : displayDateOnly(dueDate);
             return GestureDetector(
-              onTap: () => app.openDebtMovement(context, item),
+              onTap: () => app.openDebtDetail(context, item),
               child: RCard(
                 theme: t,
                 child: Row(
@@ -5391,7 +5478,7 @@ class UpcomingPaymentsSection extends StatelessWidget {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            '$kind · ${displayDateOnly(item['dueDate']?.toString())}',
+                            '$kind · $dueLabel',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -5847,11 +5934,7 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
         .toList();
     final currency = 'USD';
     final total = movements.fold<double>(0, (sum, m) {
-      final raw =
-          numberValue(m['amount']) +
-          (isExpenseType(m['type']?.toString())
-              ? numberValue(m['feeAmount'])
-              : 0);
+      final raw = movementListAmount(m);
       return sum + app.toUsd(raw, m['currency']?.toString() ?? currency);
     });
     final distribution = accountDistribution(app, accounts, movements);
@@ -6024,11 +6107,7 @@ List<AccountDistributionEntry> accountDistribution(
   for (final movement in movements) {
     final id = movement['accountId']?.toString() ?? '';
     if (id.isEmpty) continue;
-    final raw =
-        numberValue(movement['amount']) +
-        (isExpenseType(movement['type']?.toString())
-            ? numberValue(movement['feeAmount'])
-            : 0);
+    final raw = movementListAmount(movement);
     if (raw <= 0) continue;
     totals[id] =
         (totals[id] ?? 0) +
@@ -6088,11 +6167,7 @@ List<MonthlyMovementSummary> monthlyMovementSummaries(
   final accountTotalsByMonth = <String, Map<String, double>>{};
   for (final movement in movements) {
     final month = monthKeyFromDate(movement['date']?.toString());
-    final raw =
-        numberValue(movement['amount']) +
-        (isExpenseType(movement['type']?.toString())
-            ? numberValue(movement['feeAmount'])
-            : 0);
+    final raw = movementListAmount(movement);
     if (raw <= 0) continue;
     final amountUsd = app.toUsd(raw, movement['currency']?.toString() ?? 'USD');
     totalsByMonth[month] = (totalsByMonth[month] ?? 0) + amountUsd;
@@ -8838,8 +8913,7 @@ class DebtsPage extends StatelessWidget {
           children: [
             CupertinoButton(
               padding: EdgeInsets.zero,
-              onPressed: () =>
-                  app.pushPage(context, (_) => DebtEditorPage(app: app)),
+              onPressed: () => app.openDebtEditor(context),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -8869,10 +8943,362 @@ class DebtsPage extends StatelessWidget {
   }
 }
 
-class DebtEditorPage extends StatefulWidget {
-  const DebtEditorPage({super.key, required this.app});
+class DebtDetailPage extends StatelessWidget {
+  const DebtDetailPage({super.key, required this.app, required this.debtId});
 
   final _RialAppState app;
+  final String debtId;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = app.theme;
+    final debt = app.debtById(debtId);
+    if (debt == null) {
+      return CupertinoPageScaffold(
+        backgroundColor: t.bg,
+        navigationBar: CupertinoNavigationBar(
+          transitionBetweenRoutes: false,
+          backgroundColor: t.bg.withOpacity(.92),
+          border: null,
+          middle: const Text('Registro'),
+        ),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 34),
+            children: [EmptyCard(theme: t, text: 'Este registro ya no existe')],
+          ),
+        ),
+      );
+    }
+
+    final kind = debt['kind']?.toString() == 'receivable'
+        ? 'receivable'
+        : 'payable';
+    final currency = debt['currency']?.toString() ?? 'USD';
+    final title = selectedDebtLabel(debt);
+    final creditor = debt['creditor']?.toString().trim() ?? '';
+    final partyType = debt['partyType']?.toString() ?? creditor;
+    final partyLogo = debt['partyLogo']?.toString().trim().isNotEmpty == true
+        ? debt['partyLogo'].toString()
+        : debtPartyLogoCode(partyType);
+    final color = kind == 'receivable' ? t.green : t.amber;
+    final total = numberValue(debt['amount']);
+    final paid = numberValue(debt['paidAmount']);
+    final remaining = debtRemainingAmount(debt);
+    final completed = remaining <= .0001;
+    final hasInstallments = debtHasInstallments(debt);
+    final installmentCount = debtInstallmentCount(debt);
+    final installment = numberValue(debt['installmentAmount']);
+    final frequency = debt['paymentFrequency']?.toString().trim() ?? '';
+    final nextDate = debtUpcomingDate(debt);
+    final dates = debtInstallmentDates(debt);
+    final linkedMovements =
+        app
+            .maps('movements')
+            .where((movement) => movement['debtId']?.toString() == debtId)
+            .toList()
+          ..sort(
+            (a, b) =>
+                parseMovementDate(b['date']?.toString())
+                    .compareTo(parseMovementDate(a['date']?.toString())),
+          );
+
+    return CupertinoPageScaffold(
+      backgroundColor: t.bg,
+      navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
+        backgroundColor: t.bg.withOpacity(.92),
+        border: null,
+        middle: Text(kind == 'receivable' ? 'Por cobrar' : 'Por pagar'),
+      ),
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 34),
+          children: [
+            RCard(
+              theme: t,
+              child: Row(
+                children: [
+                  if (partyLogo != null)
+                    LogoBadge(provider: partyLogo, theme: t, size: 54)
+                  else
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(.14),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Icon(
+                        debtPartyIcon(partyType, kind),
+                        color: color,
+                        size: 25,
+                      ),
+                    ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: t.ink,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          [
+                            if (creditor.isNotEmpty) creditor,
+                            kind == 'receivable' ? 'Por cobrar' : 'Por pagar',
+                            completed ? 'Completamente pagado' : 'Pendiente',
+                          ].join(' · '),
+                          style: TextStyle(
+                            color: completed ? t.green : t.muted,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            RCard(
+              theme: t,
+              child: Column(
+                children: [
+                  DebtDetailRow(
+                    theme: t,
+                    label: 'Monto total',
+                    value: app.secureMoney(total, currency),
+                  ),
+                  DebtDetailRow(
+                    theme: t,
+                    label: kind == 'receivable' ? 'Cobrado' : 'Pagado',
+                    value: app.secureMoney(math.min(total, paid), currency),
+                  ),
+                  DebtDetailRow(
+                    theme: t,
+                    label: 'Pendiente',
+                    value: completed
+                        ? 'Completamente pagado'
+                        : app.secureMoney(remaining, currency),
+                    valueColor: completed ? t.green : color,
+                    bottom: false,
+                  ),
+                ],
+              ),
+            ),
+            if (hasInstallments || displayDateOnly(nextDate).isNotEmpty)
+              RCard(
+                theme: t,
+                child: Column(
+                  children: [
+                    if (hasInstallments)
+                      DebtDetailRow(
+                        theme: t,
+                        label: 'Cuotas',
+                        value: '$installmentCount cuotas',
+                      ),
+                    if (hasInstallments && installment > 0)
+                      DebtDetailRow(
+                        theme: t,
+                        label: 'Monto por cuota',
+                        value: app.secureMoney(installment, currency),
+                      ),
+                    if (hasInstallments && frequency.isNotEmpty)
+                      DebtDetailRow(
+                        theme: t,
+                        label: 'Frecuencia',
+                        value: frequency,
+                      ),
+                    if (displayDateOnly(nextDate).isNotEmpty)
+                      DebtDetailRow(
+                        theme: t,
+                        label: completed ? 'Última fecha' : 'Próxima fecha',
+                        value: displayDateOnly(nextDate),
+                        bottom: dates.isNotEmpty,
+                      ),
+                    if (dates.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (var i = 0; i < dates.length; i++)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: t.field,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: t.border),
+                                ),
+                                child: Text(
+                                  'Cuota ${i + 1}: ${dates[i]}',
+                                  style: TextStyle(
+                                    color: t.ink,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            if (linkedMovements.isNotEmpty)
+              RCard(
+                theme: t,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Movimientos vinculados',
+                      style: TextStyle(
+                        color: t.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...linkedMovements.take(6).map((movement) {
+                      final movementCurrency =
+                          movement['currency']?.toString() ?? 'USD';
+                      final movementType =
+                          movement['type']?.toString() ?? 'expense';
+                      final sign = movementType == 'income' ? '+' : '-';
+                      return DebtDetailRow(
+                        theme: t,
+                        label: movement['date']?.toString() ?? '',
+                        value:
+                            '$sign${app.secureMoney(numberValue(movement['amount']), movementCurrency)}',
+                        valueColor: movementType == 'income' ? t.green : t.red,
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            if (!completed)
+              PrimaryActionButton(
+                theme: t,
+                label: kind == 'receivable'
+                    ? 'Registrar cobro'
+                    : 'Registrar pago',
+                onPressed: () => app.openDebtMovement(context, debt),
+              ),
+            SecondaryActionButton(
+              theme: t,
+              label: 'Editar registro',
+              onPressed: () => app.openDebtEditor(context, debt: debt),
+            ),
+            const SizedBox(height: 12),
+            if (!completed)
+              SecondaryActionButton(
+                theme: t,
+                label: 'Marcar como pagado',
+                onPressed: () => app.markDebtPaid(debtId),
+              ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () => app.confirmDelete(
+                context,
+                'Eliminar registro',
+                'Se eliminará este pago o cobro pendiente.',
+                () {
+                  app.deleteDebt(debtId);
+                  Navigator.of(context, rootNavigator: true).maybePop();
+                },
+              ),
+              child: Container(
+                height: 56,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: t.red.withOpacity(.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: t.red.withOpacity(.35)),
+                ),
+                child: Text(
+                  'Eliminar registro',
+                  style: TextStyle(
+                    color: t.red,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DebtDetailRow extends StatelessWidget {
+  const DebtDetailRow({
+    super.key,
+    required this.theme,
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.bottom = true,
+  });
+
+  final RTheme theme;
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final bool bottom;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom ? 12 : 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: theme.muted,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: valueColor ?? theme.ink,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DebtEditorPage extends StatefulWidget {
+  const DebtEditorPage({super.key, required this.app, this.debt});
+
+  final _RialAppState app;
+  final Map<String, dynamic>? debt;
 
   @override
   State<DebtEditorPage> createState() => _DebtEditorPageState();
@@ -8884,6 +9310,7 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
   final total = TextEditingController();
   final initial = TextEditingController();
   final installmentAmount = TextEditingController();
+  final installmentDates = <TextEditingController>[];
   final dueDate = TextEditingController(
     text: formatDate(DateTime.now().add(const Duration(days: 30))),
   );
@@ -8891,10 +9318,53 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
   String installments = '3';
   String frequency = 'Mensual';
   String kind = 'payable';
+  String payableParty = 'Cashea';
+  String receivableParty = 'Trabajo';
   bool hasInitial = false;
   bool hasInstallments = false;
   bool hasDueDate = true;
   bool notifyDueDate = true;
+  bool automaticInstallments = true;
+
+  @override
+  void initState() {
+    super.initState();
+    final debt = widget.debt;
+    if (debt == null) return;
+    kind = debt['kind']?.toString() == 'receivable' ? 'receivable' : 'payable';
+    final partyType = debt['partyType']?.toString().trim() ?? '';
+    final options = partyOptions;
+    if (kind == 'payable') {
+      payableParty = options.contains(partyType) ? partyType : 'Alguien';
+    } else {
+      receivableParty = options.contains(partyType) ? partyType : 'Alguien';
+    }
+    final creditorText = debt['creditor']?.toString().trim() ?? '';
+    if (needsCustomParty) creditor.text = creditorText;
+    title.text = debt['title']?.toString() ?? '';
+    total.text = plain(numberValue(debt['amount']));
+    final initialAmount = numberValue(debt['initialAmount']);
+    hasInitial = debt['initialPaid'] == true || initialAmount > 0;
+    if (hasInitial) initial.text = plain(initialAmount);
+    currency = debt['currency']?.toString() == 'VES' ? 'VES' : 'USD';
+    hasInstallments = debtHasInstallments(debt);
+    hasDueDate = debt['hasDueDate'] != false;
+    notifyDueDate = debt['notifyDueDate'] != false;
+    automaticInstallments = debt['installmentMode'] != 'manual';
+    installments = debtInstallmentCount(debt).toString();
+    frequency = debt['paymentFrequency']?.toString().trim().isNotEmpty == true
+        ? debt['paymentFrequency'].toString()
+        : 'Mensual';
+    final installment = numberValue(debt['installmentAmount']);
+    if (installment > 0) installmentAmount.text = plain(installment);
+    dueDate.text = displayDateOnly(debt['dueDate']?.toString()).isEmpty
+        ? formatDate(DateTime.now().add(const Duration(days: 30)))
+        : displayDateOnly(debt['dueDate']?.toString());
+    final dates = debtInstallmentDates(debt);
+    for (final value in dates) {
+      installmentDates.add(TextEditingController(text: value));
+    }
+  }
 
   @override
   void dispose() {
@@ -8903,8 +9373,79 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
     total.dispose();
     initial.dispose();
     installmentAmount.dispose();
+    for (final controller in installmentDates) {
+      controller.dispose();
+    }
     dueDate.dispose();
     super.dispose();
+  }
+
+  List<String> get partyOptions =>
+      kind == 'payable' ? payableDebtParties : receivableDebtParties;
+
+  String get selectedParty =>
+      kind == 'payable' ? payableParty : receivableParty;
+
+  bool get needsCustomParty =>
+      selectedParty == 'Alguien' || selectedParty == 'Otro';
+
+  String get partyLabel =>
+      kind == 'payable' ? 'A quien se le debe' : 'Origen del cobro';
+
+  String get customPartyPlaceholder =>
+      selectedParty == 'Alguien' ? 'Nombre de la persona' : 'Nombre';
+
+  void setDebtKind(String value) {
+    setState(() {
+      kind = value;
+      if (!partyOptions.contains(selectedParty)) {
+        if (kind == 'payable') {
+          payableParty = payableDebtParties.first;
+        } else {
+          receivableParty = receivableDebtParties.first;
+        }
+        creditor.clear();
+      }
+    });
+  }
+
+  void setParty(String value) {
+    setState(() {
+      if (kind == 'payable') {
+        payableParty = value;
+      } else {
+        receivableParty = value;
+      }
+      if (!needsCustomParty) creditor.clear();
+    });
+  }
+
+  void syncInstallmentDates(int count) {
+    final target = hasInstallments && hasDueDate ? count.clamp(1, 24) : 0;
+    while (installmentDates.length < target) {
+      installmentDates.add(
+        TextEditingController(
+          text: formatDate(suggestedInstallmentDate(installmentDates.length)),
+        ),
+      );
+    }
+    while (installmentDates.length > target) {
+      installmentDates.removeLast().dispose();
+    }
+  }
+
+  DateTime suggestedInstallmentDate(int index) {
+    final parsed = parseDateOnly(dueDate.text);
+    final base = parsed.year == 9999
+        ? DateTime.now().add(const Duration(days: 30))
+        : parsed;
+    return addDebtFrequency(base, frequency, index);
+  }
+
+  void refreshInstallmentDates() {
+    for (var i = 0; i < installmentDates.length; i++) {
+      installmentDates[i].text = formatDate(suggestedInstallmentDate(i));
+    }
   }
 
   @override
@@ -8920,10 +9461,13 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
     final customInstallment = hasInstallments
         ? parseAmount(installmentAmount.text)
         : 0.0;
-    final finalInstallment = hasInstallments && customInstallment > 0
+    final finalInstallment =
+        hasInstallments && !automaticInstallments && customInstallment > 0
         ? customInstallment
         : suggestedInstallment;
-    final dueLabel = hasInstallments ? 'Próximo pago' : 'Fecha límite';
+    const dueLabel = 'Fecha límite';
+    final selectedPartyLogo = debtPartyLogoCode(selectedParty);
+    syncInstallmentDates(count);
 
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
@@ -8931,7 +9475,9 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
         transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
-        middle: const Text('Nuevo registro'),
+        middle: Text(
+          widget.debt == null ? 'Nuevo registro' : 'Editar registro',
+        ),
       ),
       child: SafeArea(
         child: ListView(
@@ -8952,15 +9498,25 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
                   icon: CupertinoIcons.arrow_down_left_circle_fill,
                 ),
               ],
-              onChanged: (value) => setState(() => kind = value),
+              onChanged: setDebtKind,
             ),
-            RField(
+            OptionField(
               theme: t,
-              controller: creditor,
-              placeholder: kind == 'payable'
-                  ? 'A quién se le debe'
-                  : 'Quién te debe',
+              label: partyLabel,
+              value: selectedParty,
+              logoProvider: selectedPartyLogo,
+              icon: selectedPartyLogo == null
+                  ? debtPartyIcon(selectedParty, kind)
+                  : null,
+              onTap: () =>
+                  pickValue(context, partyOptions, selectedParty, setParty),
             ),
+            if (needsCustomParty)
+              RField(
+                theme: t,
+                controller: creditor,
+                placeholder: customPartyPlaceholder,
+              ),
             RField(
               theme: t,
               controller: title,
@@ -9021,7 +9577,13 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
               title: 'Tiene cuotas',
               subtitle: 'Activa si se pagará por partes',
               value: hasInstallments,
-              onTap: () => setState(() => hasInstallments = !hasInstallments),
+              onTap: () => setState(() {
+                hasInstallments = !hasInstallments;
+                if (hasInstallments) {
+                  hasDueDate = true;
+                  automaticInstallments = true;
+                }
+              }),
             ),
             SettingsSwitchTile(
               theme: t,
@@ -9029,9 +9591,70 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
               title: 'Tiene fecha',
               subtitle: 'Activa si hay vencimiento o fecha de cobro',
               value: hasDueDate,
-              onTap: () => setState(() => hasDueDate = !hasDueDate),
+              onTap: () => setState(() {
+                hasDueDate = !hasDueDate;
+                if (hasDueDate) refreshInstallmentDates();
+              }),
             ),
-            if (hasDueDate) ...[
+            if (hasInstallments) ...[
+              OptionField(
+                theme: t,
+                label: 'Cantidad de cuotas',
+                value: '$installments cuotas',
+                onTap: () => pickValue(
+                  context,
+                  debtInstallmentCountOptions,
+                  installments,
+                  (value) => setState(() {
+                    installments = value;
+                    syncInstallmentDates(int.tryParse(value) ?? count);
+                  }),
+                ),
+              ),
+              KindSelector(
+                theme: t,
+                value: automaticInstallments ? 'auto' : 'manual',
+                items: const [
+                  KindSelectorItem(
+                    value: 'auto',
+                    label: 'Automático',
+                    icon: CupertinoIcons.wand_stars,
+                  ),
+                  KindSelectorItem(
+                    value: 'manual',
+                    label: 'Manual',
+                    icon: CupertinoIcons.pencil_circle_fill,
+                  ),
+                ],
+                onChanged: (value) =>
+                    setState(() => automaticInstallments = value == 'auto'),
+              ),
+              if (!automaticInstallments)
+                RField(
+                  theme: t,
+                  controller: installmentAmount,
+                  placeholder: 'Monto por cuota',
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              OptionField(
+                theme: t,
+                label: 'Frecuencia de pago',
+                value: frequency,
+                onTap: () => pickValue(
+                  context,
+                  const ['Semanal', 'Quincenal', 'Mensual', 'Personalizada'],
+                  frequency,
+                  (value) => setState(() {
+                    frequency = value;
+                    refreshInstallmentDates();
+                  }),
+                ),
+              ),
+            ],
+            if (hasDueDate && !hasInstallments) ...[
               OptionField(
                 theme: t,
                 label: dueLabel,
@@ -9041,6 +9664,21 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
                 icon: CupertinoIcons.calendar,
                 onTap: pickDueDate,
               ),
+            ],
+            if (hasDueDate && hasInstallments)
+              ...List.generate(installmentDates.length, (index) {
+                final controller = installmentDates[index];
+                return OptionField(
+                  theme: t,
+                  label: 'Fecha cuota ${index + 1}',
+                  value: displayDateOnly(controller.text).isEmpty
+                      ? 'Seleccionar fecha'
+                      : displayDateOnly(controller.text),
+                  icon: CupertinoIcons.calendar,
+                  onTap: () => pickInstallmentDate(index),
+                );
+              }),
+            if (hasDueDate)
               SettingsSwitchTile(
                 theme: t,
                 icon: CupertinoIcons.bell_fill,
@@ -9049,52 +9687,6 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
                 value: notifyDueDate,
                 onTap: () => setState(() => notifyDueDate = !notifyDueDate),
               ),
-            ],
-            if (hasInstallments) ...[
-              OptionField(
-                theme: t,
-                label: 'Cantidad de cuotas',
-                value: '$installments cuotas',
-                onTap: () => pickValue(
-                  context,
-                  const [
-                    '1',
-                    '2',
-                    '3',
-                    '4',
-                    '5',
-                    '6',
-                    '8',
-                    '10',
-                    '12',
-                    '18',
-                    '24',
-                  ],
-                  installments,
-                  (value) => setState(() => installments = value),
-                ),
-              ),
-              RField(
-                theme: t,
-                controller: installmentAmount,
-                placeholder: 'Monto por cuota',
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-              OptionField(
-                theme: t,
-                label: 'Frecuencia de pago',
-                value: frequency,
-                onTap: () => pickValue(
-                  context,
-                  const ['Semanal', 'Quincenal', 'Mensual', 'Personalizada'],
-                  frequency,
-                  (value) => setState(() => frequency = value),
-                ),
-              ),
-            ],
             RCard(
               theme: t,
               child: Row(
@@ -9120,7 +9712,9 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
             ),
             PrimaryActionButton(
               theme: t,
-              label: 'Guardar registro',
+              label: widget.debt == null
+                  ? 'Guardar registro'
+                  : 'Guardar cambios',
               onPressed: save,
             ),
           ],
@@ -9143,18 +9737,40 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
     );
   }
 
+  Future<void> pickInstallmentDate(int index) async {
+    if (index < 0 || index >= installmentDates.length) return;
+    final controller = installmentDates[index];
+    final parsed = parseDateOnly(controller.text);
+    final initialDate = parsed.year == 9999
+        ? suggestedInstallmentDate(index)
+        : parsed;
+    await showModernDatePicker(
+      context,
+      theme: widget.app.theme,
+      initial: initialDate,
+      onSelected: (value) {
+        if (!mounted) return;
+        setState(() {
+          controller.text = formatDate(value);
+          if (index == 0) dueDate.text = controller.text;
+        });
+      },
+    );
+  }
+
   void save() {
     final app = widget.app;
     final amount = parseAmount(total.text);
-    final creditorText = creditor.text.trim();
+    final customParty = creditor.text.trim();
+    final creditorText = needsCustomParty ? customParty : selectedParty;
     final titleText = title.text.trim();
-    if (creditorText.isEmpty) {
+    if (needsCustomParty && customParty.isEmpty) {
       showModernNotice(
         context,
-        title: 'Falta a quién se le debe',
+        title: 'Falta el nombre',
         message: kind == 'payable'
-            ? 'Escribe la tienda, persona o entidad a la que debes pagar.'
-            : 'Escribe la persona o entidad que te debe pagar.',
+            ? 'Escribe a quien debes pagar.'
+            : 'Escribe quien te debe pagar.',
       );
       return;
     }
@@ -9192,30 +9808,69 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
         ? parseAmount(installmentAmount.text)
         : 0.0;
     final calculatedInstallment = count <= 0 ? remaining : remaining / count;
-    app.mutate(
-      () => app.rawList('debts').add({
-        'id': app.id(),
-        'kind': kind,
-        'title': titleText,
-        'creditor': creditorText,
-        'amount': amount,
-        'paidAmount': initialValue,
-        'initialPaid': hasInitial,
-        'hasInstallments': hasInstallments,
-        'hasDueDate': hasDueDate,
-        'notifyDueDate': hasDueDate && notifyDueDate,
-        'installments': count,
-        'installmentAmount': hasInstallments
-            ? (customInstallment > 0
-                  ? customInstallment
-                  : calculatedInstallment)
-            : 0.0,
-        'currency': currency,
-        'dueDate': hasDueDate ? displayDateOnly(dueDate.text) : '',
-        'paymentFrequency': hasInstallments ? frequency : '',
-        'createdAt': formatDateTime(DateTime.now()),
-      }),
-    );
+    if (hasInstallments && !automaticInstallments && customInstallment <= 0) {
+      showModernNotice(
+        context,
+        title: 'Monto por cuota',
+        message:
+            'Coloca el monto manual de cada cuota o usa el modo automático.',
+      );
+      return;
+    }
+    syncInstallmentDates(count);
+    final savedInstallmentDates = hasInstallments && hasDueDate
+        ? installmentDates
+              .take(count)
+              .map((controller) => displayDateOnly(controller.text))
+              .where((value) => value.isNotEmpty)
+              .toList()
+        : <String>[];
+    final firstDueDate = savedInstallmentDates.isNotEmpty
+        ? savedInstallmentDates.first
+        : displayDateOnly(dueDate.text);
+    final installmentValue =
+        hasInstallments && !automaticInstallments && customInstallment > 0
+        ? customInstallment
+        : calculatedInstallment;
+    final editingDebt = widget.debt;
+    final editingId = editingDebt?['id']?.toString() ?? '';
+    final previousPaid = editingDebt == null
+        ? initialValue
+        : numberValue(editingDebt['paidAmount']);
+    final paidAmount = math.min(amount, math.max(initialValue, previousPaid));
+    final isPaid = paidAmount + .0001 >= amount;
+    app.saveDebt({
+      'id': editingId.isEmpty ? app.id() : editingId,
+      'kind': kind,
+      'title': titleText,
+      'partyType': selectedParty,
+      'partyLogo': debtPartyLogoCode(selectedParty) ?? '',
+      'creditor': creditorText,
+      'amount': amount,
+      'paidAmount': paidAmount,
+      'initialAmount': initialValue,
+      'initialPaid': hasInitial,
+      'hasInstallments': hasInstallments,
+      'hasDueDate': hasDueDate,
+      'notifyDueDate': hasDueDate && notifyDueDate,
+      'installments': count,
+      'installmentMode': automaticInstallments ? 'auto' : 'manual',
+      'installmentAmount': hasInstallments ? installmentValue : 0.0,
+      'installmentDates': savedInstallmentDates,
+      'currency': currency,
+      'dueDate': hasDueDate ? firstDueDate : '',
+      'paymentFrequency': hasInstallments ? frequency : '',
+      'status': isPaid ? 'paid' : 'pending',
+      'paidAt': isPaid
+          ? (editingDebt?['paidAt']?.toString().isNotEmpty == true
+                ? editingDebt!['paidAt'].toString()
+                : formatDateTime(DateTime.now()))
+          : '',
+      'createdAt':
+          editingDebt?['createdAt']?.toString() ??
+          formatDateTime(DateTime.now()),
+      'updatedAt': formatDateTime(DateTime.now()),
+    }, editingId: editingId.isEmpty ? null : editingId);
     Navigator.pop(context);
   }
 }
@@ -9232,9 +9887,15 @@ class DebtTile extends StatelessWidget {
     final kind = debt['kind']?.toString() == 'receivable'
         ? 'receivable'
         : 'payable';
-    final color = kind == 'receivable' ? t.green : t.amber;
+    final remaining = debtRemainingAmount(debt);
+    final paid = remaining <= .0001;
+    final color = paid ? t.green : (kind == 'receivable' ? t.green : t.amber);
     final creditor = debt['creditor']?.toString().trim() ?? '';
-    final dueDate = debt['dueDate']?.toString().trim() ?? '';
+    final partyType = debt['partyType']?.toString() ?? creditor;
+    final partyLogo = debt['partyLogo']?.toString().trim().isNotEmpty == true
+        ? debt['partyLogo'].toString()
+        : debtPartyLogoCode(partyType);
+    final dueDate = debtUpcomingDate(debt);
     final frequency = debt['paymentFrequency']?.toString().trim() ?? '';
     final installments = (numberValue(
       debt['installments'],
@@ -9246,25 +9907,23 @@ class DebtTile extends StatelessWidget {
         installment > 0 ||
         frequency.isNotEmpty;
     return GestureDetector(
-      onTap: () => actions(context),
+      onTap: () => app.openDebtDetail(context, debt),
       child: RCard(
         theme: t,
         child: Row(
           children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: color.withOpacity(.14),
-                borderRadius: BorderRadius.circular(15),
+            if (partyLogo != null)
+              LogoBadge(provider: partyLogo, theme: t, size: 42)
+            else
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(.14),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(debtPartyIcon(partyType, kind), color: color),
               ),
-              child: Icon(
-                kind == 'receivable'
-                    ? CupertinoIcons.arrow_down_left_circle_fill
-                    : CupertinoIcons.arrow_up_right_circle_fill,
-                color: color,
-              ),
-            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -9281,6 +9940,7 @@ class DebtTile extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     [
+                      if (paid) 'Pagado',
                       if (creditor.isNotEmpty) creditor,
                       kind == 'receivable' ? 'Por cobrar' : 'Por pagar',
                       if (hasInstallments) '$installments cuotas',
@@ -9300,7 +9960,7 @@ class DebtTile extends StatelessWidget {
               ),
             ),
             Text(
-              app.secureMoney(numberValue(debt['amount']), currency),
+              paid ? 'Pagado' : app.secureMoney(remaining, currency),
               style: TextStyle(
                 color: color,
                 fontSize: 15,
@@ -9333,11 +9993,7 @@ class DebtTile extends StatelessWidget {
           icon: CupertinoIcons.check_mark_circled_solid,
           title: 'Marcar como pagado',
           subtitle: 'No cambia el saldo de una cuenta',
-          onPressed: () => app.mutate(() {
-            debt['paidAmount'] = numberValue(debt['amount']);
-            debt['status'] = 'paid';
-            debt['paidAt'] = formatDateTime(DateTime.now());
-          }),
+          onPressed: () => app.markDebtPaid(debt['id']?.toString() ?? ''),
         ),
         ModernSheetAction(
           icon: CupertinoIcons.trash_fill,
@@ -9347,13 +10003,7 @@ class DebtTile extends StatelessWidget {
             context,
             'Eliminar registro',
             'Se eliminará este pago o cobro pendiente.',
-            () => app.mutate(
-              () => app
-                  .rawList('debts')
-                  .removeWhere(
-                    (item) => item is Map && item['id'] == debt['id'],
-                  ),
-            ),
+            () => app.deleteDebt(debt['id']?.toString() ?? ''),
           ),
         ),
       ],
@@ -10058,6 +10708,8 @@ class _MovementEditorState extends State<MovementEditor> {
   final rate = TextEditingController();
   String paymentMethod = 'payment_mobile_p2p';
   String debtId = '';
+  String feeMode = 'auto';
+  String bankTransferScope = 'other_bank';
   bool categoryTouched = false;
 
   @override
@@ -10084,8 +10736,17 @@ class _MovementEditorState extends State<MovementEditor> {
         fee.text = plain(numberValue(m['feeAmount']));
       if (numberValue(m['rate']) > 0) rate.text = plain(numberValue(m['rate']));
       paymentMethod = m['paymentMethod']?.toString().isNotEmpty == true
-          ? m!['paymentMethod'].toString()
+          ? m['paymentMethod'].toString()
           : paymentMethod;
+      final storedFeeMode = m['feeMode']?.toString() ?? '';
+      feeMode = storedFeeMode.isNotEmpty
+          ? storedFeeMode
+          : numberValue(m['feeAmount']) > 0
+          ? 'manual'
+          : feeMode;
+      bankTransferScope = m['bankTransferScope']?.toString().isNotEmpty == true
+          ? m['bankTransferScope'].toString()
+          : bankTransferScope;
     } else {
       if (widget.defaultDescription?.trim().isNotEmpty == true) {
         desc.text = widget.defaultDescription!.trim();
@@ -10171,22 +10832,46 @@ class _MovementEditorState extends State<MovementEditor> {
               ? parseAmount(amount.text) * enteredRate
               : parseAmount(amount.text) / enteredRate
         : parseAmount(amount.text);
-    final autoExpenseFee = shouldAutoBankFee(source, type: type)
-        ? estimatedBankFee(
-            method: paymentMethod,
-            amount: parseAmount(amount.text),
-            type: type,
-          )
-        : 0.0;
-    final autoTransferFee =
+    final canOperationFee = canConfigureBankFee(
+      source,
+      type: type,
+      category: type == 'expense' ? category : '',
+    );
+    final effectiveFeeMode = canOperationFee ? feeMode : 'none';
+    final canTransferFee =
         type == 'transfer' &&
-            shouldAutoBankFee(source, type: type, target: target)
+        canConfigureBankFee(source, type: type, target: target);
+    final autoOperationFee = canOperationFee && effectiveFeeMode == 'auto'
         ? estimatedBankFee(
-            method: 'payment_mobile_p2p',
+            method: type == 'income' ? 'bank_transfer' : paymentMethod,
             amount: parseAmount(amount.text),
             type: type,
+            category: type == 'expense' ? category : '',
+            bankTransferScope: bankTransferScope,
           )
         : 0.0;
+    final autoTransferFee = canTransferFee
+        ? estimatedBankFee(
+            method: 'bank_transfer',
+            amount: parseAmount(amount.text),
+            type: type,
+            bankTransferScope: bankTransferScope,
+          )
+        : 0.0;
+    final selectedDebt = app.debtById(debtId);
+    final debtSelectorKind = type == 'income' ? 'receivable' : 'payable';
+    final hasLinkableDebt = type == 'expense' || type == 'income'
+        ? app.maps('debts').any((debt) {
+            final kind = debt['kind']?.toString() == 'receivable'
+                ? 'receivable'
+                : 'payable';
+            return kind == debtSelectorKind &&
+                debtRemainingAmount(debt) > .0001;
+          })
+        : false;
+    final showDebtSelector =
+        (type == 'expense' || type == 'income') &&
+        (hasLinkableDebt || selectedDebt != null);
 
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
@@ -10240,6 +10925,18 @@ class _MovementEditorState extends State<MovementEditor> {
                   }
                   if (type != 'expense' && type != 'income') {
                     debtId = '';
+                  } else if (debtId.isNotEmpty) {
+                    final selected = widget.app.debtById(debtId);
+                    final selectedKind =
+                        selected?['kind']?.toString() == 'receivable'
+                        ? 'receivable'
+                        : 'payable';
+                    final wantedKind = type == 'income'
+                        ? 'receivable'
+                        : 'payable';
+                    if (selected == null || selectedKind != wantedKind) {
+                      debtId = '';
+                    }
                   }
                 });
               },
@@ -10259,11 +10956,11 @@ class _MovementEditorState extends State<MovementEditor> {
               placeholder: 'Descripción',
               onChanged: inferCategory,
             ),
-            if (type == 'expense' || type == 'income')
+            if (showDebtSelector)
               OptionField(
                 theme: t,
                 label: type == 'expense' ? 'Deuda a pagar' : 'Cobro vinculado',
-                value: selectedDebtLabel(app.debtById(debtId)),
+                value: selectedDebtLabel(selectedDebt),
                 icon: CupertinoIcons.checkmark_seal_fill,
                 onTap: () => pickDebt(context),
               ),
@@ -10330,7 +11027,25 @@ class _MovementEditorState extends State<MovementEditor> {
                 ),
                 onChanged: (_) => setState(() {}),
               ),
-            if (type == 'expense' && shouldAutoBankFee(source, type: type))
+            if (canOperationFee)
+              OptionField(
+                theme: t,
+                label: 'Comisión',
+                value: feeModeLabel(effectiveFeeMode),
+                icon: CupertinoIcons.percent,
+                onTap: () => pickValue(
+                  context,
+                  const ['Automática', 'Manual', 'Sin comisión'],
+                  feeModeLabel(effectiveFeeMode),
+                  (value) => setState(() {
+                    feeMode = feeModeFromLabel(value);
+                    if (feeMode != 'manual') fee.clear();
+                  }),
+                ),
+              ),
+            if (type == 'expense' &&
+                canOperationFee &&
+                effectiveFeeMode != 'none')
               OptionField(
                 theme: t,
                 label: 'Forma de pago',
@@ -10350,7 +11065,50 @@ class _MovementEditorState extends State<MovementEditor> {
                   }),
                 ),
               ),
-            if (autoExpenseFee > 0 || autoTransferFee > 0)
+            if (type == 'expense' &&
+                canOperationFee &&
+                effectiveFeeMode != 'none' &&
+                paymentMethod == 'bank_transfer')
+              OptionField(
+                theme: t,
+                label: 'Transferencia bancaria',
+                value: bankTransferScopeLabel(bankTransferScope),
+                icon: CupertinoIcons.building_2_fill,
+                onTap: () => pickValue(
+                  context,
+                  const ['Otro banco', 'Mismo banco'],
+                  bankTransferScopeLabel(bankTransferScope),
+                  (value) => setState(() {
+                    bankTransferScope = bankTransferScopeFromLabel(value);
+                  }),
+                ),
+              ),
+            if (canTransferFee)
+              OptionField(
+                theme: t,
+                label: 'Transferencia bancaria',
+                value: bankTransferScopeLabel(bankTransferScope),
+                icon: CupertinoIcons.building_2_fill,
+                onTap: () => pickValue(
+                  context,
+                  const ['Otro banco', 'Mismo banco'],
+                  bankTransferScopeLabel(bankTransferScope),
+                  (value) => setState(() {
+                    bankTransferScope = bankTransferScopeFromLabel(value);
+                  }),
+                ),
+              ),
+            if (canOperationFee && effectiveFeeMode == 'manual')
+              RField(
+                theme: t,
+                controller: fee,
+                placeholder: 'Comisión manual',
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            if (autoOperationFee > 0 || autoTransferFee > 0)
               RCard(
                 theme: t,
                 child: Row(
@@ -10369,7 +11127,7 @@ class _MovementEditorState extends State<MovementEditor> {
                     ),
                     Text(
                       app.secureMoney(
-                        type == 'transfer' ? autoTransferFee : autoExpenseFee,
+                        type == 'transfer' ? autoTransferFee : autoOperationFee,
                         sourceCurrency,
                       ),
                       style: TextStyle(
@@ -10379,15 +11137,6 @@ class _MovementEditorState extends State<MovementEditor> {
                       ),
                     ),
                   ],
-                ),
-              ),
-            if (type == 'expense' && !shouldAutoBankFee(source, type: type))
-              RField(
-                theme: t,
-                controller: fee,
-                placeholder: 'Comisión opcional',
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
                 ),
               ),
             OptionField(
@@ -10519,22 +11268,35 @@ class _MovementEditorState extends State<MovementEditor> {
     );
   }
 
-  double estimatedExpenseFeeForSave(Map<String, dynamic> source) {
-    if (!shouldAutoBankFee(source, type: type)) return parseAmount(fee.text);
+  double operationFeeForSave(Map<String, dynamic> source) {
+    if (!canConfigureBankFee(
+      source,
+      type: type,
+      category: type == 'expense' ? category : '',
+    )) {
+      return 0;
+    }
+    if (feeMode == 'none') return 0;
+    if (feeMode == 'manual') return parseAmount(fee.text);
     return estimatedBankFee(
-      method: paymentMethod,
+      method: type == 'income' ? 'bank_transfer' : paymentMethod,
       amount: parseAmount(amount.text),
       type: type,
+      category: type == 'expense' ? category : '',
+      bankTransferScope: bankTransferScope,
     );
   }
 
   double estimatedTransferFeeForSave(Map<String, dynamic> source) {
     final target = widget.app.accountById(targetId);
-    if (!shouldAutoBankFee(source, type: 'transfer', target: target)) return 0;
+    if (!canConfigureBankFee(source, type: 'transfer', target: target)) {
+      return 0;
+    }
     return estimatedBankFee(
-      method: 'payment_mobile_p2p',
+      method: 'bank_transfer',
       amount: parseAmount(amount.text),
       type: 'transfer',
+      bankTransferScope: bankTransferScope,
     );
   }
 
@@ -10589,14 +11351,20 @@ class _MovementEditorState extends State<MovementEditor> {
       'id': widget.movement?['id'],
       'type': type,
       'paymentMethod': type == 'expense' ? paymentMethod : '',
+      'feeMode': type == 'expense' || type == 'income' ? feeMode : '',
+      'bankTransferScope':
+          type == 'transfer' ||
+              (type == 'expense' && paymentMethod == 'bank_transfer')
+          ? bankTransferScope
+          : '',
       'description': desc.text.trim(),
       'category': type == 'expense' ? category : '',
       'amount': parseAmount(amount.text),
       'currency': source['currency'] ?? 'USD',
       'feeAmount': type == 'transfer'
           ? estimatedTransferFeeForSave(source)
-          : type == 'expense'
-          ? estimatedExpenseFeeForSave(source)
+          : type == 'expense' || type == 'income'
+          ? operationFeeForSave(source)
           : 0.0,
       'feeCurrency': source['currency'] ?? 'USD',
       'accountId': accountId,
@@ -11822,6 +12590,15 @@ List<Map<String, dynamic>> sortedMovements(
   return copy;
 }
 
+double movementListAmount(Map<String, dynamic> movement) {
+  final amount = numberValue(movement['amount']);
+  final fee = numberValue(movement['feeAmount']);
+  final type = movement['type']?.toString() ?? 'expense';
+  if (type == 'income') return math.max(0.0, amount - fee);
+  if (isExpenseType(type)) return amount + fee;
+  return amount;
+}
+
 String movementTitle(Map<String, dynamic> movement) {
   final desc = movement['description']?.toString().trim() ?? '';
   if (desc.isNotEmpty) return desc;
@@ -11947,13 +12724,40 @@ String? logoAsset(String code) {
     'ZINLI': 'logo_zinli',
     'WALLY': 'logo_wally',
     'KONTIGO': 'logo_kontigo',
+    'CASHEA': 'logo_cashea',
+    'KRECE': 'logo_krece',
+    'WEPPA': 'logo_weppa',
   };
   final name = assets[code];
   return name == null ? null : 'assets/logos/$name.png';
 }
 
+String? debtPartyLogoCode(String party) {
+  switch (normalizeText(party)) {
+    case 'cashea':
+      return 'CASHEA';
+    case 'krece':
+      return 'KRECE';
+    case 'weppa':
+      return 'WEPPA';
+    default:
+      return null;
+  }
+}
+
+IconData debtPartyIcon(String party, String kind) {
+  final normalized = normalizeText(party);
+  if (normalized == 'alguien') return CupertinoIcons.person_2_fill;
+  if (normalized == 'trabajo') return CupertinoIcons.briefcase_fill;
+  if (kind == 'receivable') return CupertinoIcons.arrow_down_left_circle_fill;
+  return CupertinoIcons.arrow_up_right_circle_fill;
+}
+
 String logoText(String code) {
   if (code == 'CASH') return r'$';
+  if (code == 'CASHEA') return 'C';
+  if (code == 'KRECE') return 'K';
+  if (code == 'WEPPA') return 'W';
   if (code == 'OKX') return 'OKX';
   if (code.length >= 2)
     return shortProviderName(code)
@@ -12316,18 +13120,24 @@ double balanceChangePercent(
     if (monthKeyFromDate(movement['date']?.toString()) != month) continue;
     final currency = movement['currency']?.toString() ?? 'USD';
     final amount = convert(
-      numberValue(movement['amount']) + numberValue(movement['feeAmount']),
+      numberValue(movement['amount']),
+      currency,
+      'USD',
+      rate,
+    );
+    final fee = convert(
+      numberValue(movement['feeAmount']),
       currency,
       'USD',
       rate,
     );
     final type = movement['type']?.toString() ?? 'expense';
     if (type == 'income') {
-      net += amount;
+      net += amount - fee;
     } else if (isExpenseType(type)) {
-      net -= amount;
-    } else if (type == 'transfer' && numberValue(movement['feeAmount']) > 0) {
-      net -= convert(numberValue(movement['feeAmount']), currency, 'USD', rate);
+      net -= amount + fee;
+    } else if (type == 'transfer' && fee > 0) {
+      net -= fee;
     }
   }
   final start = totalUsd - net;
@@ -12349,6 +13159,90 @@ double debtNextPaymentAmount(Map<String, dynamic> debt) {
   return remaining;
 }
 
+bool debtHasInstallments(Map<String, dynamic> debt) {
+  final installments = numberValue(debt['installments']).round();
+  return debt['hasInstallments'] == true ||
+      installments > 1 ||
+      numberValue(debt['installmentAmount']) > 0 ||
+      (debt['paymentFrequency']?.toString().trim().isNotEmpty ?? false);
+}
+
+int debtInstallmentCount(Map<String, dynamic> debt) {
+  return numberValue(debt['installments']).round().clamp(1, 999).toInt();
+}
+
+List<String> debtInstallmentDates(Map<String, dynamic> debt) {
+  final raw = debt['installmentDates'];
+  if (raw is! List) return const [];
+  return raw
+      .map((value) => displayDateOnly(value?.toString()))
+      .where((value) => value.isNotEmpty)
+      .toList();
+}
+
+int debtNextInstallmentIndex(Map<String, dynamic> debt) {
+  if (!debtHasInstallments(debt)) return 0;
+  final count = debtInstallmentCount(debt);
+  final installment = numberValue(debt['installmentAmount']);
+  if (installment <= 0) return 0;
+  final storedInitialAmount = numberValue(debt['initialAmount']);
+  final initialAmount = math.min(
+    numberValue(debt['amount']),
+    storedInitialAmount > 0 || debt['initialPaid'] != true
+        ? storedInitialAmount
+        : numberValue(debt['paidAmount']),
+  );
+  final paidTowardInstallments = math.max(
+    0.0,
+    numberValue(debt['paidAmount']) - initialAmount,
+  );
+  return (paidTowardInstallments / installment)
+      .floor()
+      .clamp(0, math.max(0, count - 1))
+      .toInt();
+}
+
+String debtUpcomingDate(Map<String, dynamic> debt) {
+  if (debtRemainingAmount(debt) <= .0001) return '';
+  if (debt['hasDueDate'] == false) return '';
+  if (debtHasInstallments(debt)) {
+    final index = debtNextInstallmentIndex(debt);
+    final dates = debtInstallmentDates(debt);
+    if (index < dates.length) return dates[index];
+    final base = parseDateOnly(debt['dueDate']?.toString());
+    if (base.year != 9999) {
+      return formatDate(
+        addDebtFrequency(
+          base,
+          debt['paymentFrequency']?.toString() ?? 'Mensual',
+          index,
+        ),
+      );
+    }
+  }
+  return displayDateOnly(debt['dueDate']?.toString());
+}
+
+DateTime addDebtFrequency(DateTime base, String frequency, int index) {
+  if (index <= 0) return DateTime(base.year, base.month, base.day);
+  switch (frequency) {
+    case 'Semanal':
+      return base.add(Duration(days: 7 * index));
+    case 'Quincenal':
+      return base.add(Duration(days: 15 * index));
+    case 'Mensual':
+      return addCalendarMonths(base, index);
+    default:
+      return addCalendarMonths(base, index);
+  }
+}
+
+DateTime addCalendarMonths(DateTime base, int months) {
+  final target = DateTime(base.year, base.month + months);
+  final lastDay = DateTime(target.year, target.month + 1, 0).day;
+  return DateTime(target.year, target.month, math.min(base.day, lastDay));
+}
+
 String selectedDebtLabel(Map<String, dynamic>? debt) {
   if (debt == null) return 'Sin vincular';
   final title = debt['title']?.toString().trim() ?? '';
@@ -12357,16 +13251,22 @@ String selectedDebtLabel(Map<String, dynamic>? debt) {
 }
 
 List<Map<String, dynamic>> upcomingDebtItems(List<Map<String, dynamic>> debts) {
-  final list = debts.where((debt) {
-    final amount = numberValue(debt['amount']);
-    final paid = numberValue(debt['paidAmount']);
-    final hasDueDate = debt['hasDueDate'] != false;
-    final dueDate = debt['dueDate']?.toString().trim() ?? '';
-    return hasDueDate && dueDate.isNotEmpty && amount > 0 && paid < amount;
-  }).toList();
+  final list = debts
+      .map((debt) {
+        final amount = numberValue(debt['amount']);
+        final paid = numberValue(debt['paidAmount']);
+        final dueDate = debtUpcomingDate(debt);
+        if (amount <= 0 || paid >= amount) return null;
+        return Map<String, dynamic>.from(debt)..['nextDueDate'] = dueDate;
+      })
+      .whereType<Map<String, dynamic>>()
+      .toList();
   list.sort((a, b) {
-    final left = parseIsoDate(a['dueDate']?.toString());
-    final right = parseIsoDate(b['dueDate']?.toString());
+    final left = parseIsoDate(a['nextDueDate']?.toString());
+    final right = parseIsoDate(b['nextDueDate']?.toString());
+    final leftHasDate = left.year != 9999;
+    final rightHasDate = right.year != 9999;
+    if (leftHasDate != rightHasDate) return leftHasDate ? -1 : 1;
     return left.compareTo(right);
   });
   return list;
@@ -12427,7 +13327,7 @@ List<DateTime> budgetPeriodDateRange(String key, String type) {
       ((int.tryParse(pieces.length > 1 ? pieces[1] : '') ??
                   DateTime.now().month)
               .clamp(1, 12))
-          as int;
+          .toInt();
   final lastDay = DateTime(year, month + 1, 0).day;
   if (type == 'biweekly') {
     final secondHalf = pieces.length > 2 && pieces[2] == 'H2';
@@ -12460,7 +13360,7 @@ String monthLabelForKey(String key) {
       ((int.tryParse(pieces.length > 1 ? pieces[1] : '') ??
                   DateTime.now().month)
               .clamp(1, 12))
-          as int;
+          .toInt();
   return '${months[month - 1]} de $year';
 }
 
@@ -12488,25 +13388,31 @@ bool isNationalBankAccount(Map<String, dynamic>? account) =>
 bool isCashAccount(Map<String, dynamic>? account) =>
     account != null && account['kind'] == 'cash';
 
-bool shouldAutoBankFee(
+bool canConfigureBankFee(
   Map<String, dynamic>? account, {
   required String type,
   Map<String, dynamic>? target,
+  String category = '',
 }) {
+  if (normalizeText(category) == 'recarga saldo') return false;
   if (!isNationalBankAccount(account)) return false;
   if (account?['currency'] != 'VES') return false;
   if (type == 'transfer') {
-    return target != null && target['currency'] == 'VES';
+    return isNationalBankAccount(target) && target?['currency'] == 'VES';
   }
-  return type == 'expense' && !isCashAccount(account);
+  return (type == 'expense' || type == 'income') && !isCashAccount(account);
 }
 
 double estimatedBankFee({
   required String method,
   required double amount,
   required String type,
+  String category = '',
+  String bankTransferScope = 'other_bank',
 }) {
   if (amount <= 0) return 0;
+  if (normalizeText(category) == 'recarga saldo') return 0;
+  if (method == 'bank_transfer' && bankTransferScope == 'same_bank') return 0;
   if (type == 'transfer') return math.max(14, amount * .003);
   switch (method) {
     case 'payment_mobile_p2c':
@@ -12538,6 +13444,31 @@ String paymentMethodFromLabel(String label) {
   if (label == 'Transferencia bancaria') return 'bank_transfer';
   if (label == 'Tarjeta') return 'debit_card';
   return 'payment_mobile_p2p';
+}
+
+String feeModeLabel(String mode) {
+  switch (mode) {
+    case 'manual':
+      return 'Manual';
+    case 'none':
+      return 'Sin comisión';
+    default:
+      return 'Automática';
+  }
+}
+
+String feeModeFromLabel(String label) {
+  if (label == 'Manual') return 'manual';
+  if (label == 'Sin comisión') return 'none';
+  return 'auto';
+}
+
+String bankTransferScopeLabel(String value) {
+  return value == 'same_bank' ? 'Mismo banco' : 'Otro banco';
+}
+
+String bankTransferScopeFromLabel(String label) {
+  return label == 'Mismo banco' ? 'same_bank' : 'other_bank';
 }
 
 String monthKeyFromDate(String? value) {
