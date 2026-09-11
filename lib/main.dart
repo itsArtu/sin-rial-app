@@ -20,11 +20,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '2.1.7',
+  defaultValue: '2.1.12',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 57,
+  defaultValue: 62,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -35,7 +35,6 @@ const _githubRepo = String.fromEnvironment(
   'SIN_RIAL_GITHUB_REPO',
   defaultValue: 'sin-rial-app',
 );
-const Duration _updateCheckInterval = Duration(hours: 6);
 const Duration _dismissedUpdateSnooze = Duration(hours: 12);
 
 const List<List<String>> banks = [
@@ -112,7 +111,12 @@ const List<ThemeColorOption> themeColorOptions = [
   ThemeColorOption('cyan', 'Cian', Color(0xFF237C9A), Color(0xFF62C4E2)),
   ThemeColorOption('coral', 'Coral', Color(0xFFC35C3E), Color(0xFFF28A68)),
   ThemeColorOption('lime', 'Lima', Color(0xFF708D2B), Color(0xFFA7C957)),
-  ThemeColorOption('wine', 'Vino', Color(0xFFC41E1E), Color(0xFFC41E1E)),
+  ThemeColorOption('wine', 'Rojo', Color(0xFFC41E1E), Color(0xFFE05252)),
+  ThemeColorOption('navy', 'Marino', Color(0xFF30507C), Color(0xFF7DA7E8)),
+  ThemeColorOption('sky', 'Celeste', Color(0xFF2F80C9), Color(0xFF74C0FC)),
+  ThemeColorOption('mint', 'Menta', Color(0xFF2B8A6E), Color(0xFF6ED7B5)),
+  ThemeColorOption('orange', 'Naranja', Color(0xFFC66A24), Color(0xFFFFA45B)),
+  ThemeColorOption('magenta', 'Magenta', Color(0xFFA63D80), Color(0xFFE27AC4)),
   ThemeColorOption('graphite', 'Grafito', Color(0xFF4D5663), Color(0xFF8D99A8)),
 ];
 
@@ -121,6 +125,13 @@ ThemeColorOption themeColorByKey(String key) {
     if (option.key == key) return option;
   }
   return themeColorOptions.first;
+}
+
+TextScaler appTextScaler(MediaQueryData media) {
+  final compactWidthFactor = (media.size.shortestSide / 390.0).clamp(.90, 1.0);
+  final systemFactor = media.textScaler.scale(1.0).clamp(.86, 1.06);
+  final effectiveFactor = (compactWidthFactor * systemFactor).clamp(.86, 1.06);
+  return TextScaler.linear(effectiveFactor.toDouble());
 }
 
 IconData categoryIcon(String category) {
@@ -251,13 +262,42 @@ class _RialBootstrapState extends State<RialBootstrap> {
   }
 }
 
+class _SplitStatePayload {
+  const _SplitStatePayload({
+    required this.mainState,
+    required this.changedParts,
+    required this.allParts,
+  });
+
+  final String mainState;
+  final Map<String, String> changedParts;
+  final Map<String, String> allParts;
+}
+
 class NativeStateStore {
+  static const List<String> _splitStateKeys = [
+    'accounts',
+    'movements',
+    'debts',
+    'budgets',
+    'goals',
+    'cards',
+    'savingsFunds',
+  ];
+
+  static String? _lastMainStateJson;
+  static final Map<String, String> _lastPartJson = {};
+
   static Future<Map<String, dynamic>> load() async {
     try {
       final raw = await _storeChannel.invokeMethod<String>('readState');
       if (raw == null || raw.trim().isEmpty) return defaultState();
       final decoded = jsonDecode(raw);
-      if (decoded is Map) return withDefaults(decoded.cast<String, dynamic>());
+      if (decoded is Map) {
+        final state = withDefaults(decoded.cast<String, dynamic>());
+        _rememberMainStateOnly(state);
+        return state;
+      }
       return defaultState();
     } catch (_) {
       return defaultState();
@@ -265,11 +305,64 @@ class NativeStateStore {
   }
 
   static Future<void> save(Map<String, dynamic> state) async {
+    final splitState = _encodeSplitState(state);
+    if (splitState.mainState == _lastMainStateJson &&
+        splitState.changedParts.isEmpty) {
+      return;
+    }
     try {
-      await _storeChannel.invokeMethod<void>('writeState', {
-        'state': jsonEncode(state),
+      await _storeChannel.invokeMethod<void>('writeSplitState', {
+        'state': splitState.mainState,
+        'parts': splitState.changedParts,
       });
-    } catch (_) {}
+      _lastMainStateJson = splitState.mainState;
+      _lastPartJson
+        ..clear()
+        ..addAll(splitState.allParts);
+    } catch (_) {
+      try {
+        await _storeChannel.invokeMethod<void>('writeState', {
+          'state': jsonEncode(state),
+        });
+        _rememberFullState(state);
+      } catch (_) {}
+    }
+  }
+
+  static _SplitStatePayload _encodeSplitState(Map<String, dynamic> state) {
+    final slim = Map<String, dynamic>.from(state);
+    final allParts = <String, String>{};
+    final changedParts = <String, String>{};
+    for (final key in _splitStateKeys) {
+      final raw = jsonEncode(slim.remove(key) ?? _emptySplitValue(key));
+      allParts[key] = raw;
+      if (_lastPartJson[key] != raw) changedParts[key] = raw;
+    }
+    return _SplitStatePayload(
+      mainState: jsonEncode(slim),
+      changedParts: changedParts,
+      allParts: allParts,
+    );
+  }
+
+  static Object _emptySplitValue(String key) =>
+      key == 'savingsFunds' ? <String, dynamic>{} : <dynamic>[];
+
+  static void _rememberMainStateOnly(Map<String, dynamic> state) {
+    final slim = Map<String, dynamic>.from(state);
+    for (final key in _splitStateKeys) {
+      slim.remove(key);
+    }
+    _lastMainStateJson = jsonEncode(slim);
+    _lastPartJson.clear();
+  }
+
+  static void _rememberFullState(Map<String, dynamic> state) {
+    final splitState = _encodeSplitState(state);
+    _lastMainStateJson = splitState.mainState;
+    _lastPartJson
+      ..clear()
+      ..addAll(splitState.allParts);
   }
 
   static Future<void> scheduleDailyReminder({
@@ -284,6 +377,26 @@ class NativeStateStore {
         'minute': minute,
       });
     } catch (_) {}
+  }
+
+  static Future<bool> scheduleRateUpdate() async {
+    try {
+      return await _storeChannel.invokeMethod<bool>('scheduleRateUpdate') ??
+          false;
+    } catch (_) {}
+    return false;
+  }
+
+  static Future<Map<String, dynamic>> workManagerStatus() async {
+    try {
+      final raw = await _storeChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'workManagerStatus',
+      );
+      return raw?.map((key, value) => MapEntry(key.toString(), value)) ??
+          <String, dynamic>{};
+    } catch (_) {
+      return <String, dynamic>{};
+    }
   }
 
   static Future<bool> consumeScreenOff() async {
@@ -360,6 +473,7 @@ Map<String, dynamic> defaultState() {
     'pinEnabled': false,
     'pinSalt': '',
     'pinHash': '',
+    'pinLength': 0,
     'biometricEnabled': false,
     'onboardingComplete': false,
     'accounts': <dynamic>[],
@@ -743,7 +857,6 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   bool openAccountAfterOnboarding = false;
   bool rateLoading = false;
   bool updateChecking = false;
-  bool updateCheckScheduledThisSession = false;
   bool updatePromptVisible = false;
   bool locked = false;
   DateTime? backgroundedAt;
@@ -757,6 +870,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _pageController = PageController();
     scheduleDailyReminderFromState();
+    unawaited(NativeStateStore.scheduleRateUpdate());
     unawaited(refreshRateIfNeeded());
     unawaited(checkNativeLaunchAction());
     rateRefreshTimer = Timer.periodic(
@@ -783,6 +897,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         backgroundedAt = null;
         unawaited(NativeStateStore.consumeScreenOff());
         unawaited(checkNativeLaunchAction());
+        unawaited(refreshRateIfNeeded());
       }
       return;
     }
@@ -792,9 +907,15 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       return;
     }
     if (lifecycleState == AppLifecycleState.resumed) {
-      unawaited(_lockIfNeededAfterResume());
+      unawaited(_resumeAfterSecurityCheck());
       unawaited(checkNativeLaunchAction());
     }
+  }
+
+  Future<void> _resumeAfterSecurityCheck() async {
+    await _lockIfNeededAfterResume();
+    if (!mounted || locked) return;
+    await refreshRateIfNeeded();
   }
 
   Future<void> _lockIfNeededAfterResume() async {
@@ -850,6 +971,8 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       state['pinEnabled'] == true &&
       (state['pinHash']?.toString().isNotEmpty ?? false) &&
       (state['pinSalt']?.toString().isNotEmpty ?? false);
+  int get configuredPinLength =>
+      numberValue(state['pinLength']).round().clamp(0, 6).toInt();
   bool get biometricEnabled => state['biometricEnabled'] == true;
   bool get securityEnabled => pinEnabled || biometricEnabled;
   bool get securitySetupRequired =>
@@ -956,6 +1079,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     final keepPinEnabled = state['pinEnabled'] == true;
     final keepPinSalt = state['pinSalt']?.toString() ?? '';
     final keepPinHash = state['pinHash']?.toString() ?? '';
+    final keepPinLength = numberValue(state['pinLength']).round();
     final keepBiometricEnabled = biometricEnabled;
     final keepRate = rate;
     final keepPreviousRate = numberValue(state['previousRate']);
@@ -978,6 +1102,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       state['pinEnabled'] = keepPinEnabled;
       state['pinSalt'] = keepPinSalt;
       state['pinHash'] = keepPinHash;
+      state['pinLength'] = keepPinLength;
       state['biometricEnabled'] = keepBiometricEnabled;
       state['rate'] = keepRate;
       state['previousRate'] = keepPreviousRate > 0
@@ -1002,7 +1127,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     unawaited(refreshRate(manual: false, force: true));
   }
 
-  Future<void> refreshRateIfNeeded() async {
+  Future<void> refreshRateIfNeeded({bool checkForUpdates = true}) async {
     final effectiveDate = state['rateEffectiveDate']?.toString();
     final legacyDate = state['lastRateDate']?.toString();
     final expected = expectedRateDateKey(DateTime.now());
@@ -1013,10 +1138,16 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         (effectiveDate == null || effectiveDate.isEmpty
             ? legacyDate != expected
             : effectiveDate != expected);
-    if (shouldRefresh) await refreshRate(manual: false);
+    if (shouldRefresh) {
+      await refreshRate(manual: false, checkForUpdates: checkForUpdates);
+    }
   }
 
-  Future<void> refreshRate({bool manual = false, bool force = false}) async {
+  Future<void> refreshRate({
+    bool manual = false,
+    bool force = false,
+    bool checkForUpdates = true,
+  }) async {
     if (rateLoading && !force) return;
     if (mounted) setState(() => rateLoading = true);
     final result = await BcvRateService.fetch();
@@ -1046,111 +1177,13 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       });
     }
     if (mounted) setState(() => rateLoading = false);
+    if (result != null && checkForUpdates) queueForegroundUpdateCheck();
   }
 
-  void scheduleUpdateCheck(BuildContext context) {
-    if (updateCheckScheduledThisSession || !UpdateService.configured) return;
-    updateCheckScheduledThisSession = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (context.mounted) unawaited(checkForReleaseUpdate(context));
-    });
-  }
-
-  Future<void> checkForUpdate(
-    BuildContext context, {
-    bool manual = false,
-  }) async {
-    if (updateChecking) return;
-    if (!UpdateService.configured) {
-      if (manual && context.mounted) {
-        showModernNotice(
-          context,
-          title: 'Actualizaciones sin configurar',
-          message: 'Falta compilar la app con SIN_RIAL_UPDATE_URL o con SIN_RIAL_GITHUB_OWNER y SIN_RIAL_GITHUB_REPO.',
-        );
-      }
-      return;
-    }
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final lastCheck = numberValue(state['lastUpdateCheckMillis']).round();
-    if (!manual && now - lastCheck < _updateCheckInterval.inMilliseconds) {
-      return;
-    }
-    state['lastUpdateCheckMillis'] = now;
-    unawaited(NativeStateStore.save(state));
-    if (mounted) setState(() => updateChecking = true);
-    final update = await UpdateService.fetch();
-    if (mounted) setState(() => updateChecking = false);
-    if (!context.mounted) return;
-    if (update == null) {
-      if (manual) {
-        showModernNotice(
-          context,
-          title: 'No se pudo revisar',
-          message:
-              'Verifica tu conexiÃ³n o que el release de GitHub sea pÃºblico.',
-        );
-      }
-      return;
-    }
-    if (!update.isNewer || !update.hasDownload) {
-      if (manual) {
-        showModernNotice(
-          context,
-          title: 'Sin actualizaciones',
-          message: 'Ya tienes instalada la versiÃ³n mÃ¡s reciente.',
-        );
-      }
-      return;
-    }
-    final dismissedBuild = numberValue(state['dismissedUpdateBuild']).round();
-    final dismissedVersion = state['dismissedUpdateVersion']?.toString() ?? '';
-    final dismissedAt = numberValue(state['dismissedUpdateMillis']).round();
-    final dismissedSameVersion =
-        (update.build > 0 && dismissedBuild == update.build) ||
-        (update.build <= 0 && dismissedVersion == update.version);
-    if (!manual &&
-        dismissedSameVersion &&
-        now - dismissedAt < _dismissedUpdateSnooze.inMilliseconds) {
-      return;
-    }
-    showUpdatePrompt(context, update);
-  }
-
-  void showUpdatePrompt(BuildContext context, UpdateInfo update) {
-    updatePromptVisible = true;
-    final versionText = update.build > 0
-        ? '${update.version}+${update.build}'
-        : update.version;
-    final notes = update.notes.trim();
-    showModernActionSheet(
-      context,
-      title: 'ActualizaciÃ³n disponible',
-      message:
-          'Hay una nueva versiÃ³n de Sin Rial: $versionText. Se abrirÃ¡ GitHub para descargar el APK y Android te pedirÃ¡ confirmar la instalaciÃ³n.${notes.isEmpty ? '' : '\n\n$notes'}',
-      actions: [
-        ModernSheetAction(
-          icon: CupertinoIcons.cloud_download_fill,
-          title: 'Descargar actualizaciÃ³n',
-          subtitle: 'Abre el APK publicado en GitHub Releases',
-          onPressed: () => unawaited(openUpdateDownload(context, update)),
-        ),
-        ModernSheetAction(
-          icon: CupertinoIcons.clock_fill,
-          title: 'DespuÃ©s',
-          subtitle: 'Recordar mÃ¡s tarde esta misma versiÃ³n',
-          onPressed: () {
-            updatePromptVisible = false;
-            mutate(() {
-              state['dismissedUpdateBuild'] = update.build;
-              state['dismissedUpdateVersion'] = update.version;
-              state['dismissedUpdateMillis'] =
-                  DateTime.now().millisecondsSinceEpoch;
-            });
-          },
-        ),
-      ],
-    );
+  void queueForegroundUpdateCheck() {
+    final context = rootNavigatorKey.currentContext;
+    if (context == null || locked || updateChecking) return;
+    unawaited(checkForReleaseUpdate(context));
   }
 
   Future<void> openUpdateDownload(
@@ -1185,10 +1218,6 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       return;
     }
     final now = DateTime.now().millisecondsSinceEpoch;
-    final lastCheck = numberValue(state['lastUpdateCheckMillis']).round();
-    if (!manual && now - lastCheck < _updateCheckInterval.inMilliseconds) {
-      return;
-    }
     state['lastUpdateCheckMillis'] = now;
     unawaited(NativeStateStore.save(state));
     if (mounted) setState(() => updateChecking = true);
@@ -1236,34 +1265,57 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         ? '${update.version}+${update.build}'
         : update.version;
     final notes = update.notes.trim();
-    showModernActionSheet(
-      context,
-      title: 'Actualizacion disponible',
-      message:
-          'Hay una nueva version de Sin Rial: $versionText. Se abrira GitHub para descargar el APK y Android te pedira confirmar la instalacion.${notes.isEmpty ? '' : '\n\n$notes'}',
-      actions: [
-        ModernSheetAction(
-          icon: CupertinoIcons.cloud_download_fill,
-          title: 'Descargar actualizacion',
-          subtitle: 'Abre el APK publicado en GitHub Releases',
-          onPressed: () => unawaited(openUpdateDownload(context, update)),
-        ),
-        ModernSheetAction(
-          icon: CupertinoIcons.clock_fill,
-          title: 'Despues',
-          subtitle: 'Recordar mas tarde esta misma version',
-          onPressed: () {
-            updatePromptVisible = false;
-            mutate(() {
-              state['dismissedUpdateBuild'] = update.build;
-              state['dismissedUpdateVersion'] = update.version;
-              state['dismissedUpdateMillis'] =
-                  DateTime.now().millisecondsSinceEpoch;
-            });
-          },
-        ),
-      ],
-    );
+    final t = theme;
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Cerrar',
+      barrierColor: CupertinoColors.black.withOpacity(t.dark ? .50 : .28),
+      transitionDuration: const Duration(milliseconds: 190),
+      pageBuilder: (dialogContext, _, __) {
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: UpdatePromptSheet(
+                theme: t,
+                versionText: versionText,
+                notes: notes,
+                onDownload: () {
+                  Navigator.of(dialogContext, rootNavigator: true).pop();
+                  unawaited(openUpdateDownload(context, update));
+                },
+                onLater: () {
+                  Navigator.of(dialogContext, rootNavigator: true).pop();
+                  mutate(() {
+                    state['dismissedUpdateBuild'] = update.build;
+                    state['dismissedUpdateVersion'] = update.version;
+                    state['dismissedUpdateMillis'] =
+                        DateTime.now().millisecondsSinceEpoch;
+                  });
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curve = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, .055),
+            end: Offset.zero,
+          ).animate(curve),
+          child: child,
+        );
+      },
+    ).whenComplete(() => updatePromptVisible = false);
   }
 
   String id() =>
@@ -1300,6 +1352,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     mutate(() {
       state['pinSalt'] = salt;
       state['pinHash'] = digest;
+      state['pinLength'] = pin.length;
       state['pinEnabled'] = true;
       state['biometricEnabled'] = useBiometrics;
       state['securitySetupComplete'] = true;
@@ -1326,6 +1379,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   void unlockApp() {
     if (!mounted) return;
     setState(() => locked = false);
+    unawaited(refreshRateIfNeeded());
   }
 
   double toUsd(double amount, String currency) =>
@@ -1531,6 +1585,31 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           navigatorKey: rootNavigatorKey,
           title: 'Sin Rial',
           debugShowCheckedModeBanner: false,
+          builder: (context, child) {
+            final shouldShowLockOverlay =
+                locked &&
+                state['onboardingComplete'] == true &&
+                !securitySetupRequired;
+            final appContent = Stack(
+              fit: StackFit.expand,
+              children: [
+                child ?? const SizedBox.shrink(),
+                if (shouldShowLockOverlay)
+                  Positioned.fill(
+                    child: PopScope(
+                      canPop: false,
+                      child: _AppEntrance(child: LockScreen(app: this)),
+                    ),
+                  ),
+              ],
+            );
+            final media = MediaQuery.maybeOf(context);
+            if (media == null) return appContent;
+            return MediaQuery(
+              data: media.copyWith(textScaler: appTextScaler(media)),
+              child: appContent,
+            );
+          },
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
@@ -1570,16 +1649,13 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                   ),
                 );
               }
-              if (locked) {
-                return _AppEntrance(child: LockScreen(app: this));
-              }
-              if (openAccountAfterOnboarding) {
+              if (!locked && openAccountAfterOnboarding) {
                 openAccountAfterOnboarding = false;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (context.mounted) openAccountEditor(context);
                 });
               }
-              if (pendingLaunchAction != null) {
+              if (!locked && pendingLaunchAction != null) {
                 final action = pendingLaunchAction!;
                 pendingLaunchAction = null;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1592,7 +1668,6 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                   }
                 });
               }
-              scheduleUpdateCheck(context);
               return _AppEntrance(
                 child: CupertinoPageScaffold(
                   backgroundColor: t.bg,
@@ -2251,6 +2326,204 @@ class SecurityRecoveryNote extends StatelessWidget {
   }
 }
 
+Future<bool> requestCurrentPin(BuildContext context, _RialAppState app) async {
+  final t = app.theme;
+  final controller = TextEditingController();
+  final focus = FocusNode();
+  var wrong = false;
+  var completed = false;
+
+  Future<void> submit(BuildContext dialogContext, StateSetter refresh) async {
+    if (completed) return;
+    final value = controller.text;
+    if (app.verifyPin(value)) {
+      completed = true;
+      Navigator.of(dialogContext, rootNavigator: true).pop(true);
+      return;
+    }
+    await HapticFeedback.mediumImpact();
+    controller.clear();
+    refresh(() => wrong = true);
+    focus.requestFocus();
+  }
+
+  final result = await showGeneralDialog<bool>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Cerrar',
+    barrierColor: CupertinoColors.black.withOpacity(t.dark ? .50 : .28),
+    transitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (dialogContext, _, __) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        focus.requestFocus();
+        unawaited(
+          SystemChannels.textInput.invokeMethod<void>('TextInput.show'),
+        );
+      });
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: SafeArea(
+          top: false,
+          child: StatefulBuilder(
+            builder: (sheetContext, refresh) {
+              final expectedLength = app.configuredPinLength;
+              return AnimatedPadding(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                padding: EdgeInsets.fromLTRB(
+                  14,
+                  0,
+                  14,
+                  14 + MediaQuery.of(sheetContext).viewInsets.bottom,
+                ),
+                child: softEntrance(
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    decoration: BoxDecoration(
+                      color: t.card,
+                      borderRadius: BorderRadius.circular(26),
+                      border: Border.all(color: t.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: CupertinoColors.black.withOpacity(
+                            t.dark ? .38 : .10,
+                          ),
+                          blurRadius: 28,
+                          offset: const Offset(0, 16),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 42,
+                            height: 4,
+                            margin: const EdgeInsets.only(bottom: 14),
+                            decoration: BoxDecoration(
+                              color: t.border,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'Confirma tu PIN actual',
+                          style: TextStyle(
+                            color: t.ink,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Necesitamos confirmar tu identidad antes de cambiar el PIN.',
+                          style: TextStyle(
+                            color: t.muted,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        CupertinoTextField(
+                          controller: controller,
+                          focusNode: focus,
+                          autofocus: true,
+                          obscureText: true,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(6),
+                          ],
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 17,
+                          ),
+                          style: TextStyle(
+                            color: t.ink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          placeholder: 'PIN anterior',
+                          placeholderStyle: TextStyle(
+                            color: t.muted,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          decoration: BoxDecoration(
+                            color: t.field,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: wrong ? t.red : t.border),
+                          ),
+                          onChanged: (value) {
+                            if (wrong) refresh(() => wrong = false);
+                            final canAutoSubmit = expectedLength >= 4
+                                ? value.length >= expectedLength
+                                : value.length >= 6;
+                            if (canAutoSubmit) {
+                              unawaited(submit(dialogContext, refresh));
+                            }
+                          },
+                          onSubmitted: (_) =>
+                              unawaited(submit(dialogContext, refresh)),
+                        ),
+                        if (wrong) ...[
+                          const SizedBox(height: 9),
+                          Text(
+                            'PIN incorrecto. Inténtalo otra vez.',
+                            style: TextStyle(
+                              color: t.red,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SecondaryActionButton(
+                                theme: t,
+                                label: 'Cancelar',
+                                onPressed: () => Navigator.of(
+                                  dialogContext,
+                                  rootNavigator: true,
+                                ).pop(false),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: PrimaryActionButton(
+                                theme: t,
+                                label: 'Confirmar',
+                                onPressed: () =>
+                                    unawaited(submit(dialogContext, refresh)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  offsetY: 8,
+                  duration: const Duration(milliseconds: 160),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    },
+  );
+
+  controller.dispose();
+  focus.dispose();
+  return result == true;
+}
+
 class SecuritySetupPage extends StatefulWidget {
   const SecuritySetupPage({
     super.key,
@@ -2272,6 +2545,7 @@ class _SecuritySetupPageState extends State<SecuritySetupPage> {
   final pinConfirm = TextEditingController();
   bool useBiometrics = false;
   bool biometricsAvailable = false;
+  bool confirmedCurrentSecurity = false;
 
   @override
   void initState() {
@@ -2305,6 +2579,7 @@ class _SecuritySetupPageState extends State<SecuritySetupPage> {
       navigationBar: widget.requiredSetup
           ? null
           : CupertinoNavigationBar(
+              transitionBetweenRoutes: false,
               backgroundColor: t.bg.withOpacity(.92),
               border: null,
               middle: const Text('Seguridad'),
@@ -2385,7 +2660,7 @@ class _SecuritySetupPageState extends State<SecuritySetupPage> {
                     label: widget.requiredSetup
                         ? 'Activar seguridad'
                         : 'Guardar seguridad',
-                    onPressed: save,
+                    onPressed: () => unawaited(save()),
                   ),
                 ],
               ),
@@ -2396,8 +2671,28 @@ class _SecuritySetupPageState extends State<SecuritySetupPage> {
     );
   }
 
-  void save() {
+  Future<bool> confirmCurrentSecurity() async {
+    if (widget.requiredSetup || confirmedCurrentSecurity) return true;
+    if (widget.app.biometricEnabled && await widget.app.canUseBiometrics()) {
+      final ok = await widget.app.authenticateWithBiometrics();
+      if (!mounted) return false;
+      if (ok) {
+        confirmedCurrentSecurity = true;
+        return true;
+      }
+    }
+    if (!widget.app.pinEnabled) {
+      confirmedCurrentSecurity = true;
+      return true;
+    }
+    final ok = await requestCurrentPin(context, widget.app);
+    if (ok) confirmedCurrentSecurity = true;
+    return ok;
+  }
+
+  Future<void> save() async {
     if (!validatePin(context, pin.text, pinConfirm.text)) return;
+    if (!await confirmCurrentSecurity()) return;
     widget.app.configureSecurity(
       pin: pin.text,
       useBiometrics: biometricsAvailable && useBiometrics,
@@ -2446,17 +2741,25 @@ class LockScreen extends StatefulWidget {
   State<LockScreen> createState() => _LockScreenState();
 }
 
-class _LockScreenState extends State<LockScreen> {
+class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
   final pin = TextEditingController();
   final pinFocus = FocusNode();
+  final scroll = ScrollController();
+  final enterButtonKey = GlobalKey();
   bool checkingBiometric = false;
   bool showPin = false;
+  bool autoUnlocking = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     pin.addListener(() {
       if (mounted) setState(() {});
+      _tryAutoUnlock();
+    });
+    pinFocus.addListener(() {
+      if (pinFocus.hasFocus) _scrollToPin();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusPinInput();
@@ -2465,16 +2768,89 @@ class _LockScreenState extends State<LockScreen> {
     });
   }
 
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (pinFocus.hasFocus) _scrollToPin();
+  }
+
   void _focusPinInput() {
     if (!mounted) return;
     pinFocus.requestFocus();
     unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
+    _scrollToPin();
+  }
+
+  void _scrollToPin() {
+    for (final delay in const [
+      Duration(milliseconds: 80),
+      Duration(milliseconds: 260),
+      Duration(milliseconds: 560),
+    ]) {
+      Future<void>.delayed(delay, _ensureEnterButtonVisible);
+    }
+  }
+
+  void _ensureEnterButtonVisible() {
+    if (!mounted || !scroll.hasClients || !pinFocus.hasFocus) return;
+    final enterContext = enterButtonKey.currentContext;
+    if (enterContext != null) {
+      unawaited(
+        Scrollable.ensureVisible(
+          enterContext,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          alignment: .92,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        ),
+      );
+      return;
+    }
+    unawaited(
+      scroll.animateTo(
+        scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
+  void _tryAutoUnlock() {
+    if (autoUnlocking || !mounted) return;
+    final typed = pin.text;
+    if (typed.length < 4) return;
+    final expectedLength = widget.app.configuredPinLength;
+    if (expectedLength >= 4 && typed.length < expectedLength) return;
+    final shouldReject = expectedLength >= 4
+        ? typed.length >= expectedLength
+        : typed.length >= 6;
+    if (widget.app.verifyPin(typed)) {
+      autoUnlocking = true;
+      widget.app.unlockApp();
+      return;
+    }
+    if (!shouldReject) return;
+    autoUnlocking = true;
+    unawaited(HapticFeedback.mediumImpact());
+    pin.clear();
+    showModernNotice(
+      context,
+      title: 'PIN incorrecto',
+      message: 'Revisa los dígitos e inténtalo otra vez.',
+    );
+    Future<void>.delayed(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      autoUnlocking = false;
+      _focusPinInput();
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     pin.dispose();
     pinFocus.dispose();
+    scroll.dispose();
     super.dispose();
   }
 
@@ -2482,11 +2858,20 @@ class _LockScreenState extends State<LockScreen> {
   Widget build(BuildContext context) {
     final app = widget.app;
     final t = app.theme;
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
+      resizeToAvoidBottomInset: true,
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(22, 54, 22, 34),
+          controller: scroll,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(
+            22,
+            keyboard > 0 ? 18 : 54,
+            22,
+            42 + keyboard,
+          ),
           children: [
             Container(
               width: 68,
@@ -2599,10 +2984,13 @@ class _LockScreenState extends State<LockScreen> {
                   ),
                   SecurityRecoveryNote(theme: t),
                   const SizedBox(height: 12),
-                  PrimaryActionButton(
-                    theme: t,
-                    label: 'Entrar',
-                    onPressed: unlockWithPin,
+                  KeyedSubtree(
+                    key: enterButtonKey,
+                    child: PrimaryActionButton(
+                      theme: t,
+                      label: 'Entrar',
+                      onPressed: unlockWithPin,
+                    ),
                   ),
                   if (app.biometricEnabled)
                     SecondaryActionButton(
@@ -2668,8 +3056,8 @@ class _StepDot extends StatelessWidget {
 class FluidPageRoute<T> extends PageRouteBuilder<T> {
   FluidPageRoute({required WidgetBuilder builder})
     : super(
-        transitionDuration: const Duration(milliseconds: 430),
-        reverseTransitionDuration: const Duration(milliseconds: 300),
+        transitionDuration: const Duration(milliseconds: 220),
+        reverseTransitionDuration: const Duration(milliseconds: 180),
         pageBuilder: (context, animation, secondaryAnimation) =>
             builder(context),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -2680,13 +3068,10 @@ class FluidPageRoute<T> extends PageRouteBuilder<T> {
           );
           return SlideTransition(
             position: Tween<Offset>(
-              begin: const Offset(.028, 0),
+              begin: const Offset(.018, 0),
               end: Offset.zero,
             ).animate(curve),
-            child: ScaleTransition(
-              scale: Tween<double>(begin: .996, end: 1).animate(curve),
-              child: child,
-            ),
+            child: FadeTransition(opacity: curve, child: child),
           );
         },
       );
@@ -2791,7 +3176,7 @@ void showModernActionSheet(
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(t.dark ? .50 : .28),
-    transitionDuration: const Duration(milliseconds: 260),
+    transitionDuration: const Duration(milliseconds: 190),
     pageBuilder: (dialogContext, _, __) {
       return Align(
         alignment: Alignment.bottomCenter,
@@ -3145,6 +3530,141 @@ class ModernSheetTile extends StatelessWidget {
   }
 }
 
+class UpdatePromptSheet extends StatelessWidget {
+  const UpdatePromptSheet({
+    super.key,
+    required this.theme,
+    required this.versionText,
+    required this.notes,
+    required this.onDownload,
+    required this.onLater,
+  });
+
+  final RTheme theme;
+  final String versionText;
+  final String notes;
+  final VoidCallback onDownload;
+  final VoidCallback onLater;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * .76,
+      ),
+      decoration: BoxDecoration(
+        color: theme.card,
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: theme.border),
+        boxShadow: [
+          BoxShadow(
+            color: CupertinoColors.black.withOpacity(theme.dark ? .38 : .10),
+            blurRadius: 28,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: theme.border,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              Text(
+                'Actualización disponible',
+                style: TextStyle(
+                  color: theme.ink,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Sin Rial $versionText',
+                style: TextStyle(
+                  color: theme.accent,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Text(
+                    'Se abrirá GitHub para descargar el APK y Android te pedirá confirmar la instalación.${notes.isEmpty ? '' : '\n\n$notes'}',
+                    style: TextStyle(
+                      color: theme.muted,
+                      fontSize: 14,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              GestureDetector(
+                onTap: onDownload,
+                child: Container(
+                  height: 56,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: theme.accent,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Text(
+                    'Descargar actualización',
+                    style: TextStyle(
+                      color: CupertinoColors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              GestureDetector(
+                onTap: onLater,
+                child: Container(
+                  height: 54,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: theme.field,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: theme.border),
+                  ),
+                  child: Text(
+                    'Actualizar después',
+                    style: TextStyle(
+                      color: theme.ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 void showModernConfirm(
   BuildContext context, {
   required String title,
@@ -3158,7 +3678,7 @@ void showModernConfirm(
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(t.dark ? .52 : .30),
-    transitionDuration: const Duration(milliseconds: 260),
+    transitionDuration: const Duration(milliseconds: 180),
     pageBuilder: (dialogContext, _, __) {
       return Center(
         child: SafeArea(
@@ -3179,7 +3699,7 @@ void showModernConfirm(
     transitionBuilder: (context, animation, secondaryAnimation, child) {
       final curve = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutBack,
+        curve: Curves.easeOutCubic,
         reverseCurve: Curves.easeInCubic,
       );
       return ScaleTransition(
@@ -3315,7 +3835,7 @@ void showModernNotice(
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(t.dark ? .44 : .24),
-    transitionDuration: const Duration(milliseconds: 220),
+    transitionDuration: const Duration(milliseconds: 170),
     pageBuilder: (dialogContext, _, __) {
       return Center(
         child: SafeArea(
@@ -3461,7 +3981,7 @@ Future<DateTime?> pickModernDate({
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(theme.dark ? .52 : .30),
-    transitionDuration: const Duration(milliseconds: 240),
+    transitionDuration: const Duration(milliseconds: 180),
     pageBuilder: (dialogContext, _, __) {
       final maxHeight = math
           .min(MediaQuery.of(dialogContext).size.height * .78, 560.0)
@@ -3756,7 +4276,7 @@ Future<DateTime?> pickModernTime({
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(theme.dark ? .52 : .30),
-    transitionDuration: const Duration(milliseconds: 220),
+    transitionDuration: const Duration(milliseconds: 170),
     pageBuilder: (dialogContext, _, __) {
       return Align(
         alignment: Alignment.bottomCenter,
@@ -4152,8 +4672,8 @@ class BottomChrome extends StatelessWidget {
     return GestureDetector(
       onTap: () => app.setTab(index),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeOutQuart,
+        duration: const Duration(milliseconds: 190),
+        curve: Curves.easeOutCubic,
         height: 58,
         decoration: BoxDecoration(
           color: active ? t.accent : t.navItem,
@@ -4572,7 +5092,7 @@ class HomeShortcutRow extends StatelessWidget {
       addShortcut(
         HomeShortcutButton(
           theme: t,
-          icon: CupertinoIcons.number_square_fill,
+          icon: material.Icons.calculate_rounded,
           title: 'Calculadora',
           subtitle: 'Tasas y cambios',
           onTap: () => app.pushPage(context, (_) => CalculatorPage(app: app)),
@@ -4932,6 +5452,7 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: const Text('Personalizar inicio'),
@@ -5196,12 +5717,21 @@ class MetricCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              value,
-              style: TextStyle(
-                color: color,
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
             ),
           ],
@@ -5325,89 +5855,109 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
       return sum + app.toUsd(raw, m['currency']?.toString() ?? currency);
     });
     final distribution = accountDistribution(app, accounts, movements);
+    final monthlySummaries = monthlyMovementSummaries(app, accounts, movements);
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: Text(title),
       ),
       child: SafeArea(
-        child: ListView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 34),
-          children: [
-            RCard(
-              theme: t,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${movements.length} operaciones',
-                          style: TextStyle(
-                            color: t.muted,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          app.secureMoney(total, 'USD'),
-                          style: TextStyle(
-                            color: amountColor(t),
-                            fontSize: 30,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(modeIcon, color: amountColor(t), size: 30),
-                ],
-              ),
+        child: softEntrance(
+          ListView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
-            if (distribution.isNotEmpty)
-              AccountDistributionCard(
-                app: app,
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 34),
+            children: [
+              RCard(
                 theme: t,
-                entries: distribution,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${movements.length} operaciones',
+                            style: TextStyle(
+                              color: t.muted,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            app.secureMoney(total, 'USD'),
+                            style: TextStyle(
+                              color: amountColor(t),
+                              fontSize: 30,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(modeIcon, color: amountColor(t), size: 30),
+                  ],
+                ),
               ),
-            SizedBox(
-              height: 42,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemBuilder: (context, index) {
-                  if (index == 0)
+              if (distribution.isNotEmpty)
+                AccountDistributionCard(
+                  app: app,
+                  theme: t,
+                  entries: distribution,
+                ),
+              SizedBox(
+                height: 42,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemBuilder: (context, index) {
+                    if (index == 0) {
+                      return FilterChip(
+                        theme: t,
+                        label: 'Todos',
+                        selected: accountId == 'all',
+                        onTap: () => setState(() => accountId = 'all'),
+                      );
+                    }
+                    final account = accounts[index - 1];
+                    final id = account['id']?.toString() ?? '';
                     return FilterChip(
                       theme: t,
-                      label: 'Todos',
-                      selected: accountId == 'all',
-                      onTap: () => setState(() => accountId = 'all'),
+                      label: accountLabel(account),
+                      selected: accountId == id,
+                      onTap: () => setState(() => accountId = id),
                     );
-                  final account = accounts[index - 1];
-                  final id = account['id']?.toString() ?? '';
-                  return FilterChip(
-                    theme: t,
-                    label: accountLabel(account),
-                    selected: accountId == id,
-                    onTap: () => setState(() => accountId = id),
-                  );
-                },
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemCount: accounts.length + 1,
+                  },
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemCount: accounts.length + 1,
+                ),
               ),
-            ),
-            SectionHeader(theme: t, title: 'Historial'),
-            if (movements.isEmpty)
-              EmptyCard(theme: t, text: 'No hay operaciones para este filtro')
-            else
-              ...movements.map((m) => MovementTile(app: app, movement: m)),
-          ],
+              if (monthlySummaries.isNotEmpty) ...[
+                SectionHeader(theme: t, title: 'Totales por mes'),
+                ...monthlySummaries.map(
+                  (summary) => MonthlyMovementSummaryCard(
+                    app: app,
+                    theme: t,
+                    summary: summary,
+                    accent: amountColor(t),
+                  ),
+                ),
+              ],
+              SectionHeader(theme: t, title: 'Historial'),
+              if (movements.isEmpty)
+                EmptyCard(theme: t, text: 'No hay operaciones para este filtro')
+              else
+                ...movements.map(
+                  (movement) => MovementTile(app: app, movement: movement),
+                ),
+            ],
+          ),
+          offsetY: 6,
+          duration: const Duration(milliseconds: 180),
         ),
       ),
     );
@@ -5500,6 +6050,191 @@ List<AccountDistributionEntry> accountDistribution(
   }
   entries.sort((a, b) => b.amountUsd.compareTo(a.amountUsd));
   return entries;
+}
+
+class MonthlyMovementSummary {
+  const MonthlyMovementSummary({
+    required this.monthKey,
+    required this.totalUsd,
+    required this.accounts,
+  });
+
+  final String monthKey;
+  final double totalUsd;
+  final List<MonthlyAccountMovementSummary> accounts;
+}
+
+class MonthlyAccountMovementSummary {
+  const MonthlyAccountMovementSummary({
+    required this.label,
+    required this.amountUsd,
+    required this.color,
+  });
+
+  final String label;
+  final double amountUsd;
+  final Color color;
+}
+
+List<MonthlyMovementSummary> monthlyMovementSummaries(
+  _RialAppState app,
+  List<Map<String, dynamic>> accounts,
+  List<Map<String, dynamic>> movements,
+) {
+  final accountsById = {
+    for (final account in accounts) account['id']?.toString() ?? '': account,
+  };
+  final totalsByMonth = <String, double>{};
+  final accountTotalsByMonth = <String, Map<String, double>>{};
+  for (final movement in movements) {
+    final month = monthKeyFromDate(movement['date']?.toString());
+    final raw =
+        numberValue(movement['amount']) +
+        (isExpenseType(movement['type']?.toString())
+            ? numberValue(movement['feeAmount'])
+            : 0);
+    if (raw <= 0) continue;
+    final amountUsd = app.toUsd(raw, movement['currency']?.toString() ?? 'USD');
+    totalsByMonth[month] = (totalsByMonth[month] ?? 0) + amountUsd;
+    final accountId = movement['accountId']?.toString() ?? '';
+    final bucket = accountTotalsByMonth.putIfAbsent(
+      month,
+      () => <String, double>{},
+    );
+    bucket[accountId] = (bucket[accountId] ?? 0) + amountUsd;
+  }
+
+  final summaries = <MonthlyMovementSummary>[];
+  for (final month in totalsByMonth.keys) {
+    final accountEntries =
+        (accountTotalsByMonth[month] ?? const <String, double>{}).entries
+            .where((entry) => entry.value > 0)
+            .map((entry) {
+              final account = accountsById[entry.key];
+              return MonthlyAccountMovementSummary(
+                label: account == null
+                    ? 'Sin cuenta'
+                    : accountPrimaryName(account),
+                amountUsd: entry.value,
+                color: account == null
+                    ? CupertinoColors.systemGrey
+                    : accountColor(account),
+              );
+            })
+            .toList()
+          ..sort((a, b) => b.amountUsd.compareTo(a.amountUsd));
+    summaries.add(
+      MonthlyMovementSummary(
+        monthKey: month,
+        totalUsd: totalsByMonth[month] ?? 0,
+        accounts: accountEntries,
+      ),
+    );
+  }
+  summaries.sort((a, b) => b.monthKey.compareTo(a.monthKey));
+  return summaries;
+}
+
+class MonthlyMovementSummaryCard extends StatelessWidget {
+  const MonthlyMovementSummaryCard({
+    super.key,
+    required this.app,
+    required this.theme,
+    required this.summary,
+    required this.accent,
+  });
+
+  final _RialAppState app;
+  final RTheme theme;
+  final MonthlyMovementSummary summary;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return RCard(
+      theme: theme,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  monthLabelForKey(summary.monthKey),
+                  style: TextStyle(
+                    color: theme.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Text(
+                app.secureMoney(summary.totalUsd, 'USD'),
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          if (summary.accounts.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            RatioBar(
+              theme: theme,
+              parts: summary.accounts
+                  .map(
+                    (entry) =>
+                        RatioPart(color: entry.color, value: entry.amountUsd),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            ...summary.accounts.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 11,
+                      height: 11,
+                      decoration: BoxDecoration(
+                        color: entry.color,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        entry.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: theme.muted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      app.secureMoney(entry.amountUsd, 'USD'),
+                      style: TextStyle(
+                        color: theme.ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class AccountDistributionCard extends StatelessWidget {
@@ -6155,6 +6890,7 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: const Text('Plan de gastos'),
@@ -6265,6 +7001,7 @@ class _BudgetItemEditorPageState extends State<BudgetItemEditorPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: Text(editing ? 'Editar gasto' : 'Nuevo gasto'),
@@ -6491,7 +7228,7 @@ class MenuPage extends StatelessWidget {
         ),
         MenuTile(
           theme: t,
-          icon: CupertinoIcons.number_square_fill,
+          icon: material.Icons.calculate_rounded,
           title: 'Calculadora',
           subtitle: 'Tasas BCV y tasa personalizada',
           onTap: () => app.pushPage(context, (_) => CalculatorPage(app: app)),
@@ -6573,6 +7310,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: const Text('Calculadora'),
@@ -6851,6 +7589,7 @@ class AccountsPage extends StatelessWidget {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.85),
         border: null,
         middle: const Text('Cuentas'),
@@ -6961,6 +7700,7 @@ class AccountDetailPage extends StatelessWidget {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: Text(accountPrimaryName(current)),
@@ -7206,6 +7946,7 @@ class SavingsPage extends StatelessWidget {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.85),
         border: null,
         middle: const Text('Metas y ahorros'),
@@ -7407,6 +8148,7 @@ class SavingFundDetailsPage extends StatelessWidget {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: Text(title),
@@ -7694,6 +8436,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: Text(editing ? 'Editar meta' : 'Nueva meta'),
@@ -7807,6 +8550,7 @@ class _SavingsTargetEditorPageState extends State<SavingsTargetEditorPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: const Text('Editar objetivo'),
@@ -7889,6 +8633,7 @@ class _SavingsTransactionPageState extends State<SavingsTransactionPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: Text(widget.withdraw ? 'Retirar' : 'Agregar ahorro'),
@@ -8082,6 +8827,7 @@ class DebtsPage extends StatelessWidget {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.85),
         border: null,
         middle: const Text('Por cobrar / pagar'),
@@ -8182,6 +8928,7 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: const Text('Nuevo registro'),
@@ -8631,6 +9378,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: const Text('Ajustes'),
@@ -8705,7 +9453,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            'Instalada $_appVersionName+$_appBuildNumber · automático cada 6 h',
+                            'Instalada $_appVersionName+$_appBuildNumber · automático al actualizar BCV',
                             style: TextStyle(
                               color: t.muted,
                               fontSize: 13,
@@ -9132,6 +9880,7 @@ class _NameEditorPageState extends State<NameEditorPage> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: const Text('Editar nombre'),
@@ -9442,6 +10191,7 @@ class _MovementEditorState extends State<MovementEditor> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.85),
         border: null,
         middle: Text(
@@ -9904,6 +10654,7 @@ class _AccountEditorState extends State<AccountEditor> {
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.85),
         border: null,
         middle: Text(widget.account == null ? 'Nueva cuenta' : 'Editar cuenta'),
@@ -10049,6 +10800,36 @@ class _AccountEditorState extends State<AccountEditor> {
   }
 }
 
+Widget elegantEntrance(Widget child, {int index = 0}) {
+  return softEntrance(
+    child,
+    offsetY: index == 0 ? 8 : 4,
+    duration: const Duration(milliseconds: 180),
+  );
+}
+
+Widget softEntrance(
+  Widget child, {
+  double offsetY = 8,
+  Duration duration = const Duration(milliseconds: 180),
+}) {
+  return TweenAnimationBuilder<double>(
+    tween: Tween<double>(begin: 0, end: 1),
+    duration: duration,
+    curve: Curves.easeOutCubic,
+    child: child,
+    builder: (context, value, child) {
+      return Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, offsetY * (1 - value)),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
 class AppScroll extends StatelessWidget {
   const AppScroll({
     super.key,
@@ -10125,9 +10906,13 @@ class AppScroll extends StatelessWidget {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: children,
+                  child: softEntrance(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: children,
+                    ),
+                    offsetY: 6,
+                    duration: const Duration(milliseconds: 180),
                   ),
                 ),
               ),
@@ -11493,7 +12278,7 @@ IconData quickActionIcon(String key) {
     case 'account':
       return CupertinoIcons.creditcard_fill;
     case 'calculator':
-      return CupertinoIcons.number_square_fill;
+      return material.Icons.calculate_rounded;
     case 'savings':
       return CupertinoIcons.flag_fill;
     case 'debts':

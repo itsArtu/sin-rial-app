@@ -38,8 +38,6 @@ class EurRateWidgetProvider : AppWidgetProvider() {
 }
 
 object RateWidgetRenderer {
-    private const val STORE_NAME = "la_caprichosa_native_010"
-
     fun updateAll(context: Context, provider: Class<*>, currency: String) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, provider))
@@ -73,13 +71,7 @@ object RateWidgetRenderer {
     }
 
     private fun readState(context: Context): JSONObject {
-        val raw = context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
-            .getString("state", "{}") ?: "{}"
-        return try {
-            JSONObject(raw)
-        } catch (_: Exception) {
-            JSONObject()
-        }
+        return NativeJsonStore.readState(context)
     }
 
     private fun openAppIntent(context: Context, currency: String): PendingIntent {
@@ -101,6 +93,11 @@ object RateWidgetRenderer {
             "violet" -> Color.rgb(120, 87, 166)
             "rose" -> Color.rgb(184, 78, 104)
             "lime" -> Color.rgb(112, 141, 43)
+            "navy" -> Color.rgb(48, 80, 124)
+            "sky" -> Color.rgb(47, 128, 201)
+            "mint" -> Color.rgb(43, 138, 110)
+            "orange" -> Color.rgb(198, 106, 36)
+            "magenta" -> Color.rgb(166, 61, 128)
             "graphite" -> Color.rgb(77, 86, 99)
             else -> Color.rgb(3, 103, 74)
         }

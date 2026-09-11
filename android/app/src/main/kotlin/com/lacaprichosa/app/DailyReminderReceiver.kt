@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -76,11 +75,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
         manager: NotificationManager,
         contentIntent: PendingIntent
     ) {
-        val rawState = context
-            .getSharedPreferences("la_caprichosa_native_010", Context.MODE_PRIVATE)
-            .getString("state", null)
-            ?: return
-        val state = runCatching { JSONObject(rawState) }.getOrNull() ?: return
+        val state = NativeJsonStore.readState(context)
         val debts = state.optJSONArray("debts") ?: return
         val today = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
@@ -126,11 +121,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
     }
 
     private fun dailyMovementReminderEnabled(context: Context): Boolean {
-        val rawState = context
-            .getSharedPreferences("la_caprichosa_native_010", Context.MODE_PRIVATE)
-            .getString("state", null)
-            ?: return true
-        val state = runCatching { JSONObject(rawState) }.getOrNull() ?: return true
+        val state = NativeJsonStore.readState(context)
         return state.optBoolean("dailyMovementReminderEnabled", true)
     }
 

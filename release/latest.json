@@ -1,0 +1,8 @@
+{
+  "version": "2.1.12",
+  "build": 62,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.1.12+62/sin-rial-v2-flutter-2.1.12.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.1.12+62",
+  "sha256": "82502666B38D0418F859227E7119363206C7DA8A3B1FE18DC0AC80978B1FFA27",
+  "notes": "Mejora el widget principal con botones mas grandes y menos espacio vacio. Agrega deteccion segura de WorkManager para que un fallo nativo no cierre la app. Mantiene la misma firma para actualizar sin desinstalar."
+}

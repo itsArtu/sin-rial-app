@@ -7,22 +7,17 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import org.json.JSONObject
 import java.util.Calendar
 
 object DailyReminderScheduler {
     const val CHANNEL_ID = "sin_rial_daily_movements"
     private const val REQUEST_CODE = 1900
-    private const val STORE_NAME = "la_caprichosa_native_010"
 
     fun schedule(context: Context) {
-        val state = context
-            .getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
-            .getString("state", null)
-            ?.let { runCatching { JSONObject(it) }.getOrNull() }
-        val enabled = state?.optBoolean("dailyMovementReminderEnabled", true) ?: true
-        val hour = (state?.optInt("dailyReminderHour", 19) ?: 19).coerceIn(0, 23)
-        val minute = (state?.optInt("dailyReminderMinute", 0) ?: 0).coerceIn(0, 59)
+        val state = NativeJsonStore.readState(context)
+        val enabled = state.optBoolean("dailyMovementReminderEnabled", true)
+        val hour = state.optInt("dailyReminderHour", 19).coerceIn(0, 23)
+        val minute = state.optInt("dailyReminderMinute", 0).coerceIn(0, 59)
         schedule(context, enabled, hour, minute)
     }
 

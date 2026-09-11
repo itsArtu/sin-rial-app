@@ -17,7 +17,6 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterFragmentActivity() {
     private val channelName = "rial/native_state"
-    private val storeName = "la_caprichosa_native_010"
     private var screenReceiver: BroadcastReceiver? = null
 
     companion object {
@@ -28,6 +27,7 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DailyReminderScheduler.schedule(this)
+        RateUpdateScheduler.schedule(this)
         storeLaunchAction(intent)
         registerScreenOffReceiver()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -50,13 +50,30 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
-            val prefs = getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val prefs = NativeJsonStore.prefs(this)
             when (call.method) {
-                "readState" -> result.success(prefs.getString("state", null))
+                "readState" -> result.success(NativeJsonStore.readState(this).toString())
                 "writeState" -> {
                     val state = call.argument<String>("state") ?: "{}"
-                    prefs.edit().putString("state", state).apply()
+                    NativeJsonStore.writeState(this, state)
                     DailyReminderScheduler.schedule(this)
+                    RateUpdateScheduler.schedule(this)
+                    MovementWidgetProvider.updateAll(this)
+                    UsdRateWidgetProvider.updateAll(this)
+                    EurRateWidgetProvider.updateAll(this)
+                    result.success(true)
+                }
+                "writeSplitState" -> {
+                    val state = call.argument<String>("state") ?: "{}"
+                    val rawParts = call.argument<Map<*, *>>("parts") ?: emptyMap<Any, Any>()
+                    val parts = rawParts.mapNotNull { (key, value) ->
+                        val name = key?.toString() ?: return@mapNotNull null
+                        val raw = value?.toString() ?: return@mapNotNull null
+                        name to raw
+                    }.toMap()
+                    NativeJsonStore.writeSplitState(this, state, parts)
+                    DailyReminderScheduler.schedule(this)
+                    RateUpdateScheduler.schedule(this)
                     MovementWidgetProvider.updateAll(this)
                     UsdRateWidgetProvider.updateAll(this)
                     EurRateWidgetProvider.updateAll(this)
@@ -68,6 +85,18 @@ class MainActivity : FlutterFragmentActivity() {
                     val minute = (call.argument<Number>("minute")?.toInt() ?: 0).coerceIn(0, 59)
                     DailyReminderScheduler.schedule(this, enabled, hour, minute)
                     result.success(true)
+                }
+                "scheduleRateUpdate" -> {
+                    result.success(RateUpdateScheduler.schedule(this))
+                }
+                "workManagerStatus" -> {
+                    result.success(
+                        mapOf(
+                            "available" to prefs.getBoolean("work_manager_available", true),
+                            "lastCheckMillis" to prefs.getLong("work_manager_last_check_millis", 0L),
+                            "lastError" to prefs.getString("work_manager_last_error", "")
+                        )
+                    )
                 }
                 "consumeScreenOff" -> {
                     val wasOff = prefs.getBoolean("screen_off_pending", false)
@@ -111,7 +140,7 @@ class MainActivity : FlutterFragmentActivity() {
         screenReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == Intent.ACTION_SCREEN_OFF) {
-                    getSharedPreferences(storeName, Context.MODE_PRIVATE)
+                    NativeJsonStore.prefs(context)
                         .edit()
                         .putBoolean("screen_off_pending", true)
                         .apply()
@@ -125,7 +154,7 @@ class MainActivity : FlutterFragmentActivity() {
         if (intent?.action != ACTION_WIDGET_MOVEMENT) return
         val type = intent.getStringExtra(EXTRA_WIDGET_MOVEMENT_TYPE) ?: return
         if (type != "expense" && type != "income" && type != "transfer" && type != "account") return
-        getSharedPreferences(storeName, Context.MODE_PRIVATE)
+        NativeJsonStore.prefs(this)
             .edit()
             .putString("launch_action", type)
             .apply()

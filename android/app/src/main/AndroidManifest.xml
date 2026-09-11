@@ -36,6 +36,9 @@
             android:name=".DailyReminderReceiver"
             android:exported="false" />
         <receiver
+            android:name=".RateUpdateReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".MovementWidgetProvider"
             android:exported="false">
             <intent-filter>
