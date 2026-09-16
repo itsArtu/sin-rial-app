@@ -2,6 +2,10 @@
 
 App personal de finanzas hecha con Flutter.
 
+Version actual: **Sin Rial 2.2** (`2.2.0+64`).
+
+[Descargar la ultima version](https://github.com/itsArtu/sin-rial-app/releases/latest) · [Novedades de 2.2](release/2.2.md)
+
 ## Actualizaciones por GitHub Releases
 
 La app revisa por defecto el ultimo release publico de:

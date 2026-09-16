@@ -4,11 +4,18 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
+import 'package:decimal/decimal.dart';
+import 'package:fl_chart/fl_chart.dart' as charts;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:local_auth/local_auth.dart';
+
+part 'finance_logic.dart';
+part 'balance_trend.dart';
+part 'movement_filters.dart';
+part 'category_rules.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,11 +27,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '2.1.12',
+  defaultValue: '2.2.0',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 62,
+  defaultValue: 64,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -80,6 +87,8 @@ const List<String> budgetCategories = [
   'Barbería',
   'Suscripciones',
   'Pasaje',
+  'Transporte',
+  'Delivery',
   'Servicios',
   'Salud',
   'Educación',
@@ -87,6 +96,8 @@ const List<String> budgetCategories = [
   'Recarga saldo',
   'Cuotas',
   'Comisiones bancarias',
+  'Pago TDC',
+  'La mamalona',
   'Ahorro',
   'Otro',
 ];
@@ -127,29 +138,31 @@ class ThemeColorOption {
 }
 
 const List<ThemeColorOption> themeColorOptions = [
-  ThemeColorOption('emerald', 'Verde', Color(0xFF03674A), Color(0xFF03674A)),
-  ThemeColorOption('indigo', 'Azul', Color(0xFF4D619B), Color(0xFF6D87D8)),
-  ThemeColorOption('violet', 'Violeta', Color(0xFF7857A6), Color(0xFFA98BDF)),
-  ThemeColorOption('rose', 'Rosa', Color(0xFFB84E68), Color(0xFFE9819A)),
   ThemeColorOption('amber', 'Amarillo', Color(0xFFB98518), Color(0xFFE0AE55)),
-  ThemeColorOption('teal', 'Turquesa', Color(0xFF247B7B), Color(0xFF55BDBD)),
+  ThemeColorOption('indigo', 'Azul', Color(0xFF2463D4), Color(0xFF5B9AFF)),
   ThemeColorOption('cyan', 'Cian', Color(0xFF237C9A), Color(0xFF62C4E2)),
-  ThemeColorOption('coral', 'Coral', Color(0xFFC35C3E), Color(0xFFF28A68)),
-  ThemeColorOption('lime', 'Lima', Color(0xFF708D2B), Color(0xFFA7C957)),
-  ThemeColorOption('wine', 'Rojo', Color(0xFFC41E1E), Color(0xFFE05252)),
-  ThemeColorOption('navy', 'Marino', Color(0xFF30507C), Color(0xFF7DA7E8)),
-  ThemeColorOption('sky', 'Celeste', Color(0xFF2F80C9), Color(0xFF74C0FC)),
-  ThemeColorOption('mint', 'Menta', Color(0xFF2B8A6E), Color(0xFF6ED7B5)),
-  ThemeColorOption('orange', 'Naranja', Color(0xFFC66A24), Color(0xFFFFA45B)),
-  ThemeColorOption('magenta', 'Magenta', Color(0xFFA63D80), Color(0xFFE27AC4)),
   ThemeColorOption('graphite', 'Grafito', Color(0xFF4D5663), Color(0xFF8D99A8)),
+  ThemeColorOption('lime', 'Lima', Color(0xFF708D2B), Color(0xFFA7C957)),
+  ThemeColorOption('violet', 'Morado', Color(0xFF853DC4), Color(0xFFB676E8)),
+  ThemeColorOption('coral', 'Naranja', Color(0xFFC35C3E), Color(0xFFF28A68)),
+  ThemeColorOption('wine', 'Rojo', Color(0xFFC41E1E), Color(0xFFE05252)),
+  ThemeColorOption('rose', 'Rosa', Color(0xFFB84E68), Color(0xFFE9819A)),
+  ThemeColorOption('teal', 'Turquesa', Color(0xFF247B7B), Color(0xFF55BDBD)),
+  ThemeColorOption('emerald', 'Verde', Color(0xFF03674A), Color(0xFF03674A)),
 ];
 
 ThemeColorOption themeColorByKey(String key) {
+  final currentKey = switch (key) {
+    'navy' || 'sky' => 'indigo',
+    'magenta' => 'violet',
+    'orange' => 'coral',
+    'mint' => 'emerald',
+    _ => key,
+  };
   for (final option in themeColorOptions) {
-    if (option.key == key) return option;
+    if (option.key == currentKey) return option;
   }
-  return themeColorOptions.first;
+  return themeColorOptions.firstWhere((option) => option.key == 'emerald');
 }
 
 TextScaler appTextScaler(MediaQueryData media) {
@@ -172,7 +185,10 @@ IconData categoryIcon(String category) {
     case 'suscripciones':
       return CupertinoIcons.play_rectangle_fill;
     case 'pasaje':
+    case 'transporte':
       return CupertinoIcons.bus;
+    case 'delivery':
+      return CupertinoIcons.cube_box_fill;
     case 'servicios':
       return CupertinoIcons.lightbulb_fill;
     case 'salud':
@@ -187,72 +203,15 @@ IconData categoryIcon(String category) {
       return CupertinoIcons.calendar_badge_plus;
     case 'comisiones bancarias':
       return CupertinoIcons.percent;
+    case 'pago tdc':
+      return CupertinoIcons.creditcard_fill;
+    case 'la mamalona':
+      return material.Icons.two_wheeler;
     case 'ahorro':
       return CupertinoIcons.money_dollar_circle_fill;
     default:
       return CupertinoIcons.ellipsis_circle_fill;
   }
-}
-
-String? categoryFromDescription(String value) {
-  final text = normalizeText(value);
-  if (text.trim().isEmpty) return null;
-  bool hasAny(List<String> words) => words.any(text.contains);
-  if (hasAny(['casa', 'alquiler', 'condominio', 'apartamento'])) return 'Casa';
-  if (hasAny(['wifi', 'internet', 'fibra', 'cantv', 'netuno', 'simpletv'])) {
-    return 'Wifi';
-  }
-  if (hasAny([
-    'disney',
-    'netflix',
-    'spotify',
-    'youtube',
-    'prime',
-    'hbo',
-    'max',
-  ])) {
-    return 'Suscripciones';
-  }
-  if (hasAny([
-    'farmatodo',
-    'farmacia',
-    'medicina',
-    'salud',
-    'doctor',
-    'clinica',
-  ])) {
-    return 'Salud';
-  }
-  if (hasAny([
-    'delivery',
-    'comida',
-    'restaurant',
-    'restaurante',
-    'pizza',
-    'almuerzo',
-  ])) {
-    return 'Comida';
-  }
-  if (hasAny(['barber', 'barberia', 'peluqueria', 'corte'])) return 'Barbería';
-  if (hasAny(['pasaje', 'taxi', 'metro', 'bus', 'gasolina', 'transporte'])) {
-    return 'Pasaje';
-  }
-  if (hasAny(['luz', 'agua', 'gas', 'servicio', 'electricidad'])) {
-    return 'Servicios';
-  }
-  if (hasAny(['colegio', 'curso', 'clase', 'educacion', 'universidad'])) {
-    return 'Educación';
-  }
-  if (hasAny(['mercado', 'compras', 'tienda', 'zapato', 'ropa']))
-    return 'Compras';
-  if (hasAny(['recarga', 'saldo', 'telefono', 'datos', 'prepago'])) {
-    return 'Recarga saldo';
-  }
-  if (hasAny(['cuota', 'deuda', 'prestamo', 'credito'])) return 'Cuotas';
-  if (hasAny(['comision', 'banco', 'mantenimiento']))
-    return 'Comisiones bancarias';
-  if (hasAny(['ahorro', 'guardar'])) return 'Ahorro';
-  return null;
 }
 
 class RialBootstrap extends StatefulWidget {
@@ -313,10 +272,12 @@ class NativeStateStore {
     'goals',
     'cards',
     'savingsFunds',
+    'balanceAdjustments',
   ];
 
   static String? _lastMainStateJson;
   static final Map<String, String> _lastPartJson = {};
+  static Future<void> _pendingSave = Future<void>.value();
 
   static Future<Map<String, dynamic>> load() async {
     try {
@@ -334,16 +295,25 @@ class NativeStateStore {
     }
   }
 
-  static Future<void> save(Map<String, dynamic> state) async {
+  static Future<void> save(Map<String, dynamic> state) {
     final splitState = _encodeSplitState(state);
-    if (splitState.mainState == _lastMainStateJson &&
-        splitState.changedParts.isEmpty) {
+    // Capture now; serialize commits so a quick undo cannot be overwritten.
+    _pendingSave = _pendingSave.then((_) => _writeSnapshot(splitState));
+    return _pendingSave;
+  }
+
+  static Future<void> _writeSnapshot(_SplitStatePayload splitState) async {
+    final changedParts = <String, String>{
+      for (final entry in splitState.allParts.entries)
+        if (_lastPartJson[entry.key] != entry.value) entry.key: entry.value,
+    };
+    if (splitState.mainState == _lastMainStateJson && changedParts.isEmpty) {
       return;
     }
     try {
       await _storeChannel.invokeMethod<void>('writeSplitState', {
         'state': splitState.mainState,
-        'parts': splitState.changedParts,
+        'parts': changedParts,
       });
       _lastMainStateJson = splitState.mainState;
       _lastPartJson
@@ -351,10 +321,15 @@ class NativeStateStore {
         ..addAll(splitState.allParts);
     } catch (_) {
       try {
+        final snapshot = (jsonDecode(splitState.mainState) as Map)
+            .cast<String, dynamic>();
+        for (final part in splitState.allParts.entries) {
+          snapshot[part.key] = jsonDecode(part.value);
+        }
         await _storeChannel.invokeMethod<void>('writeState', {
-          'state': jsonEncode(state),
+          'state': jsonEncode(snapshot),
         });
-        _rememberFullState(state);
+        _rememberFullState(snapshot);
       } catch (_) {}
     }
   }
@@ -484,10 +459,16 @@ Map<String, dynamic> defaultState() {
     'previousEurRate': 0.0,
     'eurRateUpdatedAt': '',
     'eurRateEffectiveDate': '',
+    'usdtRate': 0.0,
+    'previousUsdtRate': 0.0,
+    'usdtRateUpdatedAt': '',
     'userName': '',
     'darkMode': true,
     'themeColor': 'emerald',
     'hideAmounts': false,
+    'homeBalanceCurrency': 'USD',
+    'homeBalanceMode': 'total',
+    'homeBalanceChangePeriod': 'day',
     'lastUpdateCheckMillis': 0,
     'dismissedUpdateBuild': 0,
     'dismissedUpdateVersion': '',
@@ -498,7 +479,12 @@ Map<String, dynamic> defaultState() {
     'lastMovementAccountId': '',
     'homeSections': <dynamic>['metrics', 'accounts', 'upcoming', 'recent'],
     'homeQuickActions': <dynamic>['movement', 'transfer', 'account'],
-    'homeShortcutButtons': <dynamic>['calculator', 'debts'],
+    'homeShortcutButtons': <dynamic>[
+      'calculator',
+      'movement',
+      'accounts',
+      'settings',
+    ],
     'securitySetupComplete': false,
     'pinEnabled': false,
     'pinSalt': '',
@@ -512,6 +498,7 @@ Map<String, dynamic> defaultState() {
     'budgets': <dynamic>[],
     'goals': <dynamic>[],
     'cards': <dynamic>[],
+    'balanceAdjustments': <dynamic>[],
     'savingsFunds': <String, dynamic>{},
     'budgetSalary': 0.0,
     'budgetCurrency': 'USD',
@@ -534,8 +521,11 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
     'homeSections',
     'homeQuickActions',
     'homeShortcutButtons',
+    'balanceAdjustments',
   ]) {
-    if (state[key] is! List) state[key] = <dynamic>[];
+    state[key] = state[key] is List
+        ? List<dynamic>.from(state[key])
+        : <dynamic>[];
   }
   state['homeSections'] = sanitizeHomeSections(state['homeSections']);
   state['homeQuickActions'] = sanitizeHomeQuickActions(
@@ -544,6 +534,19 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
   state['homeShortcutButtons'] = sanitizeHomeShortcutButtons(
     state['homeShortcutButtons'],
   );
+  if (!const ['USD', 'EUR', 'USDT'].contains(state['homeBalanceCurrency'])) {
+    state['homeBalanceCurrency'] = 'USD';
+  }
+  if (!const ['total', 'vesOnly'].contains(state['homeBalanceMode'])) {
+    state['homeBalanceMode'] = 'total';
+  }
+  if (!const [
+    'day',
+    'week',
+    'month',
+  ].contains(state['homeBalanceChangePeriod'])) {
+    state['homeBalanceChangePeriod'] = 'day';
+  }
   if (state['budgetPeriodType'] != 'biweekly') {
     state['budgetPeriodType'] = 'monthly';
   }
@@ -596,9 +599,8 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
       (state['pinHash']?.toString().isNotEmpty ?? false) &&
       (state['pinSalt']?.toString().isNotEmpty ?? false);
   state['biometricEnabled'] = state['biometricEnabled'] == true;
-  if (!themeColorOptions.any((option) => option.key == state['themeColor'])) {
-    state['themeColor'] = 'emerald';
-  }
+  state['themeColor'] = themeColorByKey(state['themeColor']?.toString() ?? '')
+      .key;
   final hasLegacyData =
       source.containsKey('userName') ||
       source.containsKey('accounts') ||
@@ -624,20 +626,27 @@ class BcvRateResult {
   const BcvRateResult({
     required this.rate,
     required this.eurRate,
+    required this.usdtRate,
     required this.effectiveDate,
     required this.updatedAt,
   });
 
   final double rate;
   final double eurRate;
+  final double usdtRate;
   final String effectiveDate;
   final String updatedAt;
 }
 
 class BcvRateService {
+  static String lastFailure = 'error';
+  static String usdtFailure = 'error';
   static const _endpoint = 'https://bcv.today/api/v1/rate.json';
+  static const _alcambioEndpoint = 'https://api.alcambio.app/graphql';
 
   static Future<BcvRateResult?> fetch() async {
+    lastFailure = 'error';
+    usdtFailure = 'error';
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.getUrl(Uri.parse(_endpoint));
@@ -648,26 +657,73 @@ class BcvRateService {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
-      final body = await response.transform(utf8.decoder).join();
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 10));
       final decoded = jsonDecode(body);
       if (decoded is! Map) return null;
       final data = decoded.cast<String, dynamic>();
       final rate = _extractUsdRate(data);
-      if (rate <= 0) return null;
+      if (!rate.isFinite || rate <= 0) return null;
       final eurRate = _extractNamedRate(data, 'EUR');
+      final usdtRate = await _fetchUsdtRate(client);
       return BcvRateResult(
         rate: rate,
         eurRate: eurRate,
+        usdtRate: usdtRate,
         effectiveDate:
             data['effective_date']?.toString().trim().isNotEmpty == true
             ? data['effective_date'].toString()
             : data['date']?.toString() ?? isoDate(DateTime.now()),
         updatedAt: data['updated_at']?.toString() ?? '',
       );
+    } on SocketException {
+      lastFailure = 'offline';
+      return null;
     } catch (_) {
       return null;
     } finally {
       client.close(force: true);
+    }
+  }
+
+  static Future<double> _fetchUsdtRate(HttpClient client) async {
+    try {
+      final request = await client.postUrl(Uri.parse(_alcambioEndpoint));
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers.set(HttpHeaders.userAgentHeader, 'Sin Rial');
+      request.write(
+        jsonEncode({
+          'query': 'query getBinanceP2PAverages { getBinanceP2PAverages { sellAverage buyAverage updatedAt } }',
+          'variables': <String, dynamic>{},
+        }),
+      );
+      final response = await request.close().timeout(
+        const Duration(seconds: 10),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) return 0;
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 10));
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) return 0;
+      final data = decoded['data'];
+      if (data is! Map) return 0;
+      final averages = data['getBinanceP2PAverages'];
+      if (averages is! Map) return 0;
+      final sell = numberValue(averages['sellAverage']);
+      final buy = numberValue(averages['buyAverage']);
+      if (!sell.isFinite || !buy.isFinite) return 0;
+      if (sell > 0 && buy > 0) return (sell + buy) / 2;
+      return math.max(sell, buy);
+    } on SocketException {
+      usdtFailure = 'offline';
+      return 0;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -834,14 +890,29 @@ class UpdateService {
     final parsed = parseReleaseVersion(tag);
     final assets = data['assets'];
     Map<String, dynamic>? apkAsset;
+    var apkScore = -1;
     if (assets is List) {
       for (final item in assets) {
         if (item is! Map) continue;
         final asset = item.cast<String, dynamic>();
         final name = asset['name']?.toString().toLowerCase() ?? '';
-        if (name.endsWith('.apk')) {
-          apkAsset = asset;
-          if (!name.contains('debug')) break;
+        final url = asset['browser_download_url']?.toString().trim() ?? '';
+        if (name.endsWith('.apk') && url.isNotEmpty) {
+          var score = 1;
+          if (parsed.version.isNotEmpty &&
+              name.contains(parsed.version.toLowerCase())) {
+            score += 100;
+          }
+          if (parsed.build > 0 && name.contains(parsed.build.toString())) {
+            score += 80;
+          }
+          if (name.contains('universal')) score += 10;
+          if (name.contains('old') || name.contains('previous')) score -= 20;
+          if (score > apkScore) {
+            apkScore = score;
+            apkAsset = asset;
+          }
+          if (score >= 181) break;
         }
       }
     }
@@ -891,6 +962,99 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   bool locked = false;
   DateTime? backgroundedAt;
   String? pendingLaunchAction;
+  final List<_UndoEntry> _undoHistory = [];
+  Timer? _undoTimer;
+  bool _showUndo = false;
+
+  bool get canUndo => _undoHistory.isNotEmpty;
+
+  void undoableMutation(
+    String label,
+    Map<String, Set<String>> records,
+    VoidCallback action,
+  ) {
+    Map<String, dynamic>? lookup(String key, String id) {
+      for (final item in rawList(key)) {
+        if (item is Map && item['id'] == id)
+          return item.cast<String, dynamic>();
+      }
+      return null;
+    }
+
+    final before = <(String, String), Map<String, dynamic>?>{};
+    final positions = <(String, String), int>{};
+    for (final entry in records.entries) {
+      for (final id in entry.value.where((id) => id.isNotEmpty)) {
+        before[(entry.key, id)] = _copyRecord(lookup(entry.key, id));
+        positions[(entry.key, id)] = rawList(entry.key)
+            .indexWhere((item) => item is Map && item['id'] == id);
+      }
+    }
+    mutate(() {
+      action();
+      final changes = <_UndoChange>[];
+      for (final entry in before.entries) {
+        final after = _copyRecord(lookup(entry.key.$1, entry.key.$2));
+        if (jsonEncode(entry.value) != jsonEncode(after)) {
+          changes.add(
+            _UndoChange(
+              entry.key.$1,
+              entry.key.$2,
+              entry.value,
+              after,
+              positions[entry.key] ?? -1,
+            ),
+          );
+        }
+      }
+      if (changes.isNotEmpty) {
+        _undoHistory.add(_UndoEntry(label, changes));
+        if (_undoHistory.length > 20) _undoHistory.removeAt(0);
+        _showUndo = true;
+      }
+    });
+    _undoTimer?.cancel();
+    _undoTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _showUndo = false);
+    });
+  }
+
+  bool undoLastOperation() {
+    if (!canUndo) return false;
+    final entry = _undoHistory.last;
+    for (final change in entry.changes) {
+      final current = maps(change.collection)
+          .where((item) => item['id'] == change.id)
+          .firstOrNull;
+      if (jsonEncode(current) != jsonEncode(change.after)) {
+        _undoHistory.clear();
+        setState(() => _showUndo = false);
+        return false;
+      }
+    }
+    _undoTimer?.cancel();
+    mutate(() {
+      _undoHistory.removeLast();
+      for (final change in entry.changes) {
+        final list = rawList(change.collection);
+        final index = list.indexWhere(
+          (item) => item is Map && item['id'] == change.id,
+        );
+        if (change.before == null) {
+          if (index >= 0) list.removeAt(index);
+        } else if (index >= 0) {
+          list[index] = _copyRecord(change.before);
+        } else {
+          list.insert(
+            change.index.clamp(0, list.length),
+            _copyRecord(change.before),
+          );
+        }
+      }
+      _showUndo = false;
+    });
+    return true;
+  }
 
   @override
   void initState() {
@@ -913,6 +1077,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     rateRefreshTimer?.cancel();
+    _undoTimer?.cancel();
     _pageController.dispose();
     revision.dispose();
     super.dispose();
@@ -986,6 +1151,20 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     return previous > 0 ? previous : 0;
   }
 
+  double get usdtRate {
+    final current = numberValue(state['usdtRate']);
+    if (current > 0) return current;
+    final previous = numberValue(state['previousUsdtRate']);
+    if (previous > 0) return previous;
+    return 0;
+  }
+
+  String get homeBalanceCurrency =>
+      state['homeBalanceCurrency']?.toString() ?? 'USD';
+  String get homeBalanceMode => state['homeBalanceMode']?.toString() ?? 'total';
+  String get homeBalanceChangePeriod =>
+      state['homeBalanceChangePeriod']?.toString() ?? 'day';
+
   bool get hideAmounts => state['hideAmounts'] == true;
   bool get dailyMovementReminderEnabled =>
       state['dailyMovementReminderEnabled'] != false;
@@ -1047,6 +1226,13 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     return null;
   }
 
+  Map<String, dynamic>? movementById(String id) {
+    for (final item in rawList('movements')) {
+      if (item is Map && item['id'] == id) return item.cast<String, dynamic>();
+    }
+    return null;
+  }
+
   void mutate(VoidCallback action) {
     setState(action);
     revision.value++;
@@ -1085,7 +1271,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       unawaited(
         _pageController.animateToPage(
           index,
-          duration: const Duration(milliseconds: 440),
+          duration: const Duration(milliseconds: 260),
           curve: Curves.easeOutCubic,
         ),
       );
@@ -1101,6 +1287,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   }
 
   void resetAllData() {
+    _undoHistory.clear();
+    _undoTimer?.cancel();
+    _showUndo = false;
     final keepDark = dark;
     final keepColor = themeColorKey;
     final keepName = state['userName']?.toString() ?? '';
@@ -1121,6 +1310,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     final keepEurRateEffectiveDate =
         state['eurRateEffectiveDate']?.toString() ?? '';
     final keepEurRateUpdatedAt = state['eurRateUpdatedAt']?.toString() ?? '';
+    final keepUsdtRate = usdtRate;
+    final keepPreviousUsdtRate = numberValue(state['previousUsdtRate']);
+    final keepUsdtRateUpdatedAt = state['usdtRateUpdatedAt']?.toString() ?? '';
     final keepLastRateMillis = numberValue(state['lastRateMillis']);
     setState(() {
       state = defaultState();
@@ -1147,6 +1339,11 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           : keepEurRate;
       state['eurRateEffectiveDate'] = keepEurRateEffectiveDate;
       state['eurRateUpdatedAt'] = keepEurRateUpdatedAt;
+      state['usdtRate'] = keepUsdtRate;
+      state['previousUsdtRate'] = keepPreviousUsdtRate > 0
+          ? keepPreviousUsdtRate
+          : keepUsdtRate;
+      state['usdtRateUpdatedAt'] = keepUsdtRateUpdatedAt;
       state['lastRateMillis'] = keepLastRateMillis.round();
       state['onboardingComplete'] = true;
       tab = 0;
@@ -1158,6 +1355,23 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   }
 
   Future<void> refreshRateIfNeeded({bool checkForUpdates = true}) async {
+    try {
+      final raw = await _storeChannel.invokeMethod<String>('readState');
+      if (raw != null && mounted) {
+        final saved = jsonDecode(raw);
+        if (saved is Map &&
+            numberValue(saved['rateLastAttemptMillis']) >
+                numberValue(state['rateLastAttemptMillis'])) {
+          setState(() {
+            for (final entry in saved.entries) {
+              final key = entry.key.toString();
+              if (rateStateKeys.contains(key)) state[key] = entry.value;
+            }
+            revision.value++;
+          });
+        }
+      }
+    } catch (_) {}
     final effectiveDate = state['rateEffectiveDate']?.toString();
     final legacyDate = state['lastRateDate']?.toString();
     final expected = expectedRateDateKey(DateTime.now());
@@ -1178,7 +1392,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     bool force = false,
     bool checkForUpdates = true,
   }) async {
-    if (rateLoading && !force) return;
+    if (rateLoading) return;
     if (mounted) setState(() => rateLoading = true);
     final result = await BcvRateService.fetch();
     if (!mounted) return;
@@ -1203,7 +1417,38 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           state['eurRateEffectiveDate'] = result.effectiveDate;
           state['eurRateUpdatedAt'] = result.updatedAt;
         }
+        final oldUsdtRate = numberValue(state['usdtRate']);
+        if (result.usdtRate > 0 &&
+            oldUsdtRate > 0 &&
+            (oldUsdtRate - result.usdtRate).abs() > .0001) {
+          state['previousUsdtRate'] = oldUsdtRate;
+        }
+        if (result.usdtRate > 0) {
+          state['usdtRate'] = result.usdtRate;
+          state['usdtRateUpdatedAt'] = result.updatedAt;
+        }
         state['lastRateMillis'] = DateTime.now().millisecondsSinceEpoch;
+        state['rateLastAttemptMillis'] = DateTime.now().millisecondsSinceEpoch;
+        state['rateFetchStatus'] = 'ok';
+        state['eurRateFetchStatus'] = result.eurRate > 0 ? 'ok' : 'error';
+        state['usdtRateFetchStatus'] = result.usdtRate > 0
+            ? 'ok'
+            : BcvRateService.usdtFailure;
+        if (result.eurRate > 0)
+          state['eurLastRateMillis'] = state['lastRateMillis'];
+        if (result.usdtRate > 0)
+          state['usdtLastRateMillis'] = state['lastRateMillis'];
+      });
+    } else {
+      mutate(() {
+        state['rateLastAttemptMillis'] = DateTime.now().millisecondsSinceEpoch;
+        for (final key in [
+          'rateFetchStatus',
+          'eurRateFetchStatus',
+          'usdtRateFetchStatus',
+        ]) {
+          state[key] = BcvRateService.lastFailure;
+        }
       });
     }
     if (mounted) setState(() => rateLoading = false);
@@ -1412,10 +1657,41 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     unawaited(refreshRateIfNeeded());
   }
 
-  double toUsd(double amount, String currency) =>
-      currency == 'USD' ? amount : amount / rate;
-  double toVes(double amount, String currency) =>
-      currency == 'VES' ? amount : amount * rate;
+  double toUsd(double amount, String currency) {
+    if (currency == 'USD') return amount;
+    if (currency == 'USDT')
+      return rate > 0 && usdtRate > 0 ? amount * usdtRate / rate : 0;
+    if (currency == 'EUR') {
+      final eur = eurRate;
+      return eur > 0 && rate > 0 ? (amount * eur) / rate : amount;
+    }
+    return rate > 0 ? amount / rate : 0;
+  }
+
+  double toVes(double amount, String currency) {
+    if (currency == 'VES') return amount;
+    if (currency == 'EUR') {
+      final eur = eurRate;
+      return amount * (eur > 0 ? eur : rate);
+    }
+    if (currency == 'USDT') return amount * usdtRate;
+    return amount * rate;
+  }
+
+  double convertForHome(double amount, String from, String to) {
+    if (from == to) return amount;
+    final ves = toVes(amount, from);
+    if (to == 'VES') return ves;
+    if (to == 'EUR') {
+      final eur = eurRate;
+      return eur > 0 ? ves / eur : (rate > 0 ? ves / rate : 0);
+    }
+    if (to == 'USDT') {
+      final usdt = usdtRate;
+      return usdt > 0 ? ves / usdt : 0;
+    }
+    return rate > 0 ? ves / rate : 0;
+  }
 
   void applyMovement(Map<String, dynamic> movement, int direction) {
     final type = movement['type']?.toString() ?? 'expense';
@@ -1425,19 +1701,29 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (source != null) {
       final balance = numberValue(source['balance']);
       if (type == 'income') {
-        source['balance'] = balance + (amount - fee) * direction;
+        source['balance'] = moneyAdd(
+          balance,
+          moneySubtract(amount, fee) * direction,
+        );
       } else if (type == 'transfer') {
-        source['balance'] = balance - (amount + fee) * direction;
+        source['balance'] = moneySubtract(
+          balance,
+          moneyAdd(amount, fee) * direction,
+        );
       } else {
-        source['balance'] = balance - (amount + fee) * direction;
+        source['balance'] = moneySubtract(
+          balance,
+          moneyAdd(amount, fee) * direction,
+        );
       }
     }
     if (type == 'transfer') {
       final target = accountById(movement['targetAccountId']?.toString() ?? '');
       if (target != null) {
-        target['balance'] =
-            numberValue(target['balance']) +
-            numberValue(movement['targetAmount']) * direction;
+        target['balance'] = moneyAdd(
+          numberValue(target['balance']),
+          numberValue(movement['targetAmount']) * direction,
+        );
       }
     }
   }
@@ -1459,16 +1745,30 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     final movementRate = numberValue(movement['rate']) > 0
         ? numberValue(movement['rate'])
         : rate;
-    final delta = convert(
-      numberValue(movement['amount']),
-      movementCurrency,
-      debtCurrency,
-      movementRate,
+    final converted = moneyRound(
+      convert(
+        numberValue(movement['amount']),
+        movementCurrency,
+        debtCurrency,
+        movementRate,
+      ),
     );
     final total = numberValue(debt['amount']);
+    final delta = direction < 0 && movement.containsKey('debtAppliedAmount')
+        ? numberValue(movement['debtAppliedAmount'])
+        : math.min(
+            converted,
+            direction > 0
+                ? debtRemainingAmount(debt)
+                : numberValue(debt['paidAmount']),
+          );
+    if (direction > 0) movement['debtAppliedAmount'] = delta;
     final paid = math.max(
       0.0,
-      math.min(total, numberValue(debt['paidAmount']) + delta * direction),
+      math.min(
+        total,
+        moneyAdd(numberValue(debt['paidAmount']), delta * direction),
+      ),
     );
     debt['paidAmount'] = paid;
     debt['status'] = paid + .0001 >= total ? 'paid' : 'pending';
@@ -1479,79 +1779,184 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
 
   void markDebtPaid(String id) {
     if (id.isEmpty) return;
-    mutate(() {
-      for (final item in rawList('debts')) {
-        if (item is! Map || item['id'] != id) continue;
-        final debt = item.cast<String, dynamic>();
-        debt['paidAmount'] = numberValue(debt['amount']);
-        debt['status'] = 'paid';
-        debt['paidAt'] = formatDateTime(DateTime.now());
-        return;
-      }
-    });
+    undoableMutation(
+      'Registro marcado como pagado',
+      {
+        'debts': {id},
+      },
+      () {
+        for (final item in rawList('debts')) {
+          if (item is! Map || item['id'] != id) continue;
+          final debt = item.cast<String, dynamic>();
+          debt['paidAmount'] = numberValue(debt['amount']);
+          debt['status'] = 'paid';
+          debt['paidAt'] = formatDateTime(DateTime.now());
+          return;
+        }
+      },
+    );
   }
 
   void saveDebt(Map<String, dynamic> debt, {String? editingId}) {
-    mutate(() {
-      final list = rawList('debts');
-      if (editingId != null && editingId.isNotEmpty) {
-        for (var i = 0; i < list.length; i++) {
-          final item = list[i];
-          if (item is Map && item['id'] == editingId) {
-            debt['id'] = editingId;
-            list[i] = debt;
-            return;
+    debt = Map<String, dynamic>.from(debt);
+    debt['id'] = editingId ?? debt['id'] ?? id();
+    for (final key in [
+      'amount',
+      'paidAmount',
+      'initialAmount',
+      'installmentAmount',
+    ]) {
+      final value = numberValue(debt[key]);
+      if (!value.isFinite || value < 0 || value > 999999999999) {
+        throw const FormatException('Monto fuera de rango');
+      }
+      debt[key] = moneyRound(value);
+    }
+    if (numberValue(debt['amount']) <= 0 ||
+        numberValue(debt['initialAmount']) > numberValue(debt['amount']) ||
+        numberValue(debt['paidAmount']) > numberValue(debt['amount'])) {
+      throw const FormatException(
+        'Revisa el total, la inicial y el monto pagado',
+      );
+    }
+    undoableMutation(
+      editingId == null ? 'Registro creado' : 'Registro editado',
+      {
+        'debts': {debt['id'].toString()},
+      },
+      () {
+        final list = rawList('debts');
+        if (editingId != null && editingId.isNotEmpty) {
+          for (var i = 0; i < list.length; i++) {
+            final item = list[i];
+            if (item is Map && item['id'] == editingId) {
+              debt['id'] = editingId;
+              list[i] = debt;
+              return;
+            }
           }
         }
-      }
-      debt['id'] = debt['id'] ?? id();
-      list.add(debt);
-    });
+        debt['id'] = debt['id'] ?? id();
+        list.add(debt);
+      },
+    );
   }
 
   void deleteDebt(String id) {
     if (id.isEmpty) return;
-    mutate(() {
-      rawList('debts').removeWhere((item) => item is Map && item['id'] == id);
-    });
+    undoableMutation(
+      'Registro eliminado',
+      {
+        'debts': {id},
+      },
+      () {
+        rawList('debts').removeWhere((item) => item is Map && item['id'] == id);
+      },
+    );
   }
 
   void saveMovement(Map<String, dynamic> movement, {String? editingId}) {
-    mutate(() {
-      final list = rawList('movements');
-      final type = movement['type']?.toString() ?? '';
-      if (type == 'income' || isExpenseType(type)) {
-        state['lastMovementAccountId'] =
-            movement['accountId']?.toString() ?? '';
-      }
-      if (editingId != null) {
-        for (var i = 0; i < list.length; i++) {
-          final item = list[i];
-          if (item is Map && item['id'] == editingId) {
-            applyMovement(item.cast<String, dynamic>(), -1);
-            applyDebtPayment(item.cast<String, dynamic>(), -1);
-            movement['id'] = editingId;
-            list[i] = movement;
-            applyMovement(movement, 1);
-            applyDebtPayment(movement, 1);
-            return;
+    movement = Map<String, dynamic>.from(movement);
+    movement['id'] = editingId ?? movement['id'] ?? id();
+    if (movement['type'] == 'expense' &&
+        isBankCommissionCategory(movement['category']?.toString() ?? '')) {
+      movement['feeAmount'] = 0.0;
+      movement['feeMode'] = 'none';
+      movement['paymentMethod'] = '';
+      movement['bankTransferScope'] = '';
+    }
+    for (final key in ['amount', 'feeAmount', 'targetAmount']) {
+      final value = numberValue(movement[key]);
+      if (!value.isFinite || value < 0 || value > 999999999999)
+        throw const FormatException('Monto fuera de rango');
+      movement[key] = moneyRound(value);
+    }
+    if (numberValue(movement['amount']) <= 0)
+      throw const FormatException('El monto debe ser mayor a cero');
+    if (movement['type'] == 'income' &&
+        numberValue(movement['feeAmount']) > numberValue(movement['amount'])) {
+      throw const FormatException('La comisión no puede superar el ingreso');
+    }
+    final previous = editingId == null ? null : movementById(editingId);
+    if (editingId == null && movementById(movement['id'].toString()) != null) {
+      throw const FormatException('El movimiento ya fue registrado');
+    }
+    if (editingId != null && previous == null)
+      throw const FormatException('El movimiento ya no existe');
+    if (accountById(movement['accountId']?.toString() ?? '') == null)
+      throw const FormatException('La cuenta ya no existe');
+    if (movement['type'] == 'transfer' &&
+        (movement['accountId'] == movement['targetAccountId'] ||
+            accountById(movement['targetAccountId']?.toString() ?? '') ==
+                null ||
+            numberValue(movement['targetAmount']) <= 0)) {
+      throw const FormatException('Destino o monto de transferencia no válido');
+    }
+    undoableMutation(
+      editingId == null ? 'Movimiento registrado' : 'Movimiento editado',
+      {
+        'movements': {movement['id'].toString()},
+        'accounts': {
+          movement['accountId']?.toString() ?? '',
+          movement['targetAccountId']?.toString() ?? '',
+          previous?['accountId']?.toString() ?? '',
+          previous?['targetAccountId']?.toString() ?? '',
+        },
+        'debts': {
+          movement['debtId']?.toString() ?? '',
+          previous?['debtId']?.toString() ?? '',
+        },
+      },
+      () {
+        final list = rawList('movements');
+        final type = movement['type']?.toString() ?? '';
+        if (type == 'income' || isExpenseType(type)) {
+          state['lastMovementAccountId'] =
+              movement['accountId']?.toString() ?? '';
+        }
+        if (editingId != null) {
+          for (var i = 0; i < list.length; i++) {
+            final item = list[i];
+            if (item is Map && item['id'] == editingId) {
+              applyMovement(item.cast<String, dynamic>(), -1);
+              applyDebtPayment(item.cast<String, dynamic>(), -1);
+              movement['id'] = editingId;
+              list[i] = movement;
+              applyMovement(movement, 1);
+              applyDebtPayment(movement, 1);
+              return;
+            }
           }
         }
-      }
-      movement['id'] = movement['id'] ?? id();
-      list.add(movement);
-      applyMovement(movement, 1);
-      applyDebtPayment(movement, 1);
-    });
+        movement['id'] = movement['id'] ?? id();
+        list.add(movement);
+        applyMovement(movement, 1);
+        applyDebtPayment(movement, 1);
+      },
+    );
   }
 
   void deleteMovement(Map<String, dynamic> movement) {
-    mutate(() {
-      applyMovement(movement, -1);
-      applyDebtPayment(movement, -1);
-      rawList('movements')
-          .removeWhere((item) => item is Map && item['id'] == movement['id']);
-    });
+    final current = movementById(movement['id']?.toString() ?? '');
+    if (current == null) return;
+    movement = current;
+    undoableMutation(
+      'Movimiento eliminado',
+      {
+        'movements': {movement['id'].toString()},
+        'accounts': {
+          movement['accountId']?.toString() ?? '',
+          movement['targetAccountId']?.toString() ?? '',
+        },
+        'debts': {movement['debtId']?.toString() ?? ''},
+      },
+      () {
+        applyMovement(movement, -1);
+        applyDebtPayment(movement, -1);
+        rawList('movements')
+            .removeWhere((item) => item is Map && item['id'] == movement['id']);
+      },
+    );
   }
 
   void saveAccount(Map<String, dynamic> account, {String? editingId}) {
@@ -1562,12 +1967,25 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           final item = list[i];
           if (item is Map && item['id'] == editingId) {
             account['id'] = editingId;
+            account['createdAt'] = item['createdAt'];
+            final delta = moneySubtract(
+              numberValue(account['balance']),
+              numberValue(item['balance']),
+            );
+            if (delta != 0)
+              rawList('balanceAdjustments').add({
+                'id': id(),
+                'accountId': editingId,
+                'amount': delta,
+                'date': DateTime.now().toIso8601String(),
+              });
             list[i] = account;
             return;
           }
         }
       }
       account['id'] = account['id'] ?? id();
+      account['createdAt'] = DateTime.now().toIso8601String();
       list.add(account);
     });
   }
@@ -1663,6 +2081,54 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
               fit: StackFit.expand,
               children: [
                 child ?? const SizedBox.shrink(),
+                if (!locked &&
+                    _showUndo &&
+                    canUndo &&
+                    MediaQuery.of(context).viewInsets.bottom == 0)
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: MediaQuery.of(context).padding.bottom + 96,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: t.field,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: t.border),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _undoHistory.last.label,
+                              maxLines: 2,
+                              style: TextStyle(color: t.ink, fontSize: 13),
+                            ),
+                          ),
+                          CupertinoButton(
+                            onPressed: undoLastOperation,
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(CupertinoIcons.arrow_uturn_left, size: 18),
+                                SizedBox(width: 6),
+                                Text('Deshacer'),
+                              ],
+                            ),
+                          ),
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: () => setState(() => _showUndo = false),
+                            child: Icon(
+                              CupertinoIcons.xmark,
+                              size: 16,
+                              color: t.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (shouldShowLockOverlay)
                   Positioned.fill(
                     child: PopScope(
@@ -1830,8 +2296,16 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           defaultAmount: defaultAmount,
           lockAccount: lockAccount,
           onSave: (next) {
-            saveMovement(next, editingId: movement?['id']?.toString());
-            Navigator.pop(routeContext);
+            try {
+              saveMovement(next, editingId: movement?['id']?.toString());
+              Navigator.pop(routeContext);
+            } on FormatException catch (error) {
+              showModernNotice(
+                routeContext,
+                title: 'Revisa el movimiento',
+                message: error.message,
+              );
+            }
           },
         ),
       ),
@@ -1898,50 +2372,17 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   }
 }
 
-class _AppEntrance extends StatefulWidget {
+class _AppEntrance extends StatelessWidget {
   const _AppEntrance({required this.child});
 
   final Widget child;
 
   @override
-  State<_AppEntrance> createState() => _AppEntranceState();
-}
-
-class _AppEntranceState extends State<_AppEntrance>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController controller;
-  late final Animation<double> curve;
-
-  @override
-  void initState() {
-    super.initState();
-    controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 360),
-    )..forward();
-    curve = CurvedAnimation(parent: controller, curve: Curves.easeOutCubic);
-  }
-
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: curve,
-      child: widget.child,
-      builder: (context, child) {
-        final value = curve.value;
-        return Transform.translate(
-          offset: Offset(0, (1 - value) * 10),
-          child: Transform.scale(scale: .992 + (.008 * value), child: child),
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => softEntrance(
+    child,
+    offsetY: 6,
+    duration: const Duration(milliseconds: 220),
+  );
 }
 
 class _OnboardingPage extends StatefulWidget {
@@ -3140,17 +3581,13 @@ class FluidPageRoute<T> extends PageRouteBuilder<T> {
         pageBuilder: (context, animation, secondaryAnimation) =>
             builder(context),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curve = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-            reverseCurve: Curves.easeInCubic,
-          );
+          if (MediaQuery.disableAnimationsOf(context)) return child;
           return SlideTransition(
             position: Tween<Offset>(
-              begin: const Offset(.018, 0),
+              begin: const Offset(.025, 0),
               end: Offset.zero,
-            ).animate(curve),
-            child: FadeTransition(opacity: curve, child: child),
+            ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation),
+            child: RepaintBoundary(child: child),
           );
         },
       );
@@ -4794,13 +5231,36 @@ class HomePage extends StatelessWidget {
     final t = app.theme;
     final accounts = app.maps('accounts');
     final movements = sortedMovements(app.maps('movements'));
+    final homeCurrency = app.homeBalanceCurrency;
+    final homeBalanceMode = app.homeBalanceMode;
+    final balanceAccounts = homeBalanceMode == 'vesOnly'
+        ? accounts.where((a) => a['currency'] == 'VES').toList()
+        : accounts;
     final usd = accounts
         .where((a) => a['currency'] == 'USD')
         .fold<double>(0, (sum, a) => sum + numberValue(a['balance']));
     final ves = accounts
         .where((a) => a['currency'] == 'VES')
         .fold<double>(0, (sum, a) => sum + numberValue(a['balance']));
-    final totalUsd = usd + app.toUsd(ves, 'VES');
+    final totalHome = balanceAccounts.fold<double>(
+      0,
+      (sum, account) =>
+          sum +
+          app.convertForHome(
+            numberValue(account['balance']),
+            account['currency']?.toString() ?? 'USD',
+            homeCurrency,
+          ),
+    );
+    final totalHomeVes = balanceAccounts.fold<double>(
+      0,
+      (sum, account) =>
+          sum +
+          app.toVes(
+            numberValue(account['balance']),
+            account['currency']?.toString() ?? 'USD',
+          ),
+    );
     final income = movements
         .where((m) => m['type'] == 'income')
         .fold<double>(
@@ -4825,7 +5285,19 @@ class HomePage extends StatelessWidget {
               );
         });
     final userName = app.state['userName']?.toString().trim() ?? '';
-    final changePercent = balanceChangePercent(movements, totalUsd, app.rate);
+    final trend = buildBalanceTrend(
+      accounts: balanceAccounts.toList(),
+      movements: movements,
+      adjustments: app.maps('balanceAdjustments'),
+      convertValue: (amount, currency) =>
+          app.convertForHome(amount, currency, homeCurrency),
+      period: app.homeBalanceChangePeriod,
+      now: DateTime.now(),
+    );
+    final opening = trend.first.amount;
+    final changePercent = opening.abs() < .01
+        ? 0.0
+        : (trend.last.amount - opening) / opening.abs() * 100;
     final sections = <Widget>[];
     for (final section in sanitizeHomeSections(app.state['homeSections'])) {
       if (section == 'metrics') {
@@ -4871,17 +5343,19 @@ class HomePage extends StatelessWidget {
         ]);
       } else if (section == 'accounts') {
         sections.addAll([
-          SectionHeader(theme: t, title: 'Cuentas'),
+          SectionHeader(theme: t, title: 'Mis balances'),
           SizedBox(
-            height: 172,
+            height: 178,
             child: accounts.isEmpty
                 ? EmptyCard(theme: t, text: 'Agrega tu primera cuenta')
                 : ListView.separated(
                     scrollDirection: Axis.horizontal,
-                    itemCount: accounts.length,
+                    itemCount: 2,
                     separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (_, index) =>
-                        AccountMiniCard(app: app, account: accounts[index]),
+                    itemBuilder: (_, index) {
+                      final currency = index == 0 ? 'VES' : 'USD';
+                      return BalanceGroupCard(app: app, currency: currency);
+                    },
                   ),
           ),
         ]);
@@ -4917,15 +5391,23 @@ class HomePage extends StatelessWidget {
             children: [
               BalanceHero(
                 theme: t,
-                totalUsd: totalUsd,
-                totalVes: app.toVes(totalUsd, 'USD'),
+                total: totalHome,
+                totalVes: totalHomeVes,
                 usdBalance: usd,
                 vesBalance: ves,
+                currency: homeCurrency,
                 rate: app.rate,
+                eurRate: app.eurRate,
+                usdtRate: app.usdtRate,
                 hideAmounts: app.hideAmounts,
                 changePercent: changePercent,
+                changePeriod: app.homeBalanceChangePeriod,
+                trend: trend,
+                rateState: app.state,
                 loadingRate: app.rateLoading,
                 onRefreshRate: () => app.refreshRate(manual: true, force: true),
+                onCurrencyChanged: (value) =>
+                    app.mutate(() => app.state['homeBalanceCurrency'] = value),
                 onCustomize: () =>
                     app.pushPage(context, (_) => HomeCustomizePage(app: app)),
                 onTogglePrivacy: () => app.mutate(
@@ -4959,175 +5441,215 @@ class BalanceHero extends StatelessWidget {
   const BalanceHero({
     super.key,
     required this.theme,
-    required this.totalUsd,
+    required this.total,
     required this.totalVes,
     required this.usdBalance,
     required this.vesBalance,
+    required this.currency,
     required this.rate,
+    required this.eurRate,
+    required this.usdtRate,
     required this.hideAmounts,
     required this.changePercent,
+    required this.changePeriod,
     required this.loadingRate,
     required this.onRefreshRate,
+    required this.onCurrencyChanged,
     required this.onCustomize,
     required this.onTogglePrivacy,
+    this.trend = const [],
+    this.rateState = const {},
   });
   final RTheme theme;
-  final double totalUsd;
+  final double total;
   final double totalVes;
   final double usdBalance;
   final double vesBalance;
+  final String currency;
   final double rate;
+  final double eurRate;
+  final double usdtRate;
   final bool hideAmounts;
   final double changePercent;
+  final String changePeriod;
   final bool loadingRate;
   final VoidCallback onRefreshRate;
+  final ValueChanged<String> onCurrencyChanged;
   final VoidCallback onCustomize;
   final VoidCallback onTogglePrivacy;
+  final List<BalancePoint> trend;
+  final Map<String, dynamic> rateState;
 
   @override
   Widget build(BuildContext context) {
+    final periodText = switch (changePeriod) {
+      'week' => 'últimos 7 días',
+      'month' => 'este mes',
+      _ => 'hoy',
+    };
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(30),
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [theme.heroStart, theme.heroMiddle, theme.heroEnd],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            theme.accent.withOpacity(theme.dark ? .42 : .24),
+            theme.bg.withOpacity(.10),
+          ],
         ),
-        border: Border.all(color: const Color(0x22FFFFFF)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Expanded(
-                child: Text(
-                  'Balance disponible',
-                  style: TextStyle(
-                    color: Color(0xCCFFFFFF),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
+              Text(
+                'Mi balance',
+                style: TextStyle(
+                  color: theme.muted,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-              BalanceChangeBadge(percent: changePercent),
+              const SizedBox(width: 8),
+              HeroPrivacyButton(hidden: hideAmounts, onTap: onTogglePrivacy),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 6),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: Text(
-                  _money(totalUsd, 'USD'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: CupertinoColors.white,
-                    fontSize: 46,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    (currency == 'USDT' && usdtRate <= 0) ||
+                            (currency == 'EUR' && eurRate <= 0)
+                        ? 'Sin tasa'
+                        : _money(total, currency),
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.visible,
+                    style: TextStyle(
+                      color: theme.ink,
+                      fontSize: 42,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              HeroPrivacyButton(hidden: hideAmounts, onTap: onTogglePrivacy),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            _money(totalVes, 'VES'),
-            style: const TextStyle(
-              color: Color(0xDDFFFFFF),
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 6),
+          if (hideAmounts)
+            const SizedBox(height: 24)
+          else if (trend.isNotEmpty &&
+              trend.first.amount.abs() < .01 &&
+              trend.last.amount.abs() >= .01)
+            Text(
+              'Sin saldo inicial · $periodText',
+              style: TextStyle(color: theme.muted, fontSize: 12),
+            )
+          else
+            BalanceChangeBadge(percent: changePercent, suffix: periodText),
+          const SizedBox(height: 6),
           Row(
-            children: [
-              Expanded(
-                child: BalanceCurrencyChip(
-                  label: 'Dólares',
-                  value: _money(usdBalance, 'USD'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: BalanceCurrencyChip(
-                  label: 'Bolívares',
-                  value: _money(vesBalance, 'VES'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Flexible(
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(12, 7, 7, 7),
-                  decoration: BoxDecoration(
-                    color: const Color(0x22FFFFFF),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0x33FFFFFF)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          loadingRate
-                              ? 'BCV actualizando'
-                              : 'BCV ${decimal(rate)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: CupertinoColors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: loadingRate ? null : onRefreshRate,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: const Color(0x22FFFFFF),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0x26FFFFFF)),
-                          ),
-                          child: Center(
-                            child: loadingRate
-                                ? const CupertinoActivityIndicator(
-                                    color: CupertinoColors.white,
-                                    radius: 6,
-                                  )
-                                : const Icon(
-                                    CupertinoIcons.arrow_clockwise,
-                                    color: CupertinoColors.white,
-                                    size: 15,
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ],
+                child: Text(
+                  rateLine(currency),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: theme.muted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
+              Semantics(
+                label: loadingRate ? 'Actualizando tasas' : 'Actualizar tasas',
+                child: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(36, 36),
+                  onPressed: loadingRate ? null : onRefreshRate,
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: Center(
+                      child: loadingRate
+                          ? CupertinoActivityIndicator(
+                              color: theme.muted,
+                              radius: 8,
+                            )
+                          : Icon(
+                              CupertinoIcons.arrow_clockwise,
+                              color: theme.muted,
+                              size: 18,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (rateState.isNotEmpty)
+            RateStatus(
+              theme: theme,
+              state: rateState,
+              currency: currency,
+              loading: loadingRate,
+            ),
+          const SizedBox(height: 10),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              BalanceCurrencyChip(
+                label: 'USD',
+                value: '',
+                selected: currency == 'USD',
+                onTap: () => onCurrencyChanged('USD'),
+              ),
+              BalanceCurrencyChip(
+                label: 'EUR',
+                value: '',
+                selected: currency == 'EUR',
+                onTap: () => onCurrencyChanged('EUR'),
+              ),
+              BalanceCurrencyChip(
+                label: 'USDT',
+                value: '',
+                selected: currency == 'USDT',
+                onTap: () => onCurrencyChanged('USDT'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (trend.isNotEmpty)
+            BalanceTrend(
+              points: trend,
+              theme: theme,
+              currency: currency,
+              hidden: hideAmounts,
+              period: changePeriod,
+            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               GestureDetector(
                 onTap: onCustomize,
                 child: Container(
-                  width: 42,
-                  height: 42,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: const Color(0x22FFFFFF),
                     borderRadius: BorderRadius.circular(16),
@@ -5149,6 +5671,16 @@ class BalanceHero extends StatelessWidget {
 
   String _money(double value, String currency) {
     return hideAmounts ? hiddenMoney(currency) : money(value, currency);
+  }
+
+  String rateLine(String selectedCurrency) {
+    if (selectedCurrency == 'EUR') {
+      return eurRate > 0 ? 'Bs ${decimal(eurRate)} / EUR' : 'Sin tasa EUR';
+    }
+    if (selectedCurrency == 'USDT') {
+      return usdtRate > 0 ? 'Bs ${decimal(usdtRate)} / USDT' : 'Sin tasa USDT';
+    }
+    return rate > 0 ? 'Bs ${decimal(rate)} / USD' : 'Sin tasa BCV';
   }
 }
 
@@ -5181,6 +5713,29 @@ class HomeShortcutRow extends StatelessWidget {
         ),
       );
     }
+    if (enabled.contains('movement')) {
+      addShortcut(
+        HomeShortcutButton(
+          theme: t,
+          icon: CupertinoIcons.arrow_up_arrow_down,
+          title: 'Movimientos',
+          subtitle: 'Ingresos y gastos',
+          onTap: () =>
+              app.pushPage(context, (_) => MovementHistoryPage(app: app)),
+        ),
+      );
+    }
+    if (enabled.contains('accounts')) {
+      addShortcut(
+        HomeShortcutButton(
+          theme: t,
+          icon: CupertinoIcons.creditcard_fill,
+          title: 'Cuentas',
+          subtitle: 'Balances',
+          onTap: () => app.pushPage(context, (_) => AccountsPage(app: app)),
+        ),
+      );
+    }
     if (enabled.contains('debts')) {
       addShortcut(
         HomeShortcutButton(
@@ -5192,11 +5747,25 @@ class HomeShortcutRow extends StatelessWidget {
         ),
       );
     }
+    if (enabled.contains('settings')) {
+      addShortcut(
+        HomeShortcutButton(
+          theme: t,
+          icon: CupertinoIcons.gear_alt_fill,
+          title: 'Ajustes',
+          subtitle: 'Preferencias',
+          onTap: () => app.pushPage(context, (_) => SettingsPage(app: app)),
+        ),
+      );
+    }
     if (children.isEmpty) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.only(top: 14),
-      child: Row(children: children),
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
     );
   }
 }
@@ -5222,73 +5791,55 @@ class HomeShortcutButton extends StatelessWidget {
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: onTap,
-      child: Container(
-        height: 72,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: theme.card,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: theme.border),
-          boxShadow: [
-            BoxShadow(
-              color: CupertinoColors.black.withOpacity(theme.dark ? .12 : .05),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: theme.accent.withOpacity(.14),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Icon(icon, color: theme.accent, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: theme.ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: theme.card,
+              shape: BoxShape.circle,
+              border: Border.all(color: theme.border),
+              boxShadow: [
+                BoxShadow(
+                  color: CupertinoColors.black.withOpacity(
+                    theme.dark ? .16 : .06,
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: theme.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-          ],
-        ),
+            child: Icon(icon, color: theme.ink, size: 24),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: theme.ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class BalanceChangeBadge extends StatelessWidget {
-  const BalanceChangeBadge({super.key, required this.percent});
+  const BalanceChangeBadge({
+    super.key,
+    required this.percent,
+    this.suffix = '',
+  });
 
   final double percent;
+  final String suffix;
 
   @override
   Widget build(BuildContext context) {
@@ -5310,7 +5861,7 @@ class BalanceChangeBadge extends StatelessWidget {
           Icon(icon, color: color, size: 12),
           const SizedBox(width: 4),
           Text(
-            '${positive ? '+' : ''}${percent.toStringAsFixed(1).replaceAll('.', ',')}%',
+            '${positive ? '+' : ''}${percent.toStringAsFixed(1).replaceAll('.', ',')}%${suffix.isEmpty ? '' : ' $suffix'}',
             style: TextStyle(
               color: color,
               fontSize: 12,
@@ -5340,8 +5891,8 @@ class HeroPrivacyButton extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
-        width: 42,
-        height: 42,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
           color: const Color(0x22FFFFFF),
           borderRadius: BorderRadius.circular(16),
@@ -5350,7 +5901,7 @@ class HeroPrivacyButton extends StatelessWidget {
         child: Icon(
           hidden ? CupertinoIcons.eye_slash_fill : CupertinoIcons.eye_fill,
           color: CupertinoColors.white,
-          size: 20,
+          size: 18,
         ),
       ),
     );
@@ -5362,47 +5913,64 @@ class BalanceCurrencyChip extends StatelessWidget {
     super.key,
     required this.label,
     required this.value,
+    this.selected = false,
+    this.onTap,
   });
 
   final String label;
   final String value;
+  final bool selected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    final child = AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      constraints: const BoxConstraints(minWidth: 68, minHeight: 36),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0x1FFFFFFF),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0x2EFFFFFF)),
+        color: selected ? const Color(0xD8FFFFFF) : const Color(0x20FFFFFF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: selected ? const Color(0xFFFFFFFF) : const Color(0x24FFFFFF),
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xBFFFFFFF),
-              fontSize: 12,
+            style: TextStyle(
+              color: selected
+                  ? const Color(0xFF111418)
+                  : const Color(0xCCFFFFFF),
+              fontSize: 14,
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: CupertinoColors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
+          if (value.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: selected
+                    ? const Color(0xFF111418)
+                    : CupertinoColors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
+    return GestureDetector(onTap: onTap, child: child);
   }
 }
 
@@ -5521,6 +6089,7 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
   late List<String> sections;
   late List<String> actions;
   late List<String> shortcuts;
+  int tab = 0;
 
   @override
   void initState() {
@@ -5551,67 +6120,21 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(18, 20, 18, 118),
                 children: [
-                  SectionHeader(theme: t, title: 'Secciones'),
-                  ...homeSectionOptions.map((option) {
-                    final key = option.first;
-                    final enabled = sections.contains(key);
-                    return HomeCustomizeTile(
-                      theme: t,
-                      title: option.last,
-                      enabled: enabled,
-                      canMoveUp: enabled && sections.indexOf(key) > 0,
-                      canMoveDown:
-                          enabled &&
-                          sections.indexOf(key) < sections.length - 1,
-                      onToggle: () => setState(() {
-                        if (enabled) {
-                          sections.remove(key);
-                        } else {
-                          sections.add(key);
-                        }
-                      }),
-                      onUp: () => moveHomeItem(key, -1),
-                      onDown: () => moveHomeItem(key, 1),
-                    );
-                  }),
-                  SectionHeader(theme: t, title: 'Accesos de inicio'),
-                  ...homeShortcutOptions.map((option) {
-                    final key = option.first;
-                    final enabled = shortcuts.contains(key);
-                    return SettingsSwitchTile(
-                      theme: t,
-                      icon: quickActionIcon(key),
-                      title: option.last,
-                      subtitle: quickActionSubtitle(key),
-                      value: enabled,
-                      onTap: () => setState(() {
-                        if (enabled) {
-                          shortcuts.remove(key);
-                        } else {
-                          shortcuts.add(key);
-                        }
-                      }),
-                    );
-                  }),
-                  SectionHeader(theme: t, title: 'Botones de crear'),
-                  ...homeQuickActionOptions.map((option) {
-                    final key = option.first;
-                    final enabled = actions.contains(key);
-                    return SettingsSwitchTile(
-                      theme: t,
-                      icon: quickActionIcon(key),
-                      title: option.last,
-                      subtitle: quickActionSubtitle(key),
-                      value: enabled,
-                      onTap: () => setState(() {
-                        if (enabled) {
-                          actions.remove(key);
-                        } else {
-                          actions.add(key);
-                        }
-                      }),
-                    );
-                  }),
+                  CupertinoSlidingSegmentedControl<int>(
+                    groupValue: tab,
+                    backgroundColor: t.field,
+                    thumbColor: t.card,
+                    children: {
+                      0: segmentedLabel(t, 'Accesos', tab == 0),
+                      1: segmentedLabel(t, 'Widgets', tab == 1),
+                    },
+                    onValueChanged: (value) {
+                      if (value == null) return;
+                      setState(() => tab = value);
+                    },
+                  ),
+                  const SizedBox(height: 22),
+                  if (tab == 0) ...accessTab(t) else ...widgetsTab(t),
                 ],
               ),
             ),
@@ -5636,6 +6159,306 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget segmentedLabel(RTheme t, String label, bool selected) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: selected ? t.ink : t.muted,
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  List<Widget> accessTab(RTheme t) {
+    final hidden = homeShortcutOptions
+        .where((option) => !shortcuts.contains(option.first))
+        .toList();
+    return [
+      customizeBlockTitle(
+        t,
+        CupertinoIcons.eye_fill,
+        'Mostrados',
+        '${shortcuts.length}/${homeShortcutOptions.length}',
+      ),
+      Text(
+        'Toca un acceso para ocultarlo.',
+        style: TextStyle(
+          color: t.muted,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      const SizedBox(height: 18),
+      Wrap(
+        spacing: 18,
+        runSpacing: 20,
+        children: shortcuts.map((key) => shortcutBubble(t, key)).toList(),
+      ),
+      customizeDivider(t),
+      customizeBlockTitle(t, CupertinoIcons.eye_slash_fill, 'Ocultos', ''),
+      if (hidden.isEmpty)
+        EmptyCard(theme: t, text: 'No tienes accesos ocultos')
+      else
+        ...hidden.map(
+          (option) => hiddenCustomizeRow(
+            t,
+            keyName: option.first,
+            title: option.last,
+            subtitle: quickActionSubtitle(option.first),
+            onTap: () => setState(() => shortcuts.add(option.first)),
+          ),
+        ),
+      SectionHeader(theme: t, title: 'Botones de crear'),
+      ...homeQuickActionOptions.map((option) {
+        final key = option.first;
+        final enabled = actions.contains(key);
+        return SettingsSwitchTile(
+          theme: t,
+          icon: quickActionIcon(key),
+          title: option.last,
+          subtitle: quickActionSubtitle(key),
+          value: enabled,
+          onTap: () => setState(() {
+            if (enabled) {
+              actions.remove(key);
+            } else {
+              actions.add(key);
+            }
+          }),
+        );
+      }),
+    ];
+  }
+
+  List<Widget> widgetsTab(RTheme t) {
+    final hidden = homeSectionOptions
+        .where((option) => !sections.contains(option.first))
+        .toList();
+    return [
+      customizeBlockTitle(
+        t,
+        CupertinoIcons.eye_fill,
+        'Mostrados',
+        '${sections.length}/${homeSectionOptions.length}',
+      ),
+      Text(
+        'Usa las flechas para ordenar y toca el interruptor para ocultar.',
+        style: TextStyle(
+          color: t.muted,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      const SizedBox(height: 14),
+      ...sections.map((key) {
+        final title = optionLabel(homeSectionOptions, key);
+        return HomeCustomizeTile(
+          theme: t,
+          title: title,
+          enabled: true,
+          canMoveUp: sections.indexOf(key) > 0,
+          canMoveDown: sections.indexOf(key) < sections.length - 1,
+          onToggle: () => setState(() => sections.remove(key)),
+          onUp: () => moveHomeItem(key, -1),
+          onDown: () => moveHomeItem(key, 1),
+        );
+      }),
+      customizeDivider(t),
+      customizeBlockTitle(t, CupertinoIcons.eye_slash_fill, 'Ocultos', ''),
+      if (hidden.isEmpty)
+        EmptyCard(theme: t, text: 'No tienes widgets ocultos')
+      else
+        ...hidden.map(
+          (option) => hiddenCustomizeRow(
+            t,
+            keyName: option.first,
+            title: option.last,
+            subtitle: 'Toca para mostrar',
+            onTap: () => setState(() => sections.add(option.first)),
+          ),
+        ),
+    ];
+  }
+
+  Widget customizeBlockTitle(
+    RTheme t,
+    IconData icon,
+    String title,
+    String meta,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: t.muted, size: 24),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                color: t.muted,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          if (meta.isNotEmpty)
+            Text(
+              meta,
+              style: TextStyle(
+                color: t.muted,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget shortcutBubble(RTheme t, String key) {
+    return GestureDetector(
+      onTap: () => setState(() => shortcuts.remove(key)),
+      child: SizedBox(
+        width: 86,
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: t.elevated,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: t.border),
+                  ),
+                  child: Icon(quickActionIcon(key), color: t.ink, size: 30),
+                ),
+                Positioned(
+                  right: -2,
+                  top: -4,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE84B55),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      CupertinoIcons.minus,
+                      color: CupertinoColors.white,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              optionLabel(homeShortcutOptions, key),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: t.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget hiddenCustomizeRow(
+    RTheme t, {
+    required String keyName,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: RCard(
+        theme: t,
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: CupertinoColors.black.withOpacity(t.dark ? .32 : .06),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(quickActionIcon(keyName), color: t.ink, size: 22),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: t.ink,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: t.muted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: t.accent,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                CupertinoIcons.plus,
+                color: CupertinoColors.white,
+                size: 20,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget customizeDivider(RTheme t) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 26),
+      child: Row(
+        children: [
+          Expanded(child: Container(height: 1, color: t.border)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Icon(CupertinoIcons.arrow_up_arrow_down, color: t.muted),
+          ),
+          Expanded(child: Container(height: 1, color: t.border)),
+        ],
       ),
     );
   }
@@ -5921,24 +6744,54 @@ class MovementHistoryPage extends StatefulWidget {
 }
 
 class _MovementHistoryPageState extends State<MovementHistoryPage> {
-  String accountId = 'all';
+  MovementFilter filter = const MovementFilter();
+  String selectedMonth = currentMonthKey();
+  bool showSummaries = false;
+  int _cachedRevision = -1;
+  MovementFilter? _cachedFilter;
+  String? _cachedMonth;
+  List<String> _months = [];
+  List<Map<String, dynamic>> _filtered = [];
+  double _total = 0;
 
   @override
   Widget build(BuildContext context) {
     final app = widget.app;
     final t = app.theme;
     final accounts = app.maps('accounts');
-    final movements = sortedMovements(app.maps('movements'))
-        .where(matchesMode)
-        .where(matchesAccount)
-        .toList();
-    final currency = 'USD';
-    final total = movements.fold<double>(0, (sum, m) {
-      final raw = movementListAmount(m);
-      return sum + app.toUsd(raw, m['currency']?.toString() ?? currency);
-    });
-    final distribution = accountDistribution(app, accounts, movements);
-    final monthlySummaries = monthlyMovementSummaries(app, accounts, movements);
+    if (_cachedRevision != app.revision.value ||
+        _cachedFilter != filter ||
+        _cachedMonth != selectedMonth) {
+      final byId = {for (final a in accounts) a['id'].toString(): a};
+      final movements = app.maps('movements').where(matchesMode).toList();
+      _months = {
+        currentMonthKey(),
+        selectedMonth,
+        ...movements.map((m) => monthKeyFromDate(m['date']?.toString())),
+      }.toList()..sort((a, b) => b.compareTo(a));
+      _filtered = movements
+          .where(
+            (m) => monthKeyFromDate(m['date']?.toString()) == selectedMonth,
+          )
+          .where((m) => filter.matches(m, byId))
+          .toList();
+      _filtered = sortedMovements(_filtered);
+      _total = _filtered.fold<double>(
+        0,
+        (sum, m) =>
+            sum +
+            app.toUsd(
+              movementListAmount(m),
+              m['currency']?.toString() ?? 'USD',
+            ),
+      );
+      _cachedRevision = app.revision.value;
+      _cachedFilter = filter;
+      _cachedMonth = selectedMonth;
+    }
+    final summaries = showSummaries
+        ? monthlyMovementSummaries(app, accounts, _filtered)
+        : <MonthlyMovementSummary>[];
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
@@ -5946,101 +6799,163 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
         middle: Text(title),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: app.canUndo
+              ? () {
+                  if (!app.undoLastOperation()) {
+                    showModernNotice(
+                      context,
+                      title: 'No se puede deshacer',
+                      message: 'Los registros vinculados cambiaron.',
+                    );
+                  }
+                  setState(() {});
+                }
+              : null,
+          child: Semantics(
+            label: 'Deshacer última operación',
+            child: Icon(
+              CupertinoIcons.arrow_uturn_left,
+              color: app.canUndo ? t.accent : t.muted.withOpacity(.35),
+              size: 22,
+            ),
+          ),
+        ),
       ),
       child: SafeArea(
-        child: softEntrance(
-          ListView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 34),
-            children: [
-              RCard(
-                theme: t,
-                child: Row(
+        child: CustomScrollView(
+          key: const ValueKey('movement-history-scroll'),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    OptionField(
+                      key: const ValueKey('movement-history-month'),
+                      theme: t,
+                      label: 'Mes',
+                      value: monthLabelForKey(selectedMonth),
+                      icon: CupertinoIcons.calendar,
+                      onTap: () => showModernActionSheet(
+                        context,
+                        title: 'Selecciona el mes',
+                        actions: [
+                          for (final month in _months)
+                            ModernSheetAction(
+                              icon: CupertinoIcons.calendar,
+                              title: monthLabelForKey(month),
+                              selected: month == selectedMonth,
+                              onPressed: () =>
+                                  setState(() => selectedMonth = month),
+                            ),
+                        ],
+                      ),
+                    ),
+                    MovementFilterControls(
+                      app: app,
+                      mode: widget.mode,
+                      onChanged: (value) => setState(() => filter = value),
+                    ),
+                    RCard(
+                      theme: t,
+                      child: Row(
                         children: [
-                          Text(
-                            '${movements.length} operaciones',
-                            style: TextStyle(
-                              color: t.muted,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${_filtered.length} operaciones',
+                                  style: TextStyle(
+                                    color: t.muted,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    app.secureMoney(_total, 'USD'),
+                                    key: const ValueKey('filtered-total'),
+                                    style: TextStyle(
+                                      color: amountColor(t),
+                                      fontSize: 26,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            app.secureMoney(total, 'USD'),
-                            style: TextStyle(
-                              color: amountColor(t),
-                              fontSize: 30,
-                              fontWeight: FontWeight.w900,
+                          Icon(modeIcon, color: amountColor(t), size: 26),
+                        ],
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      onPressed: () =>
+                          setState(() => showSummaries = !showSummaries),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Totales del mes',
+                              style: TextStyle(color: t.ink, fontSize: 15),
                             ),
+                          ),
+                          Icon(
+                            showSummaries
+                                ? CupertinoIcons.chevron_up
+                                : CupertinoIcons.chevron_down,
+                            size: 16,
                           ),
                         ],
                       ),
                     ),
-                    Icon(modeIcon, color: amountColor(t), size: 30),
                   ],
                 ),
               ),
-              if (distribution.isNotEmpty)
-                AccountDistributionCard(
-                  app: app,
-                  theme: t,
-                  entries: distribution,
-                ),
-              SizedBox(
-                height: 42,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return FilterChip(
-                        theme: t,
-                        label: 'Todos',
-                        selected: accountId == 'all',
-                        onTap: () => setState(() => accountId = 'all'),
-                      );
-                    }
-                    final account = accounts[index - 1];
-                    final id = account['id']?.toString() ?? '';
-                    return FilterChip(
-                      theme: t,
-                      label: accountLabel(account),
-                      selected: accountId == id,
-                      onTap: () => setState(() => accountId = id),
-                    );
-                  },
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemCount: accounts.length + 1,
-                ),
-              ),
-              if (monthlySummaries.isNotEmpty) ...[
-                SectionHeader(theme: t, title: 'Totales por mes'),
-                ...monthlySummaries.map(
-                  (summary) => MonthlyMovementSummaryCard(
+            ),
+            if (showSummaries)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                sliver: SliverList.builder(
+                  itemCount: summaries.length,
+                  itemBuilder: (_, index) => MonthlyMovementSummaryCard(
                     app: app,
                     theme: t,
-                    summary: summary,
+                    summary: summaries[index],
                     accent: amountColor(t),
                   ),
                 ),
-              ],
-              SectionHeader(theme: t, title: 'Historial'),
-              if (movements.isEmpty)
-                EmptyCard(theme: t, text: 'No hay operaciones para este filtro')
-              else
-                ...movements.map(
-                  (movement) => MovementTile(app: app, movement: movement),
+              ),
+            if (_filtered.isEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.all(18),
+                sliver: SliverToBoxAdapter(
+                  child: EmptyCard(
+                    theme: t,
+                    text: 'No hay operaciones en este mes para estos filtros',
+                  ),
                 ),
-            ],
-          ),
-          offsetY: 6,
-          duration: const Duration(milliseconds: 180),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(18, 4, 18, 110),
+                sliver: SliverList.builder(
+                  itemCount: _filtered.length,
+                  itemBuilder: (_, index) => MovementTile(
+                    key: ValueKey(_filtered[index]['id']),
+                    app: app,
+                    movement: _filtered[index],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -6055,35 +6970,23 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
     };
   }
 
-  bool matchesAccount(Map<String, dynamic> movement) {
-    if (accountId == 'all') return true;
-    return movement['accountId']?.toString() == accountId ||
-        movement['targetAccountId']?.toString() == accountId;
-  }
+  String get title => switch (widget.mode) {
+    MovementHistoryMode.all => 'Movimientos',
+    MovementHistoryMode.income => 'Ingresos',
+    MovementHistoryMode.expense => 'Gastos',
+  };
 
-  String get title {
-    return switch (widget.mode) {
-      MovementHistoryMode.all => 'Movimientos',
-      MovementHistoryMode.income => 'Ingresos',
-      MovementHistoryMode.expense => 'Gastos',
-    };
-  }
+  IconData get modeIcon => switch (widget.mode) {
+    MovementHistoryMode.all => CupertinoIcons.list_bullet,
+    MovementHistoryMode.income => CupertinoIcons.arrow_down_left_circle_fill,
+    MovementHistoryMode.expense => CupertinoIcons.arrow_up_right_circle_fill,
+  };
 
-  IconData get modeIcon {
-    return switch (widget.mode) {
-      MovementHistoryMode.all => CupertinoIcons.list_bullet,
-      MovementHistoryMode.income => CupertinoIcons.arrow_down_left_circle_fill,
-      MovementHistoryMode.expense => CupertinoIcons.arrow_up_right_circle_fill,
-    };
-  }
-
-  Color amountColor(RTheme t) {
-    return switch (widget.mode) {
-      MovementHistoryMode.all => t.accent,
-      MovementHistoryMode.income => t.green,
-      MovementHistoryMode.expense => t.red,
-    };
-  }
+  Color amountColor(RTheme t) => switch (widget.mode) {
+    MovementHistoryMode.all => t.accent,
+    MovementHistoryMode.income => t.green,
+    MovementHistoryMode.expense => t.red,
+  };
 }
 
 class AccountDistributionEntry {
@@ -6399,6 +7302,451 @@ class AccountDistributionCard extends StatelessWidget {
   }
 }
 
+class BalanceGroupCard extends StatelessWidget {
+  const BalanceGroupCard({
+    super.key,
+    required this.app,
+    required this.currency,
+  });
+
+  final _RialAppState app;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = app.theme;
+    final accounts = app
+        .maps('accounts')
+        .where((account) => account['currency']?.toString() == currency)
+        .toList();
+    final total = accounts.fold<double>(
+      0,
+      (sum, account) => sum + numberValue(account['balance']),
+    );
+    final secondary = currency == 'VES'
+        ? '≈ ${app.secureMoney(app.convertForHome(total, 'VES', 'USD'), 'USD')}'
+        : '${accounts.length} cuenta${accounts.length == 1 ? '' : 's'}';
+    return GestureDetector(
+      onTap: () => app.pushPage(
+        context,
+        (_) => CurrencyAccountsPage(app: app, currency: currency),
+      ),
+      child: Container(
+        width: 264,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: t.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CurrencyBadgeCircle(theme: t, currency: currency),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${displayCurrency(currency)} ${currency == 'VES' ? '\u{1F1FB}\u{1F1EA}' : '\u{1F1FA}\u{1F1F8}'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: t.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              app.secureMoney(total, currency),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: t.ink,
+                fontSize: 27,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              secondary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: t.muted,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(height: 1, color: t.border),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Detalles',
+                    style: TextStyle(
+                      color: t.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Icon(CupertinoIcons.chevron_right, color: t.muted, size: 17),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CurrencyAccountsPage extends StatelessWidget {
+  const CurrencyAccountsPage({
+    super.key,
+    required this.app,
+    required this.currency,
+  });
+
+  final _RialAppState app;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = app.theme;
+    final accounts =
+        app
+            .maps('accounts')
+            .where((account) => account['currency']?.toString() == currency)
+            .toList()
+          ..sort(
+            (a, b) =>
+                numberValue(b['balance']).compareTo(numberValue(a['balance'])),
+          );
+    final total = accounts.fold<double>(
+      0,
+      (sum, account) => sum + numberValue(account['balance']),
+    );
+    return CupertinoPageScaffold(
+      backgroundColor: t.bg,
+      navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
+        backgroundColor: t.bg.withOpacity(.92),
+        border: null,
+        middle: Text('Cuentas en ${displayCurrency(currency)}'),
+      ),
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 34),
+          children: [
+            RCard(
+              theme: t,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Balance por cuenta',
+                          style: TextStyle(
+                            color: t.ink,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        app.secureMoney(total, currency),
+                        style: TextStyle(
+                          color: t.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (currency == 'VES') ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: CurrencyConversionPill(
+                            theme: t,
+                            label: 'USD',
+                            value: app.secureMoney(
+                              app.convertForHome(total, 'VES', 'USD'),
+                              'USD',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: CurrencyConversionPill(
+                            theme: t,
+                            label: 'EUR',
+                            value: app.secureMoney(
+                              app.convertForHome(total, 'VES', 'EUR'),
+                              'EUR',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: CurrencyConversionPill(
+                            theme: t,
+                            label: 'USDT',
+                            value: app.secureMoney(
+                              app.convertForHome(total, 'VES', 'USDT'),
+                              'USDT',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  RatioBar(
+                    theme: t,
+                    parts: accounts
+                        .map(
+                          (account) => RatioPart(
+                            color: accountColor(account),
+                            value: numberValue(account['balance']),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  ...accounts.map(
+                    (account) => CurrencyAccountSummaryLine(
+                      app: app,
+                      account: account,
+                      total: total,
+                      compact: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SectionHeader(theme: t, title: 'Cuentas'),
+            if (accounts.isEmpty)
+              EmptyCard(theme: t, text: 'No hay cuentas en esta moneda')
+            else
+              ...accounts.map(
+                (account) => CurrencyAccountSummaryLine(
+                  app: app,
+                  account: account,
+                  total: total,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CurrencyConversionPill extends StatelessWidget {
+  const CurrencyConversionPill({
+    super.key,
+    required this.theme,
+    required this.label,
+    required this.value,
+  });
+
+  final RTheme theme;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+      decoration: BoxDecoration(
+        color: theme.field,
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: theme.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: theme.accent,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CurrencyAccountSummaryLine extends StatelessWidget {
+  const CurrencyAccountSummaryLine({
+    super.key,
+    required this.app,
+    required this.account,
+    required this.total,
+    this.compact = false,
+  });
+
+  final _RialAppState app;
+  final Map<String, dynamic> account;
+  final double total;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = app.theme;
+    final currency = account['currency']?.toString() ?? 'USD';
+    final balance = numberValue(account['balance']);
+    final pct = total > 0 ? (balance / total * 100).clamp(0, 999) : 0;
+    final content = Row(
+      children: [
+        Container(
+          width: 11,
+          height: 11,
+          decoration: BoxDecoration(
+            color: accountColor(account),
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+        const SizedBox(width: 10),
+        LogoBadge(
+          provider: account['provider']?.toString() ?? '',
+          theme: t,
+          size: compact ? 34 : 44,
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                accountPrimaryName(account),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: t.ink,
+                  fontSize: compact ? 14 : 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (!compact) ...[
+                const SizedBox(height: 3),
+                Text(
+                  app.secureMoney(balance, currency),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: t.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        if (compact)
+          Text(
+            app.secureMoney(balance, currency),
+            style: TextStyle(
+              color: t.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: t.accent.withOpacity(.18),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '${pct.round()}%',
+              style: TextStyle(
+                color: t.accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        if (!compact) ...[
+          const SizedBox(width: 8),
+          Icon(CupertinoIcons.chevron_right, color: t.muted, size: 17),
+        ],
+      ],
+    );
+    if (compact) {
+      return Padding(padding: const EdgeInsets.only(bottom: 9), child: content);
+    }
+    return GestureDetector(
+      onTap: () => app.pushPage(
+        context,
+        (_) => AccountDetailPage(app: app, account: account),
+      ),
+      child: RCard(theme: t, child: content),
+    );
+  }
+}
+
+class CurrencyBadgeCircle extends StatelessWidget {
+  const CurrencyBadgeCircle({
+    super.key,
+    required this.theme,
+    required this.currency,
+  });
+
+  final RTheme theme;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: theme.accent.withOpacity(.16),
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        currencyBadge(currency),
+        style: TextStyle(
+          color: theme.accent,
+          fontSize: currency == 'USDT' ? 10 : 13,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
 class FilterChip extends StatelessWidget {
   const FilterChip({
     super.key,
@@ -6559,7 +7907,13 @@ class MovementTile extends StatelessWidget {
         : t.red;
     final account = app.accountById(movement['accountId']?.toString() ?? '');
     return GestureDetector(
-      onTap: () => actions(context),
+      onTap: () => app.pushPage(
+        context,
+        (_) => MovementDetailPage(
+          app: app,
+          movementId: movement['id']?.toString() ?? '',
+        ),
+      ),
       child: RCard(
         theme: t,
         child: Row(
@@ -6610,6 +7964,7 @@ class MovementTile extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(width: 8),
             Text(
               app.secureSignedMoney(
                 numberValue(movement['amount']),
@@ -6627,29 +7982,239 @@ class MovementTile extends StatelessWidget {
       ),
     );
   }
+}
 
-  void actions(BuildContext context) {
-    showModernActionSheet(
-      context,
-      title: movementTitle(movement),
-      actions: [
-        ModernSheetAction(
-          icon: CupertinoIcons.pencil,
-          title: 'Editar movimiento',
-          onPressed: () => app.openMovementEditor(context, movement: movement),
-        ),
-        ModernSheetAction(
-          icon: CupertinoIcons.trash_fill,
-          title: 'Eliminar movimiento',
-          subtitle: 'Revierte el monto en la cuenta',
-          destructive: true,
-          onPressed: () => app.confirmDelete(
-            context,
-            'Eliminar movimiento',
-            'Se revertirá el monto en la cuenta.',
-            () => app.deleteMovement(movement),
+class MovementDetailPage extends StatelessWidget {
+  const MovementDetailPage({
+    super.key,
+    required this.app,
+    required this.movementId,
+  });
+
+  final _RialAppState app;
+  final String movementId;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = app.theme;
+    final movement = app.movementById(movementId);
+    return CupertinoPageScaffold(
+      backgroundColor: t.bg,
+      navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
+        backgroundColor: t.bg.withOpacity(.92),
+        border: null,
+        middle: const Text('Detalle del movimiento'),
+      ),
+      child: SafeArea(
+        child: movement == null
+            ? Center(
+                child: Text(
+                  'Este movimiento ya no existe',
+                  style: TextStyle(color: t.muted),
+                ),
+              )
+            : details(context, movement),
+      ),
+    );
+  }
+
+  Widget details(BuildContext context, Map<String, dynamic> movement) {
+    final t = app.theme;
+    final type = movement['type']?.toString() ?? 'expense';
+    final income = type == 'income';
+    final transfer = type == 'transfer';
+    final typeLabel = income
+        ? 'Ingreso'
+        : transfer
+        ? 'Transferencia'
+        : 'Gasto';
+    final currency = movement['currency']?.toString() ?? 'USD';
+    final amount = numberValue(movement['amount']);
+    final fee = numberValue(movement['feeAmount']);
+    final source = app.accountById(movement['accountId']?.toString() ?? '');
+    final target = app.accountById(
+      movement['targetAccountId']?.toString() ?? '',
+    );
+    final debtId = movement['debtId']?.toString() ?? '';
+    final debt = app.debtById(debtId);
+    final date = parseMovementDate(movement['date']?.toString());
+    final method = movement['paymentMethod']?.toString() ?? '';
+    final feeMode = movement['feeMode']?.toString() ?? '';
+    final scope = movement['bankTransferScope']?.toString() ?? '';
+    final category = movement['category']?.toString().trim() ?? '';
+    final color = income
+        ? t.green
+        : transfer
+        ? t.accent
+        : t.red;
+    final sign = income
+        ? '+'
+        : transfer
+        ? ''
+        : '-';
+
+    Widget row(String label, String value) =>
+        DebtDetailRow(theme: t, label: label, value: value);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
+      children: [
+        Text(
+          typeLabel,
+          style: TextStyle(
+            color: color,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
           ),
         ),
+        const SizedBox(height: 8),
+        Text(
+          movementTitle(movement),
+          style: TextStyle(
+            color: t.ink,
+            fontSize: 23,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              app.secureSignedMoney(amount, currency, sign),
+              style: TextStyle(
+                color: color,
+                fontSize: 32,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(
+              child: CupertinoButton(
+                key: const ValueKey('edit-movement'),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                color: t.accent,
+                onPressed: () =>
+                    app.openMovementEditor(context, movement: movement),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      CupertinoIcons.pencil,
+                      size: 18,
+                      color: CupertinoColors.white,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Editar',
+                      style: TextStyle(
+                        color: CupertinoColors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: CupertinoButton(
+                key: const ValueKey('delete-movement'),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                color: t.red.withOpacity(.12),
+                onPressed: () => app.confirmDelete(
+                  context,
+                  'Eliminar movimiento',
+                  transfer
+                      ? 'Se revertirán los importes en ambas cuentas y la comisión.'
+                      : 'Se revertirá el importe y la comisión en la cuenta, junto con cualquier pago o cobro vinculado.',
+                  () {
+                    final current = app.movementById(movementId);
+                    if (current != null) app.deleteMovement(current);
+                    if (context.mounted) Navigator.of(context).pop();
+                  },
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(CupertinoIcons.trash, size: 18, color: t.red),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Eliminar',
+                      style: TextStyle(
+                        color: t.red,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        row(
+          'Fecha',
+          date.millisecondsSinceEpoch == 0 ? 'Sin fecha' : formatDate(date),
+        ),
+        row(
+          'Hora',
+          date.millisecondsSinceEpoch == 0 ? 'Sin hora' : timeOnlyLabel(date),
+        ),
+        row(
+          transfer ? 'Cuenta de origen' : 'Cuenta',
+          source == null ? 'Cuenta no disponible' : accountPrimaryName(source),
+        ),
+        row('Moneda', displayCurrency(currency)),
+        row('Categoría', category.isEmpty ? 'Otro' : category),
+        if (method.isNotEmpty) row('Método', paymentMethodLabel(method)),
+        if (scope.isNotEmpty)
+          row('Transferencia bancaria', bankTransferScopeLabel(scope)),
+        row('Comisión', app.secureMoney(fee, currency)),
+        if (feeMode.isNotEmpty)
+          row('Cálculo de comisión', feeModeLabel(feeMode)),
+        row(
+          income ? 'Total recibido' : 'Total debitado',
+          app.secureMoney(income ? amount - fee : amount + fee, currency),
+        ),
+        if (transfer) ...[
+          row(
+            'Cuenta de destino',
+            target == null
+                ? 'Cuenta no disponible'
+                : accountPrimaryName(target),
+          ),
+          row(
+            'Monto recibido en destino',
+            app.secureMoney(
+              numberValue(movement['targetAmount']),
+              movement['targetCurrency']?.toString() ??
+                  target?['currency']?.toString() ??
+                  currency,
+            ),
+          ),
+        ],
+        if (numberValue(movement['rate']) > 0)
+          row('Tasa registrada', decimal(numberValue(movement['rate']))),
+        if (debtId.isNotEmpty) ...[
+          row(
+            income ? 'Cobro vinculado' : 'Deuda vinculada',
+            debt == null ? 'Registro no disponible' : selectedDebtLabel(debt),
+          ),
+          if (debt != null)
+            CupertinoButton(
+              onPressed: () => app.openDebtDetail(context, debt),
+              child: const Text('Ver registro vinculado'),
+            ),
+        ],
       ],
     );
   }
@@ -7367,7 +8932,23 @@ class _CalculatorPageState extends State<CalculatorPage> {
         (from == 'USD' && to == 'VES') || (from == 'VES' && to == 'USD');
     final directEurVes =
         (from == 'EUR' && to == 'VES') || (from == 'VES' && to == 'EUR');
-    final canCustomizeRate = directUsdVes || directEurVes;
+    final directUsdtVes =
+        (from == 'USDT' && to == 'VES') || (from == 'VES' && to == 'USDT');
+    final canCustomizeRate = directUsdVes || directEurVes || directUsdtVes;
+    final rateCurrency = directEurVes
+        ? 'EUR'
+        : directUsdtVes
+        ? 'USDT'
+        : 'USD';
+    final currentUsdtRate = numberValue(app.state['usdtRate']);
+    final marketUsdtRate = currentUsdtRate > 0
+        ? currentUsdtRate
+        : numberValue(app.state['previousUsdtRate']);
+    final baseRate = directEurVes
+        ? app.eurRate
+        : directUsdtVes
+        ? marketUsdtRate
+        : app.rate;
     final customValue = parseAmount(customRate.text);
     final usdVes = useCustomRate && directUsdVes && customValue > 0
         ? customValue
@@ -7375,12 +8956,16 @@ class _CalculatorPageState extends State<CalculatorPage> {
     final eurVes = useCustomRate && directEurVes && customValue > 0
         ? customValue
         : app.eurRate;
+    final usdtVes = useCustomRate && directUsdtVes && customValue > 0
+        ? customValue
+        : marketUsdtRate;
     final result = convertCurrencyAmount(
       amountValue,
       from,
       to,
       usdVes: usdVes,
       eurVes: eurVes,
+      usdtVes: usdtVes,
     );
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
@@ -7495,12 +9080,21 @@ class _CalculatorPageState extends State<CalculatorPage> {
                       alignment: Alignment.centerLeft,
                       child: OfficialRateNote(
                         theme: t,
-                        line: officialRateLine(
-                          directEurVes ? 'EUR' : 'USD',
-                          directEurVes ? app.eurRate : app.rate,
-                        ),
-                        updated: rateUpdatedLabel(app.state),
+                        line: directUsdtVes
+                            ? marketUsdtRate > 0
+                                  ? '1₮ = Bs. ${decimal(marketUsdtRate)}'
+                                  : 'Tasa USDT no disponible'
+                            : officialRateLine(rateCurrency, baseRate),
+                        updated: directUsdtVes
+                            ? 'Al Cambio · USDT/VES'
+                            : rateUpdatedLabel(app.state),
                       ),
+                    ),
+                    RateStatus(
+                      theme: t,
+                      state: app.state,
+                      currency: rateCurrency,
+                      loading: app.rateLoading,
                     ),
                   ],
                 ],
@@ -7510,21 +9104,24 @@ class _CalculatorPageState extends State<CalculatorPage> {
               SettingsSwitchTile(
                 theme: t,
                 title: 'Usar tasa personalizada',
-                subtitle: directEurVes
-                    ? 'Solo para esta conversión EUR/VES'
-                    : 'Solo para esta conversión USD/VES',
+                subtitle: 'Solo para esta conversión $rateCurrency/VES',
                 icon: CupertinoIcons.checkmark_circle_fill,
                 value: useCustomRate,
-                onTap: () => setState(() => useCustomRate = !useCustomRate),
+                onTap: () => setState(() {
+                  if (!useCustomRate &&
+                      customRate.text.isEmpty &&
+                      baseRate > 0) {
+                    customRate.text = plain(baseRate);
+                  }
+                  useCustomRate = !useCustomRate;
+                }),
                 framed: true,
               ),
             if (canCustomizeRate && useCustomRate)
               RField(
                 theme: t,
                 controller: customRate,
-                placeholder: directEurVes
-                    ? 'Tasa EUR/VES personalizada'
-                    : 'Tasa USD/VES personalizada',
+                placeholder: 'Tasa $rateCurrency/VES personalizada',
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
@@ -7613,7 +9210,7 @@ class CurrencySelectorPill extends StatelessWidget {
               ),
               child: Center(
                 child: Text(
-                  currencyBadge(currency),
+                  currency == 'USDT' ? '₮' : currencyBadge(currency),
                   style: const TextStyle(fontSize: 18),
                 ),
               ),
@@ -9457,7 +11054,8 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
     final rawCount = int.tryParse(installments) ?? 1;
     final count = hasInstallments && rawCount > 0 ? rawCount : 1;
     final remaining = math.max(0.0, totalValue - initialValue);
-    final suggestedInstallment = count <= 0 ? remaining : remaining / count;
+    final suggestedInstallment = splitInstallments(remaining, count).first;
+    final lastInstallment = splitInstallments(remaining, count).last;
     final customInstallment = hasInstallments
         ? parseAmount(installmentAmount.text)
         : 0.0;
@@ -9696,7 +11294,7 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
                   Expanded(
                     child: Text(
                       hasInstallments
-                          ? 'Restan ${app.secureMoney(remaining, currency)} · $count cuotas de ${app.secureMoney(finalInstallment, currency)} · $frequency'
+                          ? 'Restan ${app.secureMoney(remaining, currency)} · $count cuotas de ${app.secureMoney(finalInstallment, currency)}${automaticInstallments && lastInstallment != finalInstallment ? ' (última: ${app.secureMoney(lastInstallment, currency)})' : ''} · $frequency'
                           : hasDueDate
                           ? 'Pendiente ${app.secureMoney(remaining, currency)} · $dueLabel ${displayDateOnly(dueDate.text)}'
                           : 'Pendiente ${app.secureMoney(remaining, currency)} · Sin fecha',
@@ -9795,19 +11393,19 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
     final rawCount = int.tryParse(installments) ?? 1;
     final count = hasInstallments && rawCount > 0 ? rawCount : 1;
     final initialValue = hasInitial ? parseAmount(initial.text) : 0.0;
-    if (initialValue > amount) {
+    if (initialValue < 0 || initialValue > amount) {
       showModernNotice(
         context,
         title: 'Inicial mayor al monto',
-        message: 'La inicial no puede ser mayor que el monto total.',
+        message: 'La inicial debe estar entre cero y el monto total.',
       );
       return;
     }
-    final remaining = math.max(0.0, amount - initialValue);
+    final remaining = math.max(0.0, moneySubtract(amount, initialValue));
     final customInstallment = hasInstallments
         ? parseAmount(installmentAmount.text)
         : 0.0;
-    final calculatedInstallment = count <= 0 ? remaining : remaining / count;
+    final calculatedInstallment = splitInstallments(remaining, count).first;
     if (hasInstallments && !automaticInstallments && customInstallment <= 0) {
       showModernNotice(
         context,
@@ -9839,38 +11437,47 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
         : numberValue(editingDebt['paidAmount']);
     final paidAmount = math.min(amount, math.max(initialValue, previousPaid));
     final isPaid = paidAmount + .0001 >= amount;
-    app.saveDebt({
-      'id': editingId.isEmpty ? app.id() : editingId,
-      'kind': kind,
-      'title': titleText,
-      'partyType': selectedParty,
-      'partyLogo': debtPartyLogoCode(selectedParty) ?? '',
-      'creditor': creditorText,
-      'amount': amount,
-      'paidAmount': paidAmount,
-      'initialAmount': initialValue,
-      'initialPaid': hasInitial,
-      'hasInstallments': hasInstallments,
-      'hasDueDate': hasDueDate,
-      'notifyDueDate': hasDueDate && notifyDueDate,
-      'installments': count,
-      'installmentMode': automaticInstallments ? 'auto' : 'manual',
-      'installmentAmount': hasInstallments ? installmentValue : 0.0,
-      'installmentDates': savedInstallmentDates,
-      'currency': currency,
-      'dueDate': hasDueDate ? firstDueDate : '',
-      'paymentFrequency': hasInstallments ? frequency : '',
-      'status': isPaid ? 'paid' : 'pending',
-      'paidAt': isPaid
-          ? (editingDebt?['paidAt']?.toString().isNotEmpty == true
-                ? editingDebt!['paidAt'].toString()
-                : formatDateTime(DateTime.now()))
-          : '',
-      'createdAt':
-          editingDebt?['createdAt']?.toString() ??
-          formatDateTime(DateTime.now()),
-      'updatedAt': formatDateTime(DateTime.now()),
-    }, editingId: editingId.isEmpty ? null : editingId);
+    try {
+      app.saveDebt({
+        'id': editingId.isEmpty ? app.id() : editingId,
+        'kind': kind,
+        'title': titleText,
+        'partyType': selectedParty,
+        'partyLogo': debtPartyLogoCode(selectedParty) ?? '',
+        'creditor': creditorText,
+        'amount': amount,
+        'paidAmount': paidAmount,
+        'initialAmount': initialValue,
+        'initialPaid': hasInitial,
+        'hasInstallments': hasInstallments,
+        'hasDueDate': hasDueDate,
+        'notifyDueDate': hasDueDate && notifyDueDate,
+        'installments': count,
+        'installmentMode': automaticInstallments ? 'auto' : 'manual',
+        'installmentAmount': hasInstallments ? installmentValue : 0.0,
+        'installmentDates': savedInstallmentDates,
+        'currency': currency,
+        'dueDate': hasDueDate ? firstDueDate : '',
+        'paymentFrequency': hasInstallments ? frequency : '',
+        'status': isPaid ? 'paid' : 'pending',
+        'paidAt': isPaid
+            ? (editingDebt?['paidAt']?.toString().isNotEmpty == true
+                  ? editingDebt!['paidAt'].toString()
+                  : formatDateTime(DateTime.now()))
+            : '',
+        'createdAt':
+            editingDebt?['createdAt']?.toString() ??
+            formatDateTime(DateTime.now()),
+        'updatedAt': formatDateTime(DateTime.now()),
+      }, editingId: editingId.isEmpty ? null : editingId);
+    } on FormatException catch (error) {
+      showModernNotice(
+        context,
+        title: 'Revisa el registro',
+        message: error.message,
+      );
+      return;
+    }
     Navigator.pop(context);
   }
 }
@@ -10104,6 +11711,130 @@ class _SettingsPageState extends State<SettingsPage> {
                           const SizedBox(height: 3),
                           Text(
                             'Instalada $_appVersionName+$_appBuildNumber · automático al actualizar BCV',
+                            style: TextStyle(
+                              color: t.muted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      CupertinoIcons.chevron_right,
+                      color: t.muted,
+                      size: 18,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SectionHeader(theme: t, title: 'Inicio'),
+            GestureDetector(
+              onTap: () => pickValue(
+                context,
+                const ['Todo el balance', 'Solo bolívares al cambio'],
+                homeBalanceModeLabel(app.homeBalanceMode),
+                (value) {
+                  app.mutate(
+                    () => app.state['homeBalanceMode'] =
+                        homeBalanceModeFromLabel(value),
+                  );
+                  setState(() {});
+                },
+              ),
+              child: RCard(
+                theme: t,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: t.accent.withOpacity(.14),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(CupertinoIcons.money_dollar, color: t.accent),
+                    ),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Balance principal',
+                            style: TextStyle(
+                              color: t.ink,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            homeBalanceModeLabel(app.homeBalanceMode),
+                            style: TextStyle(
+                              color: t.muted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      CupertinoIcons.chevron_right,
+                      color: t.muted,
+                      size: 18,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => pickValue(
+                context,
+                const ['Día', 'Semana', 'Mes'],
+                homeBalancePeriodLabel(app.homeBalanceChangePeriod),
+                (value) {
+                  app.mutate(
+                    () => app.state['homeBalanceChangePeriod'] =
+                        homeBalancePeriodFromLabel(value),
+                  );
+                  setState(() {});
+                },
+              ),
+              child: RCard(
+                theme: t,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: t.accent.withOpacity(.14),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(
+                        CupertinoIcons.chart_bar_fill,
+                        color: t.accent,
+                      ),
+                    ),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Comparación del balance',
+                            style: TextStyle(
+                              color: t.ink,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            homeBalancePeriodLabel(app.homeBalanceChangePeriod),
                             style: TextStyle(
                               color: t.muted,
                               fontSize: 13,
@@ -10725,7 +12456,7 @@ class _MovementEditorState extends State<MovementEditor> {
         m?['targetAccountId']?.toString() ?? firstAccountId(except: accountId);
     category = m?['category']?.toString().isEmpty == false
         ? m!['category'].toString()
-        : widget.defaultCategory ?? budgetCategories.first;
+        : widget.defaultCategory ?? 'Otro';
     categoryTouched = m != null || widget.defaultCategory != null;
     date = m?['date']?.toString() ?? formatDateTime(DateTime.now());
     debtId = m?['debtId']?.toString() ?? widget.defaultDebtId ?? '';
@@ -10738,6 +12469,9 @@ class _MovementEditorState extends State<MovementEditor> {
       paymentMethod = m['paymentMethod']?.toString().isNotEmpty == true
           ? m['paymentMethod'].toString()
           : paymentMethod;
+      if (paymentMethod == 'payment_mobile_p2c') {
+        paymentMethod = 'payment_mobile_c2p';
+      }
       final storedFeeMode = m['feeMode']?.toString() ?? '';
       feeMode = storedFeeMode.isNotEmpty
           ? storedFeeMode
@@ -10756,6 +12490,9 @@ class _MovementEditorState extends State<MovementEditor> {
       }
       if (debtId.isNotEmpty) {
         applyDebtDefaults(debtId, overwriteAmount: amount.text.isEmpty);
+      }
+      if (type == 'expense' && !categoryTouched) {
+        category = categoryFromDescription(desc.text) ?? 'Otro';
       }
     }
   }
@@ -10829,13 +12566,14 @@ class _MovementEditorState extends State<MovementEditor> {
     final enteredRate = parseAmount(rate.text);
     final targetAmount = exchange && enteredRate > 0
         ? sourceCurrency == 'USD'
-              ? parseAmount(amount.text) * enteredRate
-              : parseAmount(amount.text) / enteredRate
+              ? moneyConvert(parseAmount(amount.text), enteredRate)
+              : moneyConvert(parseAmount(amount.text), 1, enteredRate)
         : parseAmount(amount.text);
     final canOperationFee = canConfigureBankFee(
       source,
       type: type,
       category: type == 'expense' ? category : '',
+      method: type == 'expense' ? paymentMethod : 'bank_transfer',
     );
     final effectiveFeeMode = canOperationFee ? feeMode : 'none';
     final canTransferFee =
@@ -10872,6 +12610,15 @@ class _MovementEditorState extends State<MovementEditor> {
     final showDebtSelector =
         (type == 'expense' || type == 'income') &&
         (hasLinkableDebt || selectedDebt != null);
+    final previewAmount = moneyRound(parseAmount(amount.text));
+    final previewFee = type == 'transfer'
+        ? autoTransferFee
+        : effectiveFeeMode == 'manual'
+        ? moneyRound(parseAmount(fee.text))
+        : autoOperationFee;
+    final previewTotal = type == 'income'
+        ? moneySubtract(previewAmount, previewFee)
+        : moneyAdd(previewAmount, previewFee);
 
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
@@ -10884,286 +12631,356 @@ class _MovementEditorState extends State<MovementEditor> {
         ),
       ),
       child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 20, 18, 34),
+        child: Column(
           children: [
-            KindSelector(
-              theme: t,
-              value: type,
-              items: const [
-                KindSelectorItem(
-                  value: 'expense',
-                  label: 'Gasto',
-                  icon: CupertinoIcons.arrow_up_right_circle_fill,
-                ),
-                KindSelectorItem(
-                  value: 'income',
-                  label: 'Ingreso',
-                  icon: CupertinoIcons.arrow_down_left_circle_fill,
-                ),
-                KindSelectorItem(
-                  value: 'transfer',
-                  label: 'Transferir',
-                  icon: CupertinoIcons.arrow_right_arrow_left_circle_fill,
-                ),
-              ],
-              onChanged: (v) {
-                if (v == 'transfer' &&
-                    !widget.app.ensureCanCreateMovement(context, v)) {
-                  return;
-                }
-                setState(() {
-                  type = v;
-                  if (!widget.lockAccount) {
-                    accountId = v == 'transfer'
-                        ? firstAccountId()
-                        : preferredAccountId();
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+              child: KindSelector(
+                key: const ValueKey('movement-editor-type'),
+                theme: t,
+                value: type,
+                items: const [
+                  KindSelectorItem(
+                    value: 'expense',
+                    label: 'Gasto',
+                    icon: CupertinoIcons.arrow_up_right_circle_fill,
+                  ),
+                  KindSelectorItem(
+                    value: 'income',
+                    label: 'Ingreso',
+                    icon: CupertinoIcons.arrow_down_left_circle_fill,
+                  ),
+                  KindSelectorItem(
+                    value: 'transfer',
+                    label: 'Transferir',
+                    icon: CupertinoIcons.arrow_right_arrow_left_circle_fill,
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v == 'transfer' &&
+                      !widget.app.ensureCanCreateMovement(context, v)) {
+                    return;
                   }
-                  targetId = firstAccountId(except: accountId);
-                  if (type == 'expense' && !categoryTouched) {
-                    category = categoryFromDescription(desc.text) ?? category;
-                  }
-                  if (type != 'expense' && type != 'income') {
-                    debtId = '';
-                  } else if (debtId.isNotEmpty) {
-                    final selected = widget.app.debtById(debtId);
-                    final selectedKind =
-                        selected?['kind']?.toString() == 'receivable'
-                        ? 'receivable'
-                        : 'payable';
-                    final wantedKind = type == 'income'
-                        ? 'receivable'
-                        : 'payable';
-                    if (selected == null || selectedKind != wantedKind) {
-                      debtId = '';
+                  setState(() {
+                    type = v;
+                    if (!widget.lockAccount) {
+                      accountId = v == 'transfer'
+                          ? firstAccountId()
+                          : preferredAccountId();
                     }
-                  }
-                });
-              },
-            ),
-            RField(
-              theme: t,
-              controller: amount,
-              placeholder: 'Monto',
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+                    targetId = firstAccountId(except: accountId);
+                    if (type == 'expense' && !categoryTouched) {
+                      category = categoryFromDescription(desc.text) ?? 'Otro';
+                    }
+                    if (type != 'expense' && type != 'income') {
+                      debtId = '';
+                    } else if (debtId.isNotEmpty) {
+                      final selected = widget.app.debtById(debtId);
+                      final selectedKind =
+                          selected?['kind']?.toString() == 'receivable'
+                          ? 'receivable'
+                          : 'payable';
+                      final wantedKind = type == 'income'
+                          ? 'receivable'
+                          : 'payable';
+                      if (selected == null || selectedKind != wantedKind) {
+                        debtId = '';
+                      }
+                    }
+                  });
+                },
               ),
-              onChanged: (_) => setState(() {}),
             ),
-            RField(
-              theme: t,
-              controller: desc,
-              placeholder: 'Descripción',
-              onChanged: inferCategory,
-            ),
-            if (showDebtSelector)
-              OptionField(
-                theme: t,
-                label: type == 'expense' ? 'Deuda a pagar' : 'Cobro vinculado',
-                value: selectedDebtLabel(selectedDebt),
-                icon: CupertinoIcons.checkmark_seal_fill,
-                onTap: () => pickDebt(context),
-              ),
-            if (type == 'expense')
-              OptionField(
-                theme: t,
-                label: 'Categoría',
-                value: category,
-                icon: categoryIcon(category),
-                onTap: () => pickCategory(
-                  context,
-                  category,
-                  (v) => setState(() {
-                    category = v;
-                    categoryTouched = true;
-                  }),
-                ),
-              ),
-            widget.lockAccount
-                ? LockedAccountField(
+            Expanded(
+              child: ListView(
+                key: const ValueKey('movement-editor-fields'),
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                children: [
+                  RField(
                     theme: t,
-                    label: type == 'transfer' ? 'Cuenta origen' : 'Cuenta',
-                    account: source,
-                  )
-                : OptionField(
-                    theme: t,
-                    label: type == 'transfer' ? 'Cuenta origen' : 'Cuenta',
-                    value: accountLabel(source),
-                    logoProvider: source?['provider']?.toString(),
-                    onTap: () => pickAccount(
-                      context,
-                      selected: accountId,
-                      onSelect: (id) => setState(() {
-                        accountId = id;
-                        if (targetId == accountId) {
-                          targetId = firstAccountId(except: accountId);
-                        }
-                        if (debtId.isNotEmpty) {
-                          applyDebtDefaults(debtId, overwriteAmount: true);
-                        }
-                      }),
+                    controller: amount,
+                    placeholder: 'Monto',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
                     ),
+                    onChanged: (_) => setState(() {}),
                   ),
-            if (type == 'transfer')
-              OptionField(
-                theme: t,
-                label: 'Cuenta destino',
-                value: accountLabel(target),
-                logoProvider: target?['provider']?.toString(),
-                onTap: () => pickAccount(
-                  context,
-                  selected: targetId,
-                  except: accountId,
-                  onSelect: (id) => setState(() => targetId = id),
-                ),
-              ),
-            if (exchange)
-              RField(
-                theme: t,
-                controller: rate,
-                placeholder: 'Tasa personalizada',
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-            if (canOperationFee)
-              OptionField(
-                theme: t,
-                label: 'Comisión',
-                value: feeModeLabel(effectiveFeeMode),
-                icon: CupertinoIcons.percent,
-                onTap: () => pickValue(
-                  context,
-                  const ['Automática', 'Manual', 'Sin comisión'],
-                  feeModeLabel(effectiveFeeMode),
-                  (value) => setState(() {
-                    feeMode = feeModeFromLabel(value);
-                    if (feeMode != 'manual') fee.clear();
-                  }),
-                ),
-              ),
-            if (type == 'expense' &&
-                canOperationFee &&
-                effectiveFeeMode != 'none')
-              OptionField(
-                theme: t,
-                label: 'Forma de pago',
-                value: paymentMethodLabel(paymentMethod),
-                icon: CupertinoIcons.creditcard_fill,
-                onTap: () => pickValue(
-                  context,
-                  const [
-                    'Pago móvil',
-                    'Pago móvil comercio',
-                    'Transferencia bancaria',
-                    'Tarjeta',
-                  ],
-                  paymentMethodLabel(paymentMethod),
-                  (value) => setState(() {
-                    paymentMethod = paymentMethodFromLabel(value);
-                  }),
-                ),
-              ),
-            if (type == 'expense' &&
-                canOperationFee &&
-                effectiveFeeMode != 'none' &&
-                paymentMethod == 'bank_transfer')
-              OptionField(
-                theme: t,
-                label: 'Transferencia bancaria',
-                value: bankTransferScopeLabel(bankTransferScope),
-                icon: CupertinoIcons.building_2_fill,
-                onTap: () => pickValue(
-                  context,
-                  const ['Otro banco', 'Mismo banco'],
-                  bankTransferScopeLabel(bankTransferScope),
-                  (value) => setState(() {
-                    bankTransferScope = bankTransferScopeFromLabel(value);
-                  }),
-                ),
-              ),
-            if (canTransferFee)
-              OptionField(
-                theme: t,
-                label: 'Transferencia bancaria',
-                value: bankTransferScopeLabel(bankTransferScope),
-                icon: CupertinoIcons.building_2_fill,
-                onTap: () => pickValue(
-                  context,
-                  const ['Otro banco', 'Mismo banco'],
-                  bankTransferScopeLabel(bankTransferScope),
-                  (value) => setState(() {
-                    bankTransferScope = bankTransferScopeFromLabel(value);
-                  }),
-                ),
-              ),
-            if (canOperationFee && effectiveFeeMode == 'manual')
-              RField(
-                theme: t,
-                controller: fee,
-                placeholder: 'Comisión manual',
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-            if (autoOperationFee > 0 || autoTransferFee > 0)
-              RCard(
-                theme: t,
-                child: Row(
-                  children: [
-                    Icon(CupertinoIcons.percent, color: t.accent),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Comisión estimada',
-                        style: TextStyle(
-                          color: t.ink,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
+                  RField(
+                    theme: t,
+                    controller: desc,
+                    placeholder: 'Descripción',
+                    onChanged: inferCategory,
+                  ),
+                  if (showDebtSelector)
+                    OptionField(
+                      theme: t,
+                      label: type == 'expense'
+                          ? 'Deuda a pagar'
+                          : 'Cobro vinculado',
+                      value: selectedDebtLabel(selectedDebt),
+                      icon: CupertinoIcons.checkmark_seal_fill,
+                      onTap: () => pickDebt(context),
+                    ),
+                  if (type == 'expense')
+                    OptionField(
+                      theme: t,
+                      label: 'Categoría',
+                      value: category,
+                      icon: categoryIcon(category),
+                      onTap: () => pickCategory(
+                        context,
+                        category,
+                        (v) => setState(() {
+                          category = v;
+                          categoryTouched = true;
+                        }),
+                      ),
+                    ),
+                  widget.lockAccount
+                      ? LockedAccountField(
+                          theme: t,
+                          label: type == 'transfer'
+                              ? 'Cuenta origen'
+                              : 'Cuenta',
+                          account: source,
+                        )
+                      : OptionField(
+                          theme: t,
+                          label: type == 'transfer'
+                              ? 'Cuenta origen'
+                              : 'Cuenta',
+                          value: accountLabel(source),
+                          logoProvider: source?['provider']?.toString(),
+                          onTap: () => pickAccount(
+                            context,
+                            selected: accountId,
+                            onSelect: (id) => setState(() {
+                              accountId = id;
+                              if (targetId == accountId) {
+                                targetId = firstAccountId(except: accountId);
+                              }
+                              if (debtId.isNotEmpty) {
+                                applyDebtDefaults(
+                                  debtId,
+                                  overwriteAmount: true,
+                                );
+                              }
+                            }),
+                          ),
                         ),
+                  if (type == 'transfer')
+                    OptionField(
+                      theme: t,
+                      label: 'Cuenta destino',
+                      value: accountLabel(target),
+                      logoProvider: target?['provider']?.toString(),
+                      onTap: () => pickAccount(
+                        context,
+                        selected: targetId,
+                        except: accountId,
+                        onSelect: (id) => setState(() => targetId = id),
                       ),
                     ),
-                    Text(
-                      app.secureMoney(
-                        type == 'transfer' ? autoTransferFee : autoOperationFee,
-                        sourceCurrency,
+                  if (exchange)
+                    RField(
+                      theme: t,
+                      controller: rate,
+                      placeholder: 'Tasa personalizada',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
                       ),
-                      style: TextStyle(
-                        color: t.accent,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  if (type == 'expense' &&
+                      !isBankCommissionCategory(category) &&
+                      isNationalBankAccount(source) &&
+                      sourceCurrency == 'VES')
+                    OptionField(
+                      theme: t,
+                      label: 'Forma de pago',
+                      value: paymentMethodLabel(paymentMethod),
+                      icon: CupertinoIcons.creditcard_fill,
+                      onTap: () => pickValue(
+                        context,
+                        const [
+                          'Pago móvil',
+                          'Pago móvil C2P',
+                          'Transferencia bancaria',
+                          'Tarjeta',
+                        ],
+                        paymentMethodLabel(paymentMethod),
+                        (value) => setState(() {
+                          paymentMethod = paymentMethodFromLabel(value);
+                          if (isFeeExemptPaymentMethod(paymentMethod)) {
+                            fee.clear();
+                            feeMode = 'auto';
+                          }
+                        }),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            OptionField(
-              theme: t,
-              label: 'Fecha',
-              value: date,
-              icon: CupertinoIcons.calendar,
-              onTap: () => pickDateTime(context),
-            ),
-            if (type == 'transfer')
-              RCard(
-                theme: t,
-                child: Text(
-                  'Llegan ${app.secureMoney(targetAmount, targetCurrency)}',
-                  style: TextStyle(
-                    color: t.accent,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                  if (canOperationFee)
+                    OptionField(
+                      theme: t,
+                      label: 'Comisión',
+                      value: feeModeLabel(effectiveFeeMode),
+                      icon: CupertinoIcons.percent,
+                      onTap: () => pickValue(
+                        context,
+                        const ['Automática', 'Manual', 'Sin comisión'],
+                        feeModeLabel(effectiveFeeMode),
+                        (value) => setState(() {
+                          feeMode = feeModeFromLabel(value);
+                          if (feeMode != 'manual') fee.clear();
+                        }),
+                      ),
+                    ),
+                  if (type == 'expense' &&
+                      canOperationFee &&
+                      effectiveFeeMode != 'none' &&
+                      paymentMethod == 'bank_transfer')
+                    OptionField(
+                      theme: t,
+                      label: 'Transferencia bancaria',
+                      value: bankTransferScopeLabel(bankTransferScope),
+                      icon: CupertinoIcons.building_2_fill,
+                      onTap: () => pickValue(
+                        context,
+                        const ['Otro banco', 'Mismo banco'],
+                        bankTransferScopeLabel(bankTransferScope),
+                        (value) => setState(() {
+                          bankTransferScope = bankTransferScopeFromLabel(value);
+                        }),
+                      ),
+                    ),
+                  if (canTransferFee)
+                    OptionField(
+                      theme: t,
+                      label: 'Transferencia bancaria',
+                      value: bankTransferScopeLabel(bankTransferScope),
+                      icon: CupertinoIcons.building_2_fill,
+                      onTap: () => pickValue(
+                        context,
+                        const ['Otro banco', 'Mismo banco'],
+                        bankTransferScopeLabel(bankTransferScope),
+                        (value) => setState(() {
+                          bankTransferScope = bankTransferScopeFromLabel(value);
+                        }),
+                      ),
+                    ),
+                  if (canOperationFee && effectiveFeeMode == 'manual')
+                    RField(
+                      theme: t,
+                      controller: fee,
+                      placeholder: 'Comisión manual',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  if (autoOperationFee > 0 || autoTransferFee > 0)
+                    RCard(
+                      theme: t,
+                      child: Row(
+                        children: [
+                          Icon(CupertinoIcons.percent, color: t.accent),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Comisión estimada',
+                              style: TextStyle(
+                                color: t.ink,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            app.secureMoney(
+                              type == 'transfer'
+                                  ? autoTransferFee
+                                  : autoOperationFee,
+                              sourceCurrency,
+                            ),
+                            style: TextStyle(
+                              color: t.accent,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  OptionField(
+                    theme: t,
+                    label: 'Fecha',
+                    value: date,
+                    icon: CupertinoIcons.calendar,
+                    onTap: () => pickDateTime(context),
                   ),
-                ),
+                  if (previewAmount > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 12,
+                      ),
+                      child: Column(
+                        children: [
+                          DebtDetailRow(
+                            theme: t,
+                            label: 'Monto',
+                            value: app.secureMoney(
+                              previewAmount,
+                              sourceCurrency,
+                            ),
+                          ),
+                          if (type != 'expense' ||
+                              !isBankCommissionCategory(category))
+                            DebtDetailRow(
+                              theme: t,
+                              label: 'Comisión aplicada',
+                              value: app.secureMoney(
+                                previewFee,
+                                sourceCurrency,
+                              ),
+                            ),
+                          DebtDetailRow(
+                            theme: t,
+                            label: type == 'income'
+                                ? 'Ingreso neto'
+                                : 'Total a debitar',
+                            value: app.secureMoney(
+                              previewTotal,
+                              sourceCurrency,
+                            ),
+                            valueColor: t.accent,
+                          ),
+                          if (type == 'transfer')
+                            DebtDetailRow(
+                              theme: t,
+                              label: 'Llega a destino',
+                              value: app.secureMoney(
+                                targetAmount,
+                                targetCurrency,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
-            PrimaryActionButton(
-              theme: t,
-              label: widget.movement == null
-                  ? 'Guardar movimiento'
-                  : 'Guardar cambios',
-              onPressed: save,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+              child: PrimaryActionButton(
+                key: const ValueKey('movement-editor-save'),
+                theme: t,
+                label: widget.movement == null
+                    ? 'Guardar movimiento'
+                    : 'Guardar cambios',
+                onPressed: save,
+              ),
             ),
           ],
         ),
@@ -11173,8 +12990,8 @@ class _MovementEditorState extends State<MovementEditor> {
 
   void inferCategory(String value) {
     if (type != 'expense' || categoryTouched) return;
-    final inferred = categoryFromDescription(value);
-    if (inferred != null && inferred != category) {
+    final inferred = categoryFromDescription(value) ?? 'Otro';
+    if (inferred != category) {
       setState(() => category = inferred);
     }
   }
@@ -11273,6 +13090,7 @@ class _MovementEditorState extends State<MovementEditor> {
       source,
       type: type,
       category: type == 'expense' ? category : '',
+      method: type == 'expense' ? paymentMethod : 'bank_transfer',
     )) {
       return 0;
     }
@@ -11343,18 +13161,31 @@ class _MovementEditorState extends State<MovementEditor> {
           return;
         }
         targetAmount = source['currency'] == 'USD'
-            ? parseAmount(amount.text) * customRate
-            : parseAmount(amount.text) / customRate;
+            ? moneyConvert(parseAmount(amount.text), customRate)
+            : moneyConvert(parseAmount(amount.text), 1, customRate);
       }
     }
     widget.onSave({
       'id': widget.movement?['id'],
       'type': type,
-      'paymentMethod': type == 'expense' ? paymentMethod : '',
-      'feeMode': type == 'expense' || type == 'income' ? feeMode : '',
+      'paymentMethod': type == 'expense' && !isBankCommissionCategory(category)
+          ? paymentMethod
+          : '',
+      'feeMode': type == 'expense' || type == 'income'
+          ? canConfigureBankFee(
+                  source,
+                  type: type,
+                  category: type == 'expense' ? category : '',
+                  method: type == 'expense' ? paymentMethod : 'bank_transfer',
+                )
+                ? feeMode
+                : 'none'
+          : '',
       'bankTransferScope':
           type == 'transfer' ||
-              (type == 'expense' && paymentMethod == 'bank_transfer')
+              (type == 'expense' &&
+                  !isBankCommissionCategory(category) &&
+                  paymentMethod == 'bank_transfer')
           ? bankTransferScope
           : '',
       'description': desc.text.trim(),
@@ -11581,15 +13412,19 @@ Widget softEntrance(
   double offsetY = 8,
   Duration duration = const Duration(milliseconds: 180),
 }) {
-  return TweenAnimationBuilder<double>(
-    tween: Tween<double>(begin: 0, end: 1),
-    duration: duration,
-    curve: Curves.easeOutCubic,
-    child: child,
-    builder: (context, value, child) {
-      return Opacity(
-        opacity: value,
-        child: Transform.translate(
+  return Builder(
+    builder: (context) {
+      // A page route already animates its content as a single layer.
+      if (MediaQuery.disableAnimationsOf(context) ||
+          ModalRoute.of(context) is FluidPageRoute) {
+        return child;
+      }
+      return TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: 1),
+        duration: duration,
+        curve: Curves.easeOutCubic,
+        child: RepaintBoundary(child: child),
+        builder: (context, value, child) => Transform.translate(
           offset: Offset(0, offsetY * (1 - value)),
           child: child,
         ),
@@ -11671,18 +13506,9 @@ class AppScroll extends StatelessWidget {
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
-                  child: softEntrance(
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: children,
-                    ),
-                    offsetY: 6,
-                    duration: const Duration(milliseconds: 180),
-                  ),
-                ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                sliver: SliverList(delegate: SliverChildListDelegate(children)),
               ),
             ],
           ),
@@ -11717,9 +13543,7 @@ class RCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
+    return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 12),
       padding: padding,
@@ -12581,13 +14405,19 @@ void pickCategory(
 List<Map<String, dynamic>> sortedMovements(
   List<Map<String, dynamic>> movements,
 ) {
-  final copy = [...movements];
-  copy.sort(
-    (a, b) =>
-        parseMovementDate(b['date']?.toString())
-            .compareTo(parseMovementDate(a['date']?.toString())),
-  );
-  return copy;
+  final dated = [
+    for (var i = 0; i < movements.length; i++)
+      (
+        movement: movements[i],
+        date: parseMovementDate(movements[i]['date']?.toString()),
+        index: i,
+      ),
+  ];
+  dated.sort((a, b) {
+    final order = b.date.compareTo(a.date);
+    return order == 0 ? a.index.compareTo(b.index) : order;
+  });
+  return dated.map((item) => item.movement).toList();
 }
 
 double movementListAmount(Map<String, dynamic> movement) {
@@ -12642,31 +14472,46 @@ String automaticAccountName(String provider, String label) {
 String displayCurrency(String currency) {
   if (currency == 'VES') return 'Bolívares';
   if (currency == 'EUR') return 'Euros';
+  if (currency == 'USDT') return 'USDT';
   return 'Dólares';
 }
 
 String currencyBadge(String currency) {
   if (currency == 'VES') return 'Bs';
   if (currency == 'EUR') return 'EUR';
+  if (currency == 'USDT') return 'USDT';
   return r'$';
 }
 
 List<String> currencyPickerLabels({required String except}) {
-  const codes = ['USD', 'VES', 'EUR'];
+  const codes = ['USD', 'VES', 'EUR', 'USDT'];
   return codes
-      .where((code) => code != except)
+      .where(
+        (code) => code != except && isCalculatorPairSupported(code, except),
+      )
       .map(displayCurrency)
       .toList(growable: false);
 }
 
 String firstDifferentCurrency(String currency) {
-  const codes = ['USD', 'VES', 'EUR'];
-  return codes.firstWhere((code) => code != currency, orElse: () => 'USD');
+  const codes = ['USD', 'VES', 'EUR', 'USDT'];
+  return codes.firstWhere(
+    (code) => code != currency && isCalculatorPairSupported(code, currency),
+    orElse: () => 'USD',
+  );
+}
+
+bool isCalculatorPairSupported(String from, String to) {
+  if (from == to) return true;
+  if (from == 'USDT') return to == 'VES';
+  if (to == 'USDT') return from == 'VES';
+  return true;
 }
 
 String currencyCodeFromLabel(String label) {
   if (label.startsWith('Bol')) return 'VES';
   if (label.startsWith('Euro')) return 'EUR';
+  if (label == 'USDT') return 'USDT';
   return 'USD';
 }
 
@@ -12857,8 +14702,8 @@ double spentForCategory(
 
 double convert(double amount, String from, String to, double rate) {
   if (from == to) return amount;
-  if (from == 'USD' && to == 'VES') return amount * rate;
-  if (from == 'VES' && to == 'USD') return amount / rate;
+  if (from == 'USD' && to == 'VES') return moneyConvert(amount, rate);
+  if (from == 'VES' && to == 'USD') return moneyConvert(amount, 1, rate);
   return amount;
 }
 
@@ -12868,22 +14713,21 @@ double? convertCurrencyAmount(
   String to, {
   required double usdVes,
   required double eurVes,
+  double usdtVes = 0,
 }) {
+  if (!isCalculatorPairSupported(from, to)) return null;
   if (from == to) return amount;
-  if (from == 'USD' && to == 'VES') return amount * usdVes;
-  if (from == 'VES' && to == 'USD') return amount / usdVes;
-  if (from == 'EUR' || to == 'EUR') {
-    if (eurVes <= 0) return null;
-    final valueInVes = from == 'EUR'
-        ? amount * eurVes
-        : from == 'USD'
-        ? amount * usdVes
-        : amount;
-    if (to == 'VES') return valueInVes;
-    if (to == 'EUR') return valueInVes / eurVes;
-    return valueInVes / usdVes;
-  }
-  return amount;
+  final rates = {'VES': 1.0, 'USD': usdVes, 'EUR': eurVes, 'USDT': usdtVes};
+  final fromRate = rates[from];
+  final toRate = rates[to];
+  if (fromRate == null ||
+      toRate == null ||
+      !fromRate.isFinite ||
+      !toRate.isFinite ||
+      fromRate <= 0 ||
+      toRate <= 0)
+    return null;
+  return amount * fromRate / toRate;
 }
 
 double numberValue(Object? value, {double fallback = 0}) {
@@ -12899,10 +14743,11 @@ double parseAmount(String value) {
     raw = raw.replaceAll('.', '').replaceAll(',', '.');
   } else if (raw.contains(',')) {
     raw = raw.replaceAll('.', '').replaceAll(',', '.');
-  } else if (RegExp(r'^\d+\.\d{3,}$').hasMatch(raw)) {
+  } else if (RegExp(r'^-?\d{1,3}(\.\d{3}){2,}$').hasMatch(raw)) {
     raw = raw.replaceAll('.', '');
   }
-  return double.tryParse(raw) ?? 0;
+  final parsed = double.tryParse(raw);
+  return parsed != null && parsed.isFinite ? parsed : 0;
 }
 
 String firstText(Map<String, dynamic> data, List<String> keys) {
@@ -12970,6 +14815,7 @@ String pinHashFor(String pin, String salt) {
 String hiddenMoney(String currency, {String sign = ''}) {
   if (currency == 'VES') return '${sign}Bs. ••••';
   if (currency == 'EUR') return '${sign}€••••';
+  if (currency == 'USDT') return '${sign}₮••••';
   return '${sign}\$••••';
 }
 
@@ -12998,16 +14844,20 @@ String money(double value, String currency) {
   final body = formatNumber(value.abs());
   if (currency == 'VES') return '${sign}Bs. $body';
   if (currency == 'EUR') return '$sign€$body';
+  if (currency == 'USDT') return '$sign₮$body';
   return '$sign\$$body';
 }
 
 String decimal(double value) {
-  var text = value.toStringAsFixed(6);
-  while (text.contains('.') && text.endsWith('0')) {
-    text = text.substring(0, text.length - 1);
-  }
-  if (text.endsWith('.')) text = text.substring(0, text.length - 1);
-  return text.replaceAll('.', ',');
+  return formatNumberTruncated(value, decimals: 2);
+}
+
+String formatNumberTruncated(double value, {int decimals = 2}) {
+  final factor = math.pow(10, decimals).toDouble();
+  final truncated = value >= 0
+      ? (value * factor).floor() / factor
+      : (value * factor).ceil() / factor;
+  return truncated.toStringAsFixed(decimals).replaceAll('.', ',');
 }
 
 String formatNumber(double value) {
@@ -13029,7 +14879,7 @@ String currentMonthKey() {
 
 const List<List<String>> homeSectionOptions = [
   ['metrics', 'Ingresos y gastos'],
-  ['accounts', 'Cuentas'],
+  ['accounts', 'Mis balances'],
   ['upcoming', 'Próximos pagos'],
   ['recent', 'Movimientos recientes'],
 ];
@@ -13042,8 +14892,18 @@ const List<List<String>> homeQuickActionOptions = [
 
 const List<List<String>> homeShortcutOptions = [
   ['calculator', 'Calculadora'],
+  ['movement', 'Movimientos'],
+  ['accounts', 'Mis balances'],
   ['debts', 'Por cobrar / pagar'],
+  ['settings', 'Ajustes'],
 ];
+
+String optionLabel(List<List<String>> options, String key) {
+  for (final option in options) {
+    if (option.first == key) return option.last;
+  }
+  return key;
+}
 
 List<String> sanitizeHomeSections(Object? value) {
   final allowed = homeSectionOptions.map((item) => item.first).toList();
@@ -13083,10 +14943,22 @@ IconData quickActionIcon(String key) {
       return CupertinoIcons.creditcard_fill;
     case 'calculator':
       return material.Icons.calculate_rounded;
+    case 'movement':
+      return CupertinoIcons.arrow_up_arrow_down;
+    case 'accounts':
+      return CupertinoIcons.creditcard_fill;
+    case 'settings':
+      return CupertinoIcons.gear_alt_fill;
     case 'savings':
       return CupertinoIcons.flag_fill;
     case 'debts':
       return CupertinoIcons.person_2_fill;
+    case 'metrics':
+      return CupertinoIcons.chart_bar_alt_fill;
+    case 'upcoming':
+      return CupertinoIcons.calendar;
+    case 'recent':
+      return CupertinoIcons.clock_fill;
     default:
       return CupertinoIcons.arrow_up_right_circle_fill;
   }
@@ -13100,6 +14972,12 @@ String quickActionSubtitle(String key) {
       return 'Banco, billetera o efectivo';
     case 'calculator':
       return 'Convierte con tasas actualizadas';
+    case 'movement':
+      return 'Historial de ingresos y gastos';
+    case 'accounts':
+      return 'Bancos, billeteras y efectivo';
+    case 'settings':
+      return 'Tema, seguridad y preferencias';
     case 'savings':
       return 'Crea un objetivo de ahorro';
     case 'debts':
@@ -13109,29 +14987,67 @@ String quickActionSubtitle(String key) {
   }
 }
 
+String homeBalanceModeLabel(String value) {
+  return value == 'vesOnly' ? 'Solo bolívares al cambio' : 'Todo el balance';
+}
+
+String homeBalanceModeFromLabel(String label) {
+  return label.startsWith('Solo') ? 'vesOnly' : 'total';
+}
+
+String homeBalancePeriodLabel(String value) {
+  switch (value) {
+    case 'week':
+      return 'Semana';
+    case 'month':
+      return 'Mes';
+    default:
+      return 'Día';
+  }
+}
+
+String homeBalancePeriodFromLabel(String label) {
+  if (label == 'Semana') return 'week';
+  if (label == 'Mes') return 'month';
+  return 'day';
+}
+
 double balanceChangePercent(
   List<Map<String, dynamic>> movements,
-  double totalUsd,
-  double rate,
-) {
-  final month = currentMonthKey();
+  double currentBalance,
+  _RialAppState app, {
+  required String currency,
+  required String period,
+  required String balanceMode,
+}) {
+  final now = DateTime.now();
+  final cutoff = switch (period) {
+    'week' => now.subtract(const Duration(days: 7)),
+    'month' => DateTime(now.year, now.month),
+    _ => DateTime(now.year, now.month, now.day),
+  };
   var net = 0.0;
   for (final movement in movements) {
-    if (monthKeyFromDate(movement['date']?.toString()) != month) continue;
-    final currency = movement['currency']?.toString() ?? 'USD';
-    final amount = convert(
-      numberValue(movement['amount']),
-      currency,
-      'USD',
-      rate,
-    );
-    final fee = convert(
-      numberValue(movement['feeAmount']),
-      currency,
-      'USD',
-      rate,
-    );
+    final date = parseMovementDate(movement['date']?.toString());
+    if (date.millisecondsSinceEpoch == 0 || date.isBefore(cutoff)) continue;
     final type = movement['type']?.toString() ?? 'expense';
+    if (balanceMode == 'vesOnly' &&
+        !movementTouchesCurrency(app, movement, 'VES')) {
+      continue;
+    }
+    final movementCurrency = movement['currency']?.toString() ?? 'USD';
+    final amount = app.convertForHome(
+      numberValue(movement['amount']),
+      movementCurrency,
+      currency,
+    );
+    final fee = app.convertForHome(
+      numberValue(movement['feeAmount']),
+      movement['feeCurrency']?.toString().isNotEmpty == true
+          ? movement['feeCurrency'].toString()
+          : movementCurrency,
+      currency,
+    );
     if (type == 'income') {
       net += amount - fee;
     } else if (isExpenseType(type)) {
@@ -13140,23 +15056,45 @@ double balanceChangePercent(
       net -= fee;
     }
   }
-  final start = totalUsd - net;
+  final start = currentBalance - net;
   if (start.abs() < .01) return 0;
   return (net / start) * 100;
+}
+
+bool movementTouchesCurrency(
+  _RialAppState app,
+  Map<String, dynamic> movement,
+  String currency,
+) {
+  final source = app.accountById(movement['accountId']?.toString() ?? '');
+  final target = app.accountById(movement['targetAccountId']?.toString() ?? '');
+  return movement['currency'] == currency ||
+      movement['targetCurrency'] == currency ||
+      source?['currency'] == currency ||
+      target?['currency'] == currency;
 }
 
 double debtRemainingAmount(Map<String, dynamic> debt) {
   return math.max(
     0.0,
-    numberValue(debt['amount']) - numberValue(debt['paidAmount']),
+    moneySubtract(numberValue(debt['amount']), numberValue(debt['paidAmount'])),
   );
 }
 
 double debtNextPaymentAmount(Map<String, dynamic> debt) {
-  final installment = numberValue(debt['installmentAmount']);
   final remaining = debtRemainingAmount(debt);
-  if (installment > 0 && installment < remaining) return installment;
-  return remaining;
+  if (!debtHasInstallments(debt) || remaining == 0) return remaining;
+  final schedule = debtInstallmentAmounts(debt);
+  final index = debtNextInstallmentIndex(debt);
+  final boundary = schedule
+      .take(index + 1)
+      .fold<int>(0, (sum, v) => sum + moneyCents(v));
+  final paid = math.max(
+    0,
+    moneyCents(numberValue(debt['paidAmount'])) -
+        moneyCents(debtInitialAmount(debt)),
+  );
+  return math.min(remaining, math.max(0, boundary - paid) / 100);
 }
 
 bool debtHasInstallments(Map<String, dynamic> debt) {
@@ -13182,24 +15120,18 @@ List<String> debtInstallmentDates(Map<String, dynamic> debt) {
 
 int debtNextInstallmentIndex(Map<String, dynamic> debt) {
   if (!debtHasInstallments(debt)) return 0;
-  final count = debtInstallmentCount(debt);
-  final installment = numberValue(debt['installmentAmount']);
-  if (installment <= 0) return 0;
-  final storedInitialAmount = numberValue(debt['initialAmount']);
-  final initialAmount = math.min(
-    numberValue(debt['amount']),
-    storedInitialAmount > 0 || debt['initialPaid'] != true
-        ? storedInitialAmount
-        : numberValue(debt['paidAmount']),
+  final schedule = debtInstallmentAmounts(debt);
+  final paid = math.max(
+    0,
+    moneyCents(numberValue(debt['paidAmount'])) -
+        moneyCents(debtInitialAmount(debt)),
   );
-  final paidTowardInstallments = math.max(
-    0.0,
-    numberValue(debt['paidAmount']) - initialAmount,
-  );
-  return (paidTowardInstallments / installment)
-      .floor()
-      .clamp(0, math.max(0, count - 1))
-      .toInt();
+  var boundary = 0;
+  for (var i = 0; i < schedule.length; i++) {
+    boundary += moneyCents(schedule[i]);
+    if (paid < boundary) return i;
+  }
+  return schedule.length - 1;
 }
 
 String debtUpcomingDate(Map<String, dynamic> debt) {
@@ -13388,13 +15320,20 @@ bool isNationalBankAccount(Map<String, dynamic>? account) =>
 bool isCashAccount(Map<String, dynamic>? account) =>
     account != null && account['kind'] == 'cash';
 
+bool isFeeExemptPaymentMethod(String method) =>
+    method == 'payment_mobile_c2p' ||
+    method == 'payment_mobile_p2c' ||
+    method == 'debit_card';
+
 bool canConfigureBankFee(
   Map<String, dynamic>? account, {
   required String type,
   Map<String, dynamic>? target,
   String category = '',
+  String method = 'bank_transfer',
 }) {
-  if (normalizeText(category) == 'recarga saldo') return false;
+  if (isFeeExemptCategory(category)) return false;
+  if (isFeeExemptPaymentMethod(method)) return false;
   if (!isNationalBankAccount(account)) return false;
   if (account?['currency'] != 'VES') return false;
   if (type == 'transfer') {
@@ -13411,25 +15350,23 @@ double estimatedBankFee({
   String bankTransferScope = 'other_bank',
 }) {
   if (amount <= 0) return 0;
-  if (normalizeText(category) == 'recarga saldo') return 0;
+  if (isFeeExemptCategory(category)) return 0;
+  if (isFeeExemptPaymentMethod(method)) return 0;
   if (method == 'bank_transfer' && bankTransferScope == 'same_bank') return 0;
-  if (type == 'transfer') return math.max(14, amount * .003);
+  if (type == 'transfer') return math.max(14, moneyConvert(amount, .003));
   switch (method) {
-    case 'payment_mobile_p2c':
-      return math.max(14, amount * .015);
-    case 'debit_card':
-      return math.max(14, amount * .015);
     case 'bank_transfer':
-      return math.max(14, amount * .003);
+      return math.max(14, moneyConvert(amount, .003));
     default:
-      return math.max(14, amount * .003);
+      return math.max(14, moneyConvert(amount, .003));
   }
 }
 
 String paymentMethodLabel(String method) {
   switch (method) {
+    case 'payment_mobile_c2p':
     case 'payment_mobile_p2c':
-      return 'Pago móvil comercio';
+      return 'Pago móvil C2P';
     case 'bank_transfer':
       return 'Transferencia bancaria';
     case 'debit_card':
@@ -13440,7 +15377,9 @@ String paymentMethodLabel(String method) {
 }
 
 String paymentMethodFromLabel(String label) {
-  if (label == 'Pago móvil comercio') return 'payment_mobile_p2c';
+  if (label == 'Pago móvil C2P' || label == 'Pago móvil comercio') {
+    return 'payment_mobile_c2p';
+  }
   if (label == 'Transferencia bancaria') return 'bank_transfer';
   if (label == 'Tarjeta') return 'debit_card';
   return 'payment_mobile_p2p';
@@ -13643,6 +15582,10 @@ String timeOnlyLabel(DateTime date) {
 
 DateTime parseMovementDate(String? value) {
   if (value == null) return DateTime.fromMillisecondsSinceEpoch(0);
+  if (RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(value)) {
+    final iso = DateTime.tryParse(value);
+    if (iso != null) return iso.toLocal();
+  }
   final match = RegExp(
     r'(\d{2})/(\d{2})/(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM)?)?',
   ).firstMatch(value);

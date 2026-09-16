@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -63,6 +65,7 @@ object SafeWorkManager {
 
 object RateUpdateScheduler {
     private const val WORK_NAME = "sin_rial_daily_rate_update"
+    private const val WIDGET_WORK_NAME = "sin_rial_widget_rate_update"
 
     fun schedule(context: Context): Boolean {
         return enqueue(context, ExistingWorkPolicy.KEEP)
@@ -72,20 +75,34 @@ object RateUpdateScheduler {
         return enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
     }
 
-    private fun enqueue(context: Context, policy: ExistingWorkPolicy): Boolean {
+    fun refreshSoon(context: Context): Boolean {
+        return enqueue(
+            context,
+            ExistingWorkPolicy.REPLACE,
+            delayMillis = 0L,
+            workName = WIDGET_WORK_NAME
+        )
+    }
+
+    private fun enqueue(
+        context: Context,
+        policy: ExistingWorkPolicy,
+        delayMillis: Long = delayUntilNextSixAm(),
+        workName: String = WORK_NAME
+    ): Boolean {
         val appContext = context.applicationContext
         val manager = SafeWorkManager.get(appContext) ?: return false
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
         val request = OneTimeWorkRequestBuilder<RateUpdateWorker>()
-            .setInitialDelay(delayUntilNextSixAm(), TimeUnit.MILLISECONDS)
+            .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.HOURS)
             .build()
         return try {
             manager.enqueueUniqueWork(
-                WORK_NAME,
+                workName,
                 policy,
                 request
             )
@@ -130,14 +147,24 @@ class RateUpdateReceiver : BroadcastReceiver() {
 
 object RateUpdateService {
     private const val ENDPOINT = "https://bcv.today/api/v1/rate.json"
+    private const val ALCAMBIO_ENDPOINT = "https://api.alcambio.app/graphql"
     private const val UPDATE_ENDPOINT = "https://api.github.com/repos/itsArtu/sin-rial-app/releases/latest"
     private const val UPDATE_NOTIFICATION_ID = 2601
 
     fun update(context: Context): Boolean {
-        val data = fetchRateJson() ?: return false
-        val usd = extractUsdRate(data)
-        if (usd <= 0.0) return false
+        val data = fetchRateJson()
+        val usd = data?.let { extractUsdRate(it) } ?: 0.0
+        if (data == null || !usd.isFinite() || usd <= 0.0) {
+            val status = if (hasNetwork(context)) "error" else "offline"
+            val failure = JSONObject().put("rateLastAttemptMillis", System.currentTimeMillis())
+            for (key in listOf("rateFetchStatus", "eurRateFetchStatus", "usdtRateFetchStatus")) failure.put(key, status)
+            NativeJsonStore.updateRateFields(context, failure)
+            UsdRateWidgetProvider.updateAll(context)
+            EurRateWidgetProvider.updateAll(context)
+            return false
+        }
         val eur = extractNamedRate(data, "EUR")
+        val usdt = fetchUsdtRate()
         val effectiveDate = data.optString("effective_date").ifBlank {
             data.optString("date").ifBlank { currentIsoDate() }
         }
@@ -152,6 +179,10 @@ object RateUpdateService {
         if (eur > 0.0 && oldEur > 0.0 && abs(oldEur - eur) > 0.0001) {
             state.put("previousEurRate", oldEur)
         }
+        val oldUsdt = state.optDouble("usdtRate", 0.0)
+        if (usdt > 0.0 && oldUsdt > 0.0 && abs(oldUsdt - usdt) > 0.0001) {
+            state.put("previousUsdtRate", oldUsdt)
+        }
 
         state.put("rate", usd)
         state.put("lastRateDate", effectiveDate)
@@ -162,9 +193,20 @@ object RateUpdateService {
             state.put("eurRateEffectiveDate", effectiveDate)
             state.put("eurRateUpdatedAt", updatedAt)
         }
+        if (usdt > 0.0) {
+            state.put("usdtRate", usdt)
+            state.put("usdtRateUpdatedAt", currentIsoDate())
+        }
         state.put("lastRateMillis", System.currentTimeMillis())
+        state.put("rateLastAttemptMillis", System.currentTimeMillis())
+        state.put("rateFetchStatus", "ok")
+        state.put("eurRateFetchStatus", if (eur > 0.0) "ok" else "error")
+        state.put("usdtRateFetchStatus", if (usdt > 0.0) "ok" else if (hasNetwork(context)) "error" else "offline")
+        if (eur > 0.0) state.put("eurLastRateMillis", System.currentTimeMillis())
+        if (usdt > 0.0) state.put("usdtLastRateMillis", System.currentTimeMillis())
 
-        NativeJsonStore.writeState(context, state.toString())
+        NativeJsonStore.updateRateFields(context, state)
+        MovementWidgetProvider.updateAll(context)
         UsdRateWidgetProvider.updateAll(context)
         EurRateWidgetProvider.updateAll(context)
         checkReleaseUpdate(context)
@@ -183,6 +225,50 @@ object RateUpdateService {
             JSONObject(body)
         } catch (_: Exception) {
             null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun hasNetwork(context: Context): Boolean {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork)
+        return capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }
+
+    private fun fetchUsdtRate(): Double {
+        val connection = (URL(ALCAMBIO_ENDPOINT).openConnection() as? HttpURLConnection) ?: return 0.0
+        return try {
+            connection.connectTimeout = 8000
+            connection.readTimeout = 10000
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Content-Type", "application/json")
+            val payload = JSONObject()
+                .put(
+                    "query",
+                    "query getBinanceP2PAverages { getBinanceP2PAverages { sellAverage buyAverage updatedAt } }"
+                )
+                .toString()
+            connection.outputStream.use { stream ->
+                stream.write(payload.toByteArray(Charsets.UTF_8))
+            }
+            if (connection.responseCode !in 200..299) return 0.0
+            val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val averages = JSONObject(body)
+                .optJSONObject("data")
+                ?.optJSONObject("getBinanceP2PAverages")
+                ?: return 0.0
+            val sell = numberValue(averages.opt("sellAverage"))
+            val buy = numberValue(averages.opt("buyAverage"))
+            if (sell > 0.0 && buy > 0.0) {
+                (sell + buy) / 2.0
+            } else {
+                maxOf(sell, buy)
+            }
+        } catch (_: Exception) {
+            0.0
         } finally {
             connection.disconnect()
         }
@@ -259,7 +345,7 @@ object RateUpdateService {
             compareVersions(version, installedVersion) > 0
         }
         if (!isNewer) return
-        val downloadUrl = apkDownloadUrl(data).ifBlank {
+        val downloadUrl = apkDownloadUrl(data, version, build).ifBlank {
             data.optString("html_url", "").trim()
         }
         if (downloadUrl.isEmpty()) return
@@ -301,19 +387,28 @@ object RateUpdateService {
         return version to build
     }
 
-    private fun apkDownloadUrl(data: JSONObject): String {
+    private fun apkDownloadUrl(data: JSONObject, version: String, build: Int): String {
         val assets = data.optJSONArray("assets") ?: return ""
-        var fallback = ""
+        var bestUrl = ""
+        var bestScore = -1
         for (index in 0 until assets.length()) {
             val asset = assets.optJSONObject(index) ?: continue
             val name = asset.optString("name", "").lowercase()
             if (!name.endsWith(".apk")) continue
             val url = asset.optString("browser_download_url", "").trim()
             if (url.isEmpty()) continue
-            if (!name.contains("debug")) return url
-            if (fallback.isEmpty()) fallback = url
+            var score = 1
+            if (version.isNotEmpty() && name.contains(version.lowercase())) score += 100
+            if (build > 0 && name.contains(build.toString())) score += 80
+            if (name.contains("universal")) score += 10
+            if (name.contains("old") || name.contains("previous")) score -= 20
+            if (score > bestScore) {
+                bestScore = score
+                bestUrl = url
+            }
+            if (score >= 181) break
         }
-        return fallback
+        return bestUrl
     }
 
     private fun compareVersions(left: String, right: String): Int {

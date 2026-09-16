@@ -11,7 +11,10 @@ import android.os.Build
 import android.widget.RemoteViews
 import org.json.JSONObject
 import java.util.Locale
+import java.text.SimpleDateFormat
+import java.util.Date
 import kotlin.math.abs
+import kotlin.math.floor
 
 class UsdRateWidgetProvider : AppWidgetProvider() {
     companion object {
@@ -21,6 +24,7 @@ class UsdRateWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        RateUpdateScheduler.refreshSoon(context)
         ids.forEach { manager.updateAppWidget(it, RateWidgetRenderer.buildViews(context, "USD")) }
     }
 }
@@ -33,6 +37,7 @@ class EurRateWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        RateUpdateScheduler.refreshSoon(context)
         ids.forEach { manager.updateAppWidget(it, RateWidgetRenderer.buildViews(context, "EUR")) }
     }
 }
@@ -63,7 +68,17 @@ object RateWidgetRenderer {
         views.setTextViewText(R.id.rate_pair, "$currency/VES")
         views.setTextViewText(R.id.rate_value, if (current > 0.0) "Bs ${formatRate(current)}" else "Sin tasa")
         views.setTextViewText(R.id.rate_change, formatPercent(percent))
-        views.setTextViewText(R.id.rate_updated, if (updated.isNotBlank()) "Actualizado $updated" else "Abre Sin Rial para actualizar")
+        val status = state.optString(if (currency == "EUR") "eurRateFetchStatus" else "rateFetchStatus", "")
+        val millis = state.optLong(if (currency == "EUR") "eurLastRateMillis" else "lastRateMillis", 0L)
+        val stamp = if (millis > 0L) SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date(millis)) else updated
+        val label = when {
+            status == "offline" -> "Sin conexión"
+            status == "error" -> "Error al actualizar"
+            current <= 0.0 -> "Sin tasa guardada"
+            millis <= 0L || System.currentTimeMillis() - millis >= 24 * 60 * 60 * 1000L -> "Tasa guardada"
+            else -> "Actualizada"
+        }
+        views.setTextViewText(R.id.rate_updated, if (stamp.isNotBlank()) "$label · $stamp" else label)
         views.setTextColor(R.id.rate_change, if (percent >= 0.0) Color.rgb(88, 190, 134) else Color.rgb(196, 30, 30))
         views.setTextColor(R.id.rate_pair, Color.WHITE)
         views.setOnClickPendingIntent(R.id.rate_root, openAppIntent(context, currency))
@@ -90,21 +105,20 @@ object RateWidgetRenderer {
             "amber" -> Color.rgb(185, 133, 24)
             "cyan" -> Color.rgb(35, 124, 154)
             "teal" -> Color.rgb(36, 123, 123)
-            "violet" -> Color.rgb(120, 87, 166)
+            "violet", "magenta" -> Color.rgb(133, 61, 196)
+            "indigo", "navy", "sky" -> Color.rgb(36, 99, 212)
+            "coral", "orange" -> Color.rgb(195, 92, 62)
             "rose" -> Color.rgb(184, 78, 104)
             "lime" -> Color.rgb(112, 141, 43)
-            "navy" -> Color.rgb(48, 80, 124)
-            "sky" -> Color.rgb(47, 128, 201)
-            "mint" -> Color.rgb(43, 138, 110)
-            "orange" -> Color.rgb(198, 106, 36)
-            "magenta" -> Color.rgb(166, 61, 128)
+            "emerald", "mint" -> Color.rgb(3, 103, 74)
             "graphite" -> Color.rgb(77, 86, 99)
             else -> Color.rgb(3, 103, 74)
         }
     }
 
     private fun formatRate(value: Double): String {
-        return String.format(Locale.US, "%.2f", value).replace(".", ",")
+        val truncated = floor(value * 100.0) / 100.0
+        return String.format(Locale.US, "%.2f", truncated).replace(".", ",")
     }
 
     private fun formatPercent(value: Double): String {

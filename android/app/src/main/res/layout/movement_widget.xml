@@ -1,83 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center_vertical"
-    android:paddingStart="8dp"
-    android:paddingEnd="8dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp"
-    android:background="@drawable/widget_background">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:background="@drawable/widget_background"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <FrameLayout
-            android:layout_width="30dp"
-            android:layout_height="30dp"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
             android:background="@drawable/widget_logo_plate">
 
             <ImageView
                 android:id="@+id/widget_logo"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:layout_gravity="center"
                 android:src="@drawable/app_logo"
                 android:scaleType="fitCenter" />
         </FrameLayout>
 
-        <LinearLayout
-            android:layout_width="0dp"
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="48dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="7dp"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/widget_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Sin Rial"
-                android:textColor="#FFFFFFFF"
-                android:textSize="16sp"
-                android:includeFontPadding="false"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/widget_subtitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Registro rápido"
-                android:textColor="#D6FFFFFF"
-                android:textSize="10sp"
-                android:includeFontPadding="false"
-                android:textStyle="bold" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="58dp"
-        android:gravity="center"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="8dp"
+            android:text="Sin Rial"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textColor="#FFFFFFFF"
+            android:textSize="12sp"
+            android:includeFontPadding="false"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/widget_income"
             android:layout_width="0dp"
-            android:layout_height="match_parent"
+            android:layout_height="48dp"
             android:layout_marginEnd="6dp"
             android:layout_weight="1"
             android:background="@drawable/widget_button_neutral"
             android:gravity="center"
             android:text="Ingreso"
             android:textColor="#FFFFFFFF"
-            android:textSize="17sp"
+            android:textSize="14sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="11sp"
+            android:autoSizeMaxTextSize="14sp"
+            android:autoSizeStepGranularity="1sp"
             android:lines="1"
             android:includeFontPadding="false"
             android:textStyle="bold" />
@@ -85,15 +66,19 @@
         <TextView
             android:id="@+id/widget_expense"
             android:layout_width="0dp"
-            android:layout_height="match_parent"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:background="@drawable/widget_button_neutral"
             android:gravity="center"
             android:text="Gasto"
             android:textColor="#FFFFFFFF"
-            android:textSize="17sp"
+            android:textSize="14sp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="11sp"
+            android:autoSizeMaxTextSize="14sp"
+            android:autoSizeStepGranularity="1sp"
             android:lines="1"
             android:includeFontPadding="false"
             android:textStyle="bold" />
     </LinearLayout>
-</LinearLayout>
+</FrameLayout>

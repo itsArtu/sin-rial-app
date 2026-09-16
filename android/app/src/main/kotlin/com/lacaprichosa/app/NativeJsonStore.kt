@@ -10,8 +10,12 @@ object NativeJsonStore {
 
     private const val STATE_KEY = "state"
     private const val SPLIT_MARKER_KEY = "state_split_v1"
-    private val arrayKeys = listOf("accounts", "movements", "debts", "budgets", "goals", "cards")
+    private val arrayKeys = listOf("accounts", "movements", "debts", "budgets", "goals", "cards", "balanceAdjustments")
     private val objectKeys = listOf("savingsFunds")
+    private val rateKeys = listOf("rate", "previousRate", "lastRateDate", "rateEffectiveDate", "rateUpdatedAt", "lastRateMillis",
+        "eurRate", "previousEurRate", "eurRateEffectiveDate", "eurRateUpdatedAt", "eurLastRateMillis",
+        "usdtRate", "previousUsdtRate", "usdtRateUpdatedAt", "usdtLastRateMillis",
+        "rateLastAttemptMillis", "rateFetchStatus", "eurRateFetchStatus", "usdtRateFetchStatus")
 
     fun prefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
@@ -31,9 +35,11 @@ object NativeJsonStore {
         return state
     }
 
+    @Synchronized
     fun writeState(context: Context, rawState: String) {
         val source = parseObject(rawState)
         val slim = JSONObject(source.toString())
+        preserveNewerRates(context, slim)
         val editor = prefs(context).edit()
 
         for (key in arrayKeys) {
@@ -53,9 +59,11 @@ object NativeJsonStore {
             .apply()
     }
 
+    @Synchronized
     fun writeSplitState(context: Context, rawMainState: String, rawParts: Map<String, String>) {
         val prefs = prefs(context)
         val slim = parseObject(rawMainState)
+        preserveNewerRates(context, slim)
         val editor = prefs.edit()
 
         for (key in arrayKeys) {
@@ -88,6 +96,21 @@ object NativeJsonStore {
     }
 
     private fun partKey(key: String) = "state_part_$key"
+
+    @Synchronized
+    fun updateRateFields(context: Context, rates: JSONObject) {
+        val prefs = prefs(context)
+        val main = parseObject(prefs.getString(STATE_KEY, "{}"))
+        if (rates.optLong("rateLastAttemptMillis") < main.optLong("rateLastAttemptMillis")) return
+        for (key in rateKeys) if (rates.has(key)) main.put(key, rates.get(key))
+        prefs.edit().putString(STATE_KEY, main.toString()).apply()
+    }
+
+    private fun preserveNewerRates(context: Context, incoming: JSONObject) {
+        val stored = parseObject(prefs(context).getString(STATE_KEY, "{}"))
+        if (stored.optLong("rateLastAttemptMillis") <= incoming.optLong("rateLastAttemptMillis")) return
+        for (key in rateKeys) if (stored.has(key)) incoming.put(key, stored.get(key))
+    }
 
     private fun parseObject(raw: String?): JSONObject {
         if (raw.isNullOrBlank()) return JSONObject()

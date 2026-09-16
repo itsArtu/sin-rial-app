@@ -1,8 +1,8 @@
 {
-  "version": "2.1.13",
-  "build": 63,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.1.13+63/sin-rial-v2-flutter-2.1.13.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.1.13+63",
-  "sha256": "2AC8B1B6B2290BE7BEF61DD8B570F1009CC04ABAF323F836F7FF87CAEC45FB29",
-  "notes": "Mejora por cobrar/pagar con detalles, edicion, pagos y cobros vinculados. Agrega comisiones configurables, logos nuevos, categoria Recarga saldo y ajustes de widgets."
+  "version": "2.2.0",
+  "build": 64,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.2.0%2B64/sin-rial-2.2.0.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.2.0%2B64",
+  "sha256": "115CDE2E00A78127F0B1CF19EDD87BC89C0EE156A4BCA2A1D541375D0C178AB8",
+  "notes": "Sin Rial 2.2: balance y grafica reales en USD, EUR o USDT, movimientos por mes con mejores filtros, detalle y deshacer, categorias automaticas ampliadas, Pago TDC y La mamalona. Mejoras de comisiones, calculos, tasas, widgets y actualizaciones."
 }
