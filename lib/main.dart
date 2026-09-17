@@ -16,6 +16,7 @@ part 'finance_logic.dart';
 part 'balance_trend.dart';
 part 'movement_filters.dart';
 part 'category_rules.dart';
+part 'reminder_settings.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,11 +28,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '2.2.0',
+  defaultValue: '2.2.1',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 64,
+  defaultValue: 65,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -376,12 +377,35 @@ class NativeStateStore {
     required int minute,
   }) async {
     try {
+      await _pendingSave;
       await _storeChannel.invokeMethod<void>('scheduleDailyReminder', {
         'enabled': enabled,
         'hour': hour,
         'minute': minute,
       });
     } catch (_) {}
+  }
+
+  static Future<Map<String, dynamic>> dailyReminderStatus() async {
+    try {
+      final raw = await _storeChannel.invokeMapMethod<String, dynamic>(
+        'dailyReminderStatus',
+      );
+      return raw ?? {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<bool> openReminderSettings({required bool exact}) async {
+    try {
+      return await _storeChannel.invokeMethod<bool>('openReminderSettings', {
+            'exact': exact,
+          }) ??
+          false;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<bool> scheduleRateUpdate() async {
@@ -580,6 +604,9 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
     seenAccounts.add(pair);
     return false;
   });
+  assignAccountColors(
+    accounts.map((item) => (item as Map).cast<String, dynamic>()),
+  );
   if (state['savingsFunds'] is! Map) {
     state['savingsFunds'] = <String, dynamic>{};
   }
@@ -1968,6 +1995,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           if (item is Map && item['id'] == editingId) {
             account['id'] = editingId;
             account['createdAt'] = item['createdAt'];
+            account['chartColor'] = item['chartColor'];
             final delta = moneySubtract(
               numberValue(account['balance']),
               numberValue(item['balance']),
@@ -1980,6 +2008,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                 'date': DateTime.now().toIso8601String(),
               });
             list[i] = account;
+            assignAccountColors(maps('accounts'));
             return;
           }
         }
@@ -1987,6 +2016,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       account['id'] = account['id'] ?? id();
       account['createdAt'] = DateTime.now().toIso8601String();
       list.add(account);
+      assignAccountColors(maps('accounts'));
     });
   }
 
@@ -5095,16 +5125,19 @@ class RTheme {
   final bool dark;
   final String colorKey;
 
-  Color get bg => dark ? const Color(0xFF07090D) : const Color(0xFFF7F5F0);
+  Color get bg => dark ? const Color(0xFF000000) : const Color(0xFFF7F5F0);
   Color get card => dark ? const Color(0xFF141820) : const Color(0xFFFFFFFF);
   Color get elevated =>
       dark ? const Color(0xFF1B202A) : const Color(0xFFFEFCF7);
   Color get field => dark ? const Color(0xFF202733) : const Color(0xFFEDE9E0);
-  Color get nav => dark ? const Color(0xF207090D) : const Color(0xF2F7F5F0);
+  Color get nav => dark ? const Color(0xFF000000) : const Color(0xFFF7F5F0);
   Color get navItem => dark ? const Color(0xFF11151C) : const Color(0xFFFFFFFF);
   Color get ink => dark ? const Color(0xFFF8FAFC) : const Color(0xFF14161A);
   Color get muted => dark ? const Color(0xFFA2AAB8) : const Color(0xFF6F6A60);
   Color get border => dark ? const Color(0xFF262D39) : const Color(0xFFE4DFD5);
+  Color get heroControl => dark ? const Color(0x22FFFFFF) : card;
+  Color get heroControlBorder =>
+      dark ? const Color(0x30FFFFFF) : const Color(0xFF8A8D94);
   ThemeColorOption get colorOption => themeColorByKey(colorKey);
   Color get accent => colorOption.colorFor(dark);
   Color get heroStart => dark
@@ -5516,7 +5549,11 @@ class BalanceHero extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              HeroPrivacyButton(hidden: hideAmounts, onTap: onTogglePrivacy),
+              HeroPrivacyButton(
+                theme: theme,
+                hidden: hideAmounts,
+                onTap: onTogglePrivacy,
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -5556,7 +5593,11 @@ class BalanceHero extends StatelessWidget {
               style: TextStyle(color: theme.muted, fontSize: 12),
             )
           else
-            BalanceChangeBadge(percent: changePercent, suffix: periodText),
+            BalanceChangeBadge(
+              theme: theme,
+              percent: changePercent,
+              suffix: periodText,
+            ),
           const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -5614,18 +5655,21 @@ class BalanceHero extends StatelessWidget {
             runSpacing: 8,
             children: [
               BalanceCurrencyChip(
+                theme: theme,
                 label: 'USD',
                 value: '',
                 selected: currency == 'USD',
                 onTap: () => onCurrencyChanged('USD'),
               ),
               BalanceCurrencyChip(
+                theme: theme,
                 label: 'EUR',
                 value: '',
                 selected: currency == 'EUR',
                 onTap: () => onCurrencyChanged('EUR'),
               ),
               BalanceCurrencyChip(
+                theme: theme,
                 label: 'USDT',
                 value: '',
                 selected: currency == 'USDT',
@@ -5645,20 +5689,26 @@ class BalanceHero extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              GestureDetector(
-                onTap: onCustomize,
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0x22FFFFFF),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0x30FFFFFF)),
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.paintbrush_fill,
-                    color: CupertinoColors.white,
-                    size: 19,
+              material.Tooltip(
+                message: 'Personalizar inicio',
+                child: CupertinoButton(
+                  key: const ValueKey('home-customize'),
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(36, 36),
+                  onPressed: onCustomize,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: theme.heroControl,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: theme.heroControlBorder),
+                    ),
+                    child: Icon(
+                      CupertinoIcons.paintbrush_fill,
+                      color: theme.ink,
+                      size: 19,
+                    ),
                   ),
                 ),
               ),
@@ -5702,59 +5752,28 @@ class HomeShortcutRow extends StatelessWidget {
       children.add(Expanded(child: child));
     }
 
-    if (enabled.contains('calculator')) {
+    for (final key in enabled) {
       addShortcut(
         HomeShortcutButton(
+          key: ValueKey('home-shortcut-$key'),
           theme: t,
-          icon: material.Icons.calculate_rounded,
-          title: 'Calculadora',
-          subtitle: 'Tasas y cambios',
-          onTap: () => app.pushPage(context, (_) => CalculatorPage(app: app)),
-        ),
-      );
-    }
-    if (enabled.contains('movement')) {
-      addShortcut(
-        HomeShortcutButton(
-          theme: t,
-          icon: CupertinoIcons.arrow_up_arrow_down,
-          title: 'Movimientos',
-          subtitle: 'Ingresos y gastos',
-          onTap: () =>
-              app.pushPage(context, (_) => MovementHistoryPage(app: app)),
-        ),
-      );
-    }
-    if (enabled.contains('accounts')) {
-      addShortcut(
-        HomeShortcutButton(
-          theme: t,
-          icon: CupertinoIcons.creditcard_fill,
-          title: 'Cuentas',
-          subtitle: 'Balances',
-          onTap: () => app.pushPage(context, (_) => AccountsPage(app: app)),
-        ),
-      );
-    }
-    if (enabled.contains('debts')) {
-      addShortcut(
-        HomeShortcutButton(
-          theme: t,
-          icon: CupertinoIcons.person_2_fill,
-          title: 'Por cobrar',
-          subtitle: 'Pagar y cobrar',
-          onTap: () => app.pushPage(context, (_) => DebtsPage(app: app)),
-        ),
-      );
-    }
-    if (enabled.contains('settings')) {
-      addShortcut(
-        HomeShortcutButton(
-          theme: t,
-          icon: CupertinoIcons.gear_alt_fill,
-          title: 'Ajustes',
-          subtitle: 'Preferencias',
-          onTap: () => app.pushPage(context, (_) => SettingsPage(app: app)),
+          icon: quickActionIcon(key),
+          title: switch (key) {
+            'accounts' => 'Cuentas',
+            'debts' => 'Por cobrar',
+            _ => optionLabel(homeShortcutOptions, key),
+          },
+          subtitle: quickActionSubtitle(key),
+          onTap: () => app.pushPage(
+            context,
+            (_) => switch (key) {
+              'calculator' => CalculatorPage(app: app),
+              'movement' => MovementHistoryPage(app: app),
+              'accounts' => AccountsPage(app: app),
+              'debts' => DebtsPage(app: app),
+              _ => SettingsPage(app: app),
+            },
+          ),
         ),
       );
     }
@@ -5834,24 +5853,28 @@ class HomeShortcutButton extends StatelessWidget {
 class BalanceChangeBadge extends StatelessWidget {
   const BalanceChangeBadge({
     super.key,
+    required this.theme,
     required this.percent,
     this.suffix = '',
   });
 
   final double percent;
+  final RTheme theme;
   final String suffix;
 
   @override
   Widget build(BuildContext context) {
     final positive = percent >= 0;
-    final color = positive ? const Color(0xFF8FE1AA) : const Color(0xFFFF8EA0);
+    final color = theme.dark
+        ? (positive ? const Color(0xFF8FE1AA) : const Color(0xFFFF8EA0))
+        : (positive ? const Color(0xFF176139) : const Color(0xFF9E253D));
     final icon = positive
         ? CupertinoIcons.arrow_up_right
         : CupertinoIcons.arrow_down_right;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(.16),
+        color: Color.alphaBlend(color.withValues(alpha: .12), theme.bg),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: color.withOpacity(.28)),
       ),
@@ -5877,31 +5900,38 @@ class BalanceChangeBadge extends StatelessWidget {
 class HeroPrivacyButton extends StatelessWidget {
   const HeroPrivacyButton({
     super.key,
+    required this.theme,
     required this.hidden,
     required this.onTap,
   });
 
   final bool hidden;
+  final RTheme theme;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: const Color(0x22FFFFFF),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0x30FFFFFF)),
-        ),
-        child: Icon(
-          hidden ? CupertinoIcons.eye_slash_fill : CupertinoIcons.eye_fill,
-          color: CupertinoColors.white,
-          size: 18,
+    return material.Tooltip(
+      message: hidden ? 'Mostrar montos' : 'Ocultar montos',
+      child: CupertinoButton(
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(34, 34),
+        onPressed: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: theme.heroControl,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.heroControlBorder),
+          ),
+          child: Icon(
+            hidden ? CupertinoIcons.eye_slash_fill : CupertinoIcons.eye_fill,
+            color: theme.ink,
+            size: 18,
+          ),
         ),
       ),
     );
@@ -5911,6 +5941,7 @@ class HeroPrivacyButton extends StatelessWidget {
 class BalanceCurrencyChip extends StatelessWidget {
   const BalanceCurrencyChip({
     super.key,
+    required this.theme,
     required this.label,
     required this.value,
     this.selected = false,
@@ -5918,6 +5949,7 @@ class BalanceCurrencyChip extends StatelessWidget {
   });
 
   final String label;
+  final RTheme theme;
   final String value;
   final bool selected;
   final VoidCallback? onTap;
@@ -5930,10 +5962,12 @@ class BalanceCurrencyChip extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 68, minHeight: 36),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xD8FFFFFF) : const Color(0x20FFFFFF),
+        color: selected
+            ? (theme.dark ? const Color(0xD8FFFFFF) : theme.ink)
+            : theme.heroControl,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: selected ? const Color(0xFFFFFFFF) : const Color(0x24FFFFFF),
+          color: selected ? theme.ink : theme.heroControlBorder,
         ),
       ),
       child: Row(
@@ -5946,8 +5980,10 @@ class BalanceCurrencyChip extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: selected
-                  ? const Color(0xFF111418)
-                  : const Color(0xCCFFFFFF),
+                  ? (theme.dark
+                        ? const Color(0xFF111418)
+                        : CupertinoColors.white)
+                  : theme.ink,
               fontSize: 14,
               fontWeight: FontWeight.w800,
             ),
@@ -5960,8 +5996,10 @@ class BalanceCurrencyChip extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: selected
-                    ? const Color(0xFF111418)
-                    : CupertinoColors.white,
+                    ? (theme.dark
+                          ? const Color(0xFF111418)
+                          : CupertinoColors.white)
+                    : theme.ink,
                 fontSize: 15,
                 fontWeight: FontWeight.w900,
               ),
@@ -5970,7 +6008,15 @@ class BalanceCurrencyChip extends StatelessWidget {
         ],
       ),
     );
-    return GestureDetector(onTap: onTap, child: child);
+    return Semantics(
+      selected: selected,
+      child: CupertinoButton(
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(68, 36),
+        onPressed: onTap,
+        child: child,
+      ),
+    );
   }
 }
 
@@ -6114,11 +6160,11 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
         middle: const Text('Personalizar inicio'),
       ),
       child: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            Positioned.fill(
+            Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 20, 18, 118),
+                padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
                 children: [
                   CupertinoSlidingSegmentedControl<int>(
                     groupValue: tab,
@@ -6138,10 +6184,8 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
                 ],
               ),
             ),
-            Positioned(
-              left: 18,
-              right: 18,
-              bottom: 8,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
               child: PrimaryActionButton(
                 theme: t,
                 label: 'Guardar personalización',
@@ -6187,14 +6231,6 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
         CupertinoIcons.eye_fill,
         'Mostrados',
         '${shortcuts.length}/${homeShortcutOptions.length}',
-      ),
-      Text(
-        'Toca un acceso para ocultarlo.',
-        style: TextStyle(
-          color: t.muted,
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-        ),
       ),
       const SizedBox(height: 18),
       Wrap(
@@ -6325,46 +6361,56 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
   }
 
   Widget shortcutBubble(RTheme t, String key) {
-    return GestureDetector(
-      onTap: () => setState(() => shortcuts.remove(key)),
-      child: SizedBox(
-        width: 86,
-        child: Column(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    color: t.elevated,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: t.border),
-                  ),
-                  child: Icon(quickActionIcon(key), color: t.ink, size: 30),
-                ),
-                Positioned(
-                  right: -2,
-                  top: -4,
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE84B55),
+    final index = shortcuts.indexOf(key);
+    return SizedBox(
+      key: ValueKey('customize-shortcut-$key'),
+      width: 86,
+      child: Column(
+        children: [
+          material.Tooltip(
+            message: 'Ocultar ${optionLabel(homeShortcutOptions, key)}',
+            child: CupertinoButton(
+              key: ValueKey('hide-shortcut-$key'),
+              padding: EdgeInsets.zero,
+              onPressed: () => setState(() => shortcuts.remove(key)),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      color: t.elevated,
                       shape: BoxShape.circle,
+                      border: Border.all(color: t.border),
                     ),
-                    child: const Icon(
-                      CupertinoIcons.minus,
-                      color: CupertinoColors.white,
-                      size: 18,
+                    child: Icon(quickActionIcon(key), color: t.ink, size: 30),
+                  ),
+                  Positioned(
+                    right: -2,
+                    top: -4,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE84B55),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        CupertinoIcons.minus,
+                        color: CupertinoColors.white,
+                        size: 18,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Text(
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 36,
+            child: Text(
               optionLabel(homeShortcutOptions, key),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -6375,7 +6421,38 @@ class _HomeCustomizePageState extends State<HomeCustomizePage> {
                 fontWeight: FontWeight.w800,
               ),
             ),
-          ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              shortcutMoveButton(t, key, -1, index > 0),
+              shortcutMoveButton(t, key, 1, index < shortcuts.length - 1),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget shortcutMoveButton(RTheme t, String key, int delta, bool enabled) {
+    return material.Tooltip(
+      message: delta < 0 ? 'Mover antes' : 'Mover después',
+      child: CupertinoButton(
+        key: ValueKey('move-shortcut-$key-$delta'),
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(40, 40),
+        onPressed: enabled
+            ? () => setState(() {
+                final index = shortcuts.indexOf(key);
+                shortcuts.insert(index + delta, shortcuts.removeAt(index));
+              })
+            : null,
+        child: Icon(
+          delta < 0
+              ? CupertinoIcons.chevron_left
+              : CupertinoIcons.chevron_right,
+          size: 18,
+          color: enabled ? t.ink : t.muted.withValues(alpha: .35),
         ),
       ),
     );
@@ -7161,6 +7238,7 @@ class MonthlyMovementSummaryCard extends StatelessWidget {
             const SizedBox(height: 12),
             RatioBar(
               theme: theme,
+              separateParts: true,
               parts: summary.accounts
                   .map(
                     (entry) =>
@@ -7247,6 +7325,7 @@ class AccountDistributionCard extends StatelessWidget {
           const SizedBox(height: 12),
           RatioBar(
             theme: theme,
+            separateParts: true,
             parts: entries
                 .map(
                   (entry) =>
@@ -7515,6 +7594,7 @@ class CurrencyAccountsPage extends StatelessWidget {
                   const SizedBox(height: 18),
                   RatioBar(
                     theme: t,
+                    separateParts: true,
                     parts: accounts
                         .map(
                           (account) => RatioPart(
@@ -11854,6 +11934,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             SectionHeader(theme: t, title: 'Recordatorios'),
+            ReminderPermissions(theme: t),
             SettingsSwitchTile(
               theme: t,
               icon: CupertinoIcons.bell_fill,
@@ -14300,24 +14381,67 @@ class LogoBadge extends StatelessWidget {
   }
 }
 
+const _accountColorPalette = [
+  Color(0xFF58BE86),
+  Color(0xFF5CC3DE),
+  Color(0xFFE86A7B),
+  Color(0xFFE0AE55),
+  Color(0xFFA98BDF),
+  Color(0xFF55BDBD),
+  Color(0xFFF28A68),
+  Color(0xFFA7C957),
+];
+
+Color? _savedAccountColor(Map<String, dynamic> account) {
+  final value = account['chartColor'];
+  return value is int && value >= 0xFF000000 && value <= 0xFFFFFFFF
+      ? Color(value)
+      : null;
+}
+
+void assignAccountColors(Iterable<Map<String, dynamic>> accounts) {
+  final used = <int>{};
+  final pending = <Map<String, dynamic>>[];
+  // Reserve existing colors first so adding or removing accounts does not recolor others.
+  for (final account in accounts) {
+    final saved = _savedAccountColor(account);
+    if (saved == null || !used.add(saved.toARGB32())) {
+      pending.add(account);
+    }
+  }
+  var extra = 0;
+  for (final account in pending) {
+    Color? chosen;
+    for (final candidate in [accountColor(account), ..._accountColorPalette]) {
+      if (used.add(candidate.toARGB32())) {
+        chosen = candidate;
+        break;
+      }
+    }
+    // Extend the chart palette instead of repeating colors after the eighth account.
+    while (chosen == null) {
+      final candidate = HSLColor.fromAHSL(
+        1,
+        (extra++ * 137.508) % 360,
+        .65,
+        .62,
+      ).toColor();
+      if (used.add(candidate.toARGB32())) chosen = candidate;
+    }
+    account['chartColor'] = chosen.toARGB32();
+  }
+}
+
 Color accountColor(Map<String, dynamic> account) {
-  const palette = [
-    Color(0xFF58BE86),
-    Color(0xFF5CC3DE),
-    Color(0xFFE86A7B),
-    Color(0xFFE0AE55),
-    Color(0xFFA98BDF),
-    Color(0xFF55BDBD),
-    Color(0xFFF28A68),
-    Color(0xFFA7C957),
-  ];
+  final saved = _savedAccountColor(account);
+  if (saved != null) return saved;
   final seed =
       '${account['id'] ?? ''}${account['provider'] ?? ''}${account['currency'] ?? ''}';
   final hash = seed.codeUnits.fold<int>(
     0,
     (value, unit) => ((value * 31) + unit) & 0x7FFFFFFF,
   );
-  return palette[hash % palette.length];
+  return _accountColorPalette[hash % _accountColorPalette.length];
 }
 
 class RatioPart {
@@ -14327,9 +14451,15 @@ class RatioPart {
 }
 
 class RatioBar extends StatelessWidget {
-  const RatioBar({super.key, required this.theme, required this.parts});
+  const RatioBar({
+    super.key,
+    required this.theme,
+    required this.parts,
+    this.separateParts = false,
+  });
   final RTheme theme;
   final List<RatioPart> parts;
+  final bool separateParts;
 
   @override
   Widget build(BuildContext context) {
@@ -14341,6 +14471,63 @@ class RatioBar extends StatelessWidget {
         color: theme.field,
         child: total <= 0
             ? const SizedBox.expand()
+            : separateParts
+            ? LayoutBuilder(
+                builder: (context, constraints) {
+                  final positive = parts
+                      .where((part) => part.value > 0)
+                      .toList();
+                  final gap = math.min(
+                    2.0,
+                    constraints.maxWidth / (positive.length * 2),
+                  );
+                  final available = math.max(
+                    0.0,
+                    constraints.maxWidth - gap * (positive.length - 1),
+                  );
+                  final minimum = math.min(3.0, available / positive.length);
+                  final widths = <int, double>{};
+                  var remainingWidth = available;
+                  var remainingValue = total;
+                  // Keep tiny positive balances visible; distribute the rest proportionally.
+                  final byValue =
+                      List<int>.generate(positive.length, (index) => index)
+                        ..sort(
+                          (a, b) =>
+                              positive[a].value.compareTo(positive[b].value),
+                        );
+                  for (final index in byValue) {
+                    if (remainingWidth *
+                            positive[index].value /
+                            remainingValue >=
+                        minimum) {
+                      break;
+                    }
+                    widths[index] = minimum;
+                    remainingWidth -= minimum;
+                    remainingValue -= positive[index].value;
+                  }
+                  return Row(
+                    children: [
+                      for (var index = 0; index < positive.length; index++) ...[
+                        if (index > 0) SizedBox(width: gap),
+                        SizedBox(
+                          width:
+                              widths[index] ??
+                              remainingWidth *
+                                  positive[index].value /
+                                  remainingValue,
+                          height: 12,
+                          child: ColoredBox(
+                            key: ValueKey('ratio-segment-$index'),
+                            color: positive[index].color,
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              )
             : Row(
                 children: parts
                     .where((p) => p.value > 0)

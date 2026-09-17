@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:fl_chart/fl_chart.dart' as charts;
 import 'package:flutter/cupertino.dart';
@@ -9,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rial_flutter/main.dart';
 
 import 'finance_workflow_test.dart' as fixtures;
+import 'account_colors_test.dart' as account_fixtures;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +22,7 @@ void main() {
       'CupertinoSystemText',
       'CupertinoSystemDisplay',
       'Roboto',
+      'Ahem',
     ]) {
       await (FontLoader(family)..addFont(Future.value(bytes))).load();
     }
@@ -48,7 +49,16 @@ void main() {
       testWidgets('Finance surfaces fit $width dark=$dark', (tester) async {
         final dynamic app = await fixtures.fixture(tester, count: 5);
         tester.view.physicalSize = Size(width, 844);
-        app.mutate(() => app.state['darkMode'] = dark);
+        app.mutate(() {
+          app.state['darkMode'] = dark;
+          app.state['themeColor'] = 'indigo';
+          app.state['homeShortcutButtons'] = [
+            'calculator',
+            'movement',
+            'debts',
+            'settings',
+          ];
+        });
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         final suffix = '${width.toInt()}-${dark ? 'dark' : 'light'}';
@@ -58,6 +68,20 @@ void main() {
             matchesGoldenFile('../build/finance-qa/home-$suffix.png'),
           );
         }
+        app.pushPage(
+          tester.element(find.byType(HomePage)),
+          (_) => HomeCustomizePage(app: app),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
+          await expectLater(
+            find.byType(RialApp),
+            matchesGoldenFile('../build/finance-qa/customize-$suffix.png'),
+          );
+        }
+        Navigator.of(tester.element(find.byType(HomeCustomizePage))).pop();
+        await tester.pumpAndSettle();
         final chart = find.byType(charts.LineChart);
         final beforeTouch = tester.getRect(chart);
         await tester.tap(chart);
@@ -151,6 +175,35 @@ void main() {
               matchesGoldenFile('../build/finance-qa/${entry.key}-$suffix.png'),
             );
           }
+        }
+        final accounts = account_fixtures.collisionAccounts();
+        assignAccountColors(accounts);
+        app.mutate(() {
+          app.state['accounts'] = accounts;
+          app.state['rate'] = 847.44;
+        });
+        app.pushPage(
+          tester.element(find.byType(MovementEditor)),
+          (_) => CurrencyAccountsPage(app: app, currency: 'VES'),
+        );
+        await tester.pumpAndSettle();
+        final accountContext = tester.element(
+          find.byType(CurrencyAccountsPage),
+        );
+        await tester.runAsync(() async {
+          for (final account in accounts) {
+            final asset = logoAsset(account['provider'] as String);
+            if (asset != null)
+              await precacheImage(AssetImage(asset), accountContext);
+          }
+        });
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
+          await expectLater(
+            find.byType(RialApp),
+            matchesGoldenFile('../build/finance-qa/accounts-$suffix.png'),
+          );
         }
         await tester.pumpWidget(const SizedBox.shrink());
       });

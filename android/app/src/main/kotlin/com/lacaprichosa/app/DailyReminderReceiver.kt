@@ -16,10 +16,11 @@ import java.util.concurrent.TimeUnit
 
 class DailyReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        // One exact alarm per local day, rearmed before any notification work.
+        DailyReminderScheduler.schedule(context, force = true)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            DailyReminderScheduler.schedule(context)
             return
         }
 
@@ -35,6 +36,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        if (!manager.areNotificationsEnabled()) return
         if (dailyMovementReminderEnabled(context)) {
             manager.notify(
                 1901,
@@ -47,7 +49,6 @@ class DailyReminderReceiver : BroadcastReceiver() {
             )
         }
         notifyDebtDueDates(context, manager, contentIntent)
-        DailyReminderScheduler.schedule(context)
     }
 
     private fun notification(

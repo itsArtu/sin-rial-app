@@ -1,8 +1,8 @@
 {
-  "version": "2.2.0",
-  "build": 64,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.2.0%2B64/sin-rial-2.2.0.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.2.0%2B64",
-  "sha256": "115CDE2E00A78127F0B1CF19EDD87BC89C0EE156A4BCA2A1D541375D0C178AB8",
-  "notes": "Sin Rial 2.2: balance y grafica reales en USD, EUR o USDT, movimientos por mes con mejores filtros, detalle y deshacer, categorias automaticas ampliadas, Pago TDC y La mamalona. Mejoras de comisiones, calculos, tasas, widgets y actualizaciones."
+  "version": "2.2.1",
+  "build": 65,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.2.1%2B65/sin-rial-2.2.1.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.2.1%2B65",
+  "sha256": "5448CDD27D323BFB523F39F0668987392307DADD4E8F762417C7A5DCC8AD6277",
+  "notes": "Sin Rial 2.2.1: recordatorios con alarmas exactas y acceso a permisos, botones legibles en modo claro, fondo negro AMOLED, accesos de inicio reordenables y colores distintos y persistentes por cuenta. Activa Hora exacta en Ajustes > Recordatorios para evitar retrasos de Android."
 }

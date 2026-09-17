@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.view.WindowInsetsController
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -39,6 +40,11 @@ class MainActivity : FlutterFragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         storeLaunchAction(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        DailyReminderScheduler.schedule(this)
     }
 
     override fun onDestroy() {
@@ -88,6 +94,26 @@ class MainActivity : FlutterFragmentActivity() {
                 }
                 "scheduleRateUpdate" -> {
                     result.success(RateUpdateScheduler.schedule(this))
+                }
+                "dailyReminderStatus" -> result.success(DailyReminderScheduler.status(this))
+                "openReminderSettings" -> {
+                    val exact = call.argument<Boolean>("exact") == true
+                    val settingsIntent = if (exact && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName"))
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                        if (manager.areNotificationsEnabled()) {
+                            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                .putExtra(Settings.EXTRA_CHANNEL_ID, DailyReminderScheduler.CHANNEL_ID)
+                        } else {
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        }
+                    } else {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                    }
+                    result.success(runCatching { startActivity(settingsIntent); true }.getOrDefault(false))
                 }
                 "workManagerStatus" -> {
                     result.success(
