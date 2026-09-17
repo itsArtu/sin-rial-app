@@ -1,8 +1,8 @@
 {
-  "version": "2.2.1",
-  "build": 65,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.2.1%2B65/sin-rial-2.2.1.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.2.1%2B65",
-  "sha256": "5448CDD27D323BFB523F39F0668987392307DADD4E8F762417C7A5DCC8AD6277",
-  "notes": "Sin Rial 2.2.1: recordatorios con alarmas exactas y acceso a permisos, botones legibles en modo claro, fondo negro AMOLED, accesos de inicio reordenables y colores distintos y persistentes por cuenta. Activa Hora exacta en Ajustes > Recordatorios para evitar retrasos de Android."
+  "version": "2.2.2",
+  "build": 66,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v2.2.2%2B66/sin-rial-2.2.2.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v2.2.2%2B66",
+  "sha256": "6654BE74D3BD19C443CF4D8688483CB621C5872A9A36222D58C04085DE1C36FB",
+  "notes": "Sin Rial 2.2.2: ingresos sin comision y transferencias bancarias en bolivares con comision automatica, excepto entre cuentas del mismo banco. Incluye las mejoras de la 2.2.1: recordatorios con alarmas exactas y acceso a permisos, botones legibles en modo claro, fondo negro AMOLED, accesos de inicio reordenables y colores distintos por cuenta. Activa Hora exacta en Ajustes > Recordatorios."
 }

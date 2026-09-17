@@ -101,7 +101,10 @@ void main() {
       expect(find.text('Registro de prueba'), findsOneWidget);
       expect(find.text('16/09/2026'), findsOneWidget);
       expect(find.text('11:08 AM'), findsOneWidget);
-      expect(find.text('Comisión'), findsOneWidget);
+      expect(
+        find.text('Comisión'),
+        type == 'income' ? findsNothing : findsOneWidget,
+      );
       if (type == 'transfer') {
         final target = find.text('Cuenta destino');
         await tester.ensureVisible(target);

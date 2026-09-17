@@ -9,6 +9,7 @@ import 'package:rial_flutter/main.dart';
 
 import 'finance_workflow_test.dart' as fixtures;
 import 'account_colors_test.dart' as account_fixtures;
+import 'income_transfer_fee_test.dart' as fee_fixtures;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -46,6 +47,48 @@ void main() {
 
   for (final width in [320.0, 390.0]) {
     for (final dark in [false, true]) {
+      testWidgets('Income and transfer fee forms fit $width dark=$dark', (
+        tester,
+      ) async {
+        final dynamic app = await fee_fixtures.fixture(
+          tester,
+          width: width,
+          dark: dark,
+        );
+        final homeContext = tester.element(find.byType(HomePage));
+        await tester.runAsync(() async {
+          for (final provider in ['0102', '0172']) {
+            final asset = logoAsset(provider);
+            if (asset != null) {
+              await precacheImage(AssetImage(asset), homeContext);
+            }
+          }
+        });
+        for (final kind in ['income', 'other-bank', 'same-bank']) {
+          app.openMovementEditor(
+            homeContext,
+            movement: fee_fixtures.movement(
+              kind == 'income' ? 'income' : 'transfer',
+              targetId: kind == 'same-bank' ? 'same' : 'other',
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(find.text('Guardar cambios').hitTestable(), findsOneWidget);
+          if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
+            await expectLater(
+              find.byType(RialApp),
+              matchesGoldenFile(
+                '../build/finance-qa/fee-$kind-${width.toInt()}-${dark ? 'dark' : 'light'}.png',
+              ),
+            );
+          }
+          Navigator.of(tester.element(find.byType(MovementEditor))).pop();
+          await tester.pumpAndSettle();
+        }
+        await fee_fixtures.closeFixture(tester);
+      });
+
       testWidgets('Finance surfaces fit $width dark=$dark', (tester) async {
         final dynamic app = await fixtures.fixture(tester, count: 5);
         tester.view.physicalSize = Size(width, 844);

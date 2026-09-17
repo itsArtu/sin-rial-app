@@ -9,10 +9,10 @@ void main() {
     expect(compareVersionNames(version.version, '2.1.13'), greaterThan(0));
   });
 
-  test('Installed 2.2.1 does not offer itself or an older release', () {
-    const current = UpdateInfo(version: '2.2.1', build: 65, apkUrl: 'app.apk');
-    const previous = UpdateInfo(version: '2.2.0', build: 64, apkUrl: 'old.apk');
-    const next = UpdateInfo(version: '2.2.2', build: 66, apkUrl: 'next.apk');
+  test('Installed 2.2.2 does not offer itself or an older release', () {
+    const current = UpdateInfo(version: '2.2.2', build: 66, apkUrl: 'app.apk');
+    const previous = UpdateInfo(version: '2.2.1', build: 65, apkUrl: 'old.apk');
+    const next = UpdateInfo(version: '2.2.3', build: 67, apkUrl: 'next.apk');
     expect(current.isNewer, isFalse);
     expect(previous.isNewer, isFalse);
     expect(next.isNewer, isTrue);

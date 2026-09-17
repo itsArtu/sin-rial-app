@@ -28,11 +28,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '2.2.1',
+  defaultValue: '2.2.2',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 65,
+  defaultValue: 66,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -1885,6 +1885,11 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   void saveMovement(Map<String, dynamic> movement, {String? editingId}) {
     movement = Map<String, dynamic>.from(movement);
     movement['id'] = editingId ?? movement['id'] ?? id();
+    if (movement['type'] == 'income') {
+      movement['feeAmount'] = 0.0;
+      movement['feeMode'] = 'none';
+      movement['bankTransferScope'] = '';
+    }
     if (movement['type'] == 'expense' &&
         isBankCommissionCategory(movement['category']?.toString() ?? '')) {
       movement['feeAmount'] = 0.0;
@@ -1900,10 +1905,6 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     }
     if (numberValue(movement['amount']) <= 0)
       throw const FormatException('El monto debe ser mayor a cero');
-    if (movement['type'] == 'income' &&
-        numberValue(movement['feeAmount']) > numberValue(movement['amount'])) {
-      throw const FormatException('La comisión no puede superar el ingreso');
-    }
     final previous = editingId == null ? null : movementById(editingId);
     if (editingId == null && movementById(movement['id'].toString()) != null) {
       throw const FormatException('El movimiento ya fue registrado');
@@ -1918,6 +1919,22 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                 null ||
             numberValue(movement['targetAmount']) <= 0)) {
       throw const FormatException('Destino o monto de transferencia no válido');
+    }
+    if (movement['type'] == 'transfer') {
+      final source = accountById(movement['accountId'].toString());
+      final target = accountById(movement['targetAccountId'].toString());
+      movement['feeAmount'] = bankTransferFee(
+        source,
+        target,
+        numberValue(movement['amount']),
+      );
+      movement['feeMode'] = numberValue(movement['feeAmount']) > 0
+          ? 'auto'
+          : 'none';
+      movement['bankTransferScope'] =
+          canConfigureBankFee(source, type: 'transfer', target: target)
+          ? bankTransferScopeForAccounts(source, target)
+          : '';
     }
     undoableMutation(
       editingId == null ? 'Movimiento registrado' : 'Movimiento editado',
@@ -8214,6 +8231,8 @@ class MovementDetailPage extends StatelessWidget {
                   'Eliminar movimiento',
                   transfer
                       ? 'Se revertirán los importes en ambas cuentas y la comisión.'
+                      : income
+                      ? 'Se revertirá el total recibido en la cuenta, junto con cualquier cobro vinculado.'
                       : 'Se revertirá el importe y la comisión en la cuenta, junto con cualquier pago o cobro vinculado.',
                   () {
                     final current = app.movementById(movementId);
@@ -8258,9 +8277,11 @@ class MovementDetailPage extends StatelessWidget {
         if (method.isNotEmpty) row('Método', paymentMethodLabel(method)),
         if (scope.isNotEmpty)
           row('Transferencia bancaria', bankTransferScopeLabel(scope)),
-        row('Comisión', app.secureMoney(fee, currency)),
-        if (feeMode.isNotEmpty)
-          row('Cálculo de comisión', feeModeLabel(feeMode)),
+        if (!income) ...[
+          row('Comisión', app.secureMoney(fee, currency)),
+          if (feeMode.isNotEmpty)
+            row('Cálculo de comisión', feeModeLabel(feeMode)),
+        ],
         row(
           income ? 'Total recibido' : 'Total debitado',
           app.secureMoney(income ? amount - fee : amount + fee, currency),
@@ -12650,12 +12671,14 @@ class _MovementEditorState extends State<MovementEditor> {
               ? moneyConvert(parseAmount(amount.text), enteredRate)
               : moneyConvert(parseAmount(amount.text), 1, enteredRate)
         : parseAmount(amount.text);
-    final canOperationFee = canConfigureBankFee(
-      source,
-      type: type,
-      category: type == 'expense' ? category : '',
-      method: type == 'expense' ? paymentMethod : 'bank_transfer',
-    );
+    final canOperationFee =
+        type == 'expense' &&
+        canConfigureBankFee(
+          source,
+          type: type,
+          category: type == 'expense' ? category : '',
+          method: type == 'expense' ? paymentMethod : 'bank_transfer',
+        );
     final effectiveFeeMode = canOperationFee ? feeMode : 'none';
     final canTransferFee =
         type == 'transfer' &&
@@ -12669,13 +12692,8 @@ class _MovementEditorState extends State<MovementEditor> {
             bankTransferScope: bankTransferScope,
           )
         : 0.0;
-    final autoTransferFee = canTransferFee
-        ? estimatedBankFee(
-            method: 'bank_transfer',
-            amount: parseAmount(amount.text),
-            type: type,
-            bankTransferScope: bankTransferScope,
-          )
+    final autoTransferFee = type == 'transfer'
+        ? bankTransferFee(source, target, moneyRound(parseAmount(amount.text)))
         : 0.0;
     final selectedDebt = app.debtById(debtId);
     final debtSelectorKind = type == 'income' ? 'receivable' : 'payable';
@@ -12744,6 +12762,10 @@ class _MovementEditorState extends State<MovementEditor> {
                   }
                   setState(() {
                     type = v;
+                    if (type == 'income') {
+                      fee.clear();
+                      feeMode = 'auto';
+                    }
                     if (!widget.lockAccount) {
                       accountId = v == 'transfer'
                           ? firstAccountId()
@@ -12936,18 +12958,11 @@ class _MovementEditorState extends State<MovementEditor> {
                       ),
                     ),
                   if (canTransferFee)
-                    OptionField(
+                    DebtDetailRow(
                       theme: t,
                       label: 'Transferencia bancaria',
-                      value: bankTransferScopeLabel(bankTransferScope),
-                      icon: CupertinoIcons.building_2_fill,
-                      onTap: () => pickValue(
-                        context,
-                        const ['Otro banco', 'Mismo banco'],
-                        bankTransferScopeLabel(bankTransferScope),
-                        (value) => setState(() {
-                          bankTransferScope = bankTransferScopeFromLabel(value);
-                        }),
+                      value: bankTransferScopeLabel(
+                        bankTransferScopeForAccounts(source, target),
                       ),
                     ),
                   if (canOperationFee && effectiveFeeMode == 'manual')
@@ -13016,8 +13031,9 @@ class _MovementEditorState extends State<MovementEditor> {
                               sourceCurrency,
                             ),
                           ),
-                          if (type != 'expense' ||
-                              !isBankCommissionCategory(category))
+                          if (type != 'income' &&
+                              (type != 'expense' ||
+                                  !isBankCommissionCategory(category)))
                             DebtDetailRow(
                               theme: t,
                               label: 'Comisión aplicada',
@@ -13188,14 +13204,10 @@ class _MovementEditorState extends State<MovementEditor> {
 
   double estimatedTransferFeeForSave(Map<String, dynamic> source) {
     final target = widget.app.accountById(targetId);
-    if (!canConfigureBankFee(source, type: 'transfer', target: target)) {
-      return 0;
-    }
-    return estimatedBankFee(
-      method: 'bank_transfer',
-      amount: parseAmount(amount.text),
-      type: 'transfer',
-      bankTransferScope: bankTransferScope,
+    return bankTransferFee(
+      source,
+      target,
+      moneyRound(parseAmount(amount.text)),
     );
   }
 
@@ -13262,11 +13274,11 @@ class _MovementEditorState extends State<MovementEditor> {
                 ? feeMode
                 : 'none'
           : '',
-      'bankTransferScope':
-          type == 'transfer' ||
-              (type == 'expense' &&
-                  !isBankCommissionCategory(category) &&
-                  paymentMethod == 'bank_transfer')
+      'bankTransferScope': type == 'transfer'
+          ? bankTransferScopeForAccounts(source, app.accountById(targetId))
+          : (type == 'expense' &&
+                !isBankCommissionCategory(category) &&
+                paymentMethod == 'bank_transfer')
           ? bankTransferScope
           : '',
       'description': desc.text.trim(),
@@ -15519,6 +15531,7 @@ bool canConfigureBankFee(
   String category = '',
   String method = 'bank_transfer',
 }) {
+  if (type == 'income') return false;
   if (isFeeExemptCategory(category)) return false;
   if (isFeeExemptPaymentMethod(method)) return false;
   if (!isNationalBankAccount(account)) return false;
@@ -15526,7 +15539,33 @@ bool canConfigureBankFee(
   if (type == 'transfer') {
     return isNationalBankAccount(target) && target?['currency'] == 'VES';
   }
-  return (type == 'expense' || type == 'income') && !isCashAccount(account);
+  return type == 'expense' && !isCashAccount(account);
+}
+
+String bankTransferScopeForAccounts(
+  Map<String, dynamic>? source,
+  Map<String, dynamic>? target,
+) {
+  final provider = source?['provider']?.toString().trim().toUpperCase() ?? '';
+  final targetProvider =
+      target?['provider']?.toString().trim().toUpperCase() ?? '';
+  return provider.isNotEmpty && provider == targetProvider
+      ? 'same_bank'
+      : 'other_bank';
+}
+
+double bankTransferFee(
+  Map<String, dynamic>? source,
+  Map<String, dynamic>? target,
+  double amount,
+) {
+  if (!canConfigureBankFee(source, type: 'transfer', target: target)) return 0;
+  return estimatedBankFee(
+    method: 'bank_transfer',
+    amount: amount,
+    type: 'transfer',
+    bankTransferScope: bankTransferScopeForAccounts(source, target),
+  );
 }
 
 double estimatedBankFee({
@@ -15536,6 +15575,7 @@ double estimatedBankFee({
   String category = '',
   String bankTransferScope = 'other_bank',
 }) {
+  if (type == 'income') return 0;
   if (amount <= 0) return 0;
   if (isFeeExemptCategory(category)) return 0;
   if (isFeeExemptPaymentMethod(method)) return 0;

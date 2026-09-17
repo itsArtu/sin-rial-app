@@ -145,7 +145,14 @@ void main() {
       final dynamic app = await fixture(tester);
       final before = jsonEncode(app.maps('accounts'));
       app.saveMovement(movement(type));
-      expect(app.accountById('a')['balance'], type == 'income' ? 119.7 : 79.7);
+      expect(
+        app.accountById('a')['balance'],
+        type == 'income'
+            ? 120.0
+            : type == 'transfer'
+            ? 80.0
+            : 79.7,
+      );
       if (type == 'transfer') expect(app.accountById('b')['balance'], 300);
       app.saveMovement(movement(type, amount: 30), editingId: 'm');
       expect(app.movementById('m')['amount'], 30);
