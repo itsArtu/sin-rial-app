@@ -27,6 +27,7 @@ class DailyReminderSchedulerTest {
     private val originalZone = TimeZone.getDefault()
 
     @Before fun setUp() {
+        installTestCipher()
         TimeZone.setDefault(TimeZone.getTimeZone("America/Caracas"))
         context = RuntimeEnvironment.getApplication()
         alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -117,20 +118,24 @@ class DailyReminderSchedulerTest {
         DailyReminderScheduler.schedule(context)
         SystemClock.setCurrentTimeMillis(at(2026, 9, 17, 21, 0))
         BootReceiver().onReceive(context, Intent(Intent.ACTION_TIME_CHANGED))
-        assertEquals(at(2026, 9, 18, 19, 0), shadowOf(alarm).scheduledAlarms.single().triggerAtMs)
+        assertEquals(at(2026, 9, 18, 19, 0), reminderAlarm().triggerAtMs)
         TimeZone.setDefault(TimeZone.getTimeZone("Europe/Madrid"))
         BootReceiver().onReceive(context, Intent(Intent.ACTION_TIMEZONE_CHANGED))
-        assertEquals(at(2026, 9, 18, 19, 0, "Europe/Madrid"), shadowOf(alarm).scheduledAlarms.single().triggerAtMs)
+        assertEquals(at(2026, 9, 18, 19, 0, "Europe/Madrid"), reminderAlarm().triggerAtMs)
     }
 
     @Test fun bootAndPermissionBroadcastsRestoreAlarm() {
         for (action in listOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
             AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED)) {
             DailyReminderScheduler.schedule(context)
-            alarm.cancel(shadowOf(alarm).scheduledAlarms.single().operation!!)
+            alarm.cancel(reminderAlarm().operation!!)
             BootReceiver().onReceive(context, Intent(action))
-            assertEquals(0L, shadowOf(alarm).scheduledAlarms.single().windowLengthMs)
+            assertEquals(0L, reminderAlarm().windowLengthMs)
         }
+    }
+
+    private fun reminderAlarm() = shadowOf(alarm).scheduledAlarms.single {
+        shadowOf(it.operation!!).savedIntent.component?.className == DailyReminderReceiver::class.java.name
     }
 
     @Test fun nextLocalDayHandlesMidnightAndDaylightSaving() {

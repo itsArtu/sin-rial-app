@@ -67,6 +67,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(contentIntent)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
             .build()
     }
@@ -76,7 +77,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
         manager: NotificationManager,
         contentIntent: PendingIntent
     ) {
-        val state = NativeJsonStore.readState(context)
+        val state = runCatching { NativeJsonStore.readState(context, setOf("debts")) }.getOrNull() ?: return
         val debts = state.optJSONArray("debts") ?: return
         val today = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
@@ -122,7 +123,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
     }
 
     private fun dailyMovementReminderEnabled(context: Context): Boolean {
-        val state = NativeJsonStore.readState(context)
+        val state = runCatching { NativeJsonStore.readMain(context) }.getOrNull() ?: return false
         return state.optBoolean("dailyMovementReminderEnabled", true)
     }
 

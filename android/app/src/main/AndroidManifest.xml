@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
 
     <application
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:usesCleartextTraffic="false"
         android:label="Sin rial"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
@@ -34,6 +38,24 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity
+            android:name=".QuickAccessActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.lacaprichosa.app.quick"
+            android:theme="@style/QuickAccessTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/QuickAccessTheme" />
+        </activity>
+        <receiver
+            android:name=".CalculatorWidgetProvider"
+            android:exported="false"
+            android:label="Calculadora">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/calculator_widget_info" />
+        </receiver>
         <receiver
             android:name=".DailyReminderReceiver"
             android:exported="false" />

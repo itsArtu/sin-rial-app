@@ -1,65 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/rate_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center_vertical"
-    android:paddingStart="10dp"
-    android:paddingEnd="10dp"
-    android:paddingTop="7dp"
-    android:paddingBottom="7dp"
+    android:id="@+id/rate_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center_vertical" android:padding="12dp"
     android:background="@drawable/widget_background">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/rate_pair"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="USD/VES"
-            android:textColor="#E8FFFFFF"
-            android:textSize="11sp"
-            android:includeFontPadding="false"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/rate_change"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="+0,00%"
-            android:textColor="#58BE86"
-            android:textSize="11sp"
-            android:includeFontPadding="false"
-            android:textStyle="bold" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <ImageView android:id="@+id/rate_icon" android:layout_width="24dp" android:layout_height="24dp"
+            android:layout_marginEnd="7dp" android:src="@drawable/widget_us" android:importantForAccessibility="no" />
+        <TextView android:id="@+id/rate_pair" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="USD / BCV" android:textSize="11sp" android:textStyle="bold"
+            android:textColor="#F5F5F7" android:fontFamily="@font/manrope_medium" android:includeFontPadding="false"
+            android:maxLines="1" android:ellipsize="end"/>
+        <TextView android:id="@+id/rate_change" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textSize="10sp" android:textColor="#58BE86" android:fontFamily="@font/manrope_medium"
+            android:includeFontPadding="false" android:maxLines="1"/>
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/rate_value"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
-        android:text="Bs 0,00"
-        android:textColor="#FFFFFFFF"
-        android:textSize="22sp"
-        android:includeFontPadding="false"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/rate_updated"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
-        android:text="Actualizado"
-        android:textColor="#CCFFFFFF"
-        android:textSize="8sp"
-        android:singleLine="true"
-        android:ellipsize="end"
-        android:includeFontPadding="false"
-        android:textStyle="bold" />
+    <TextView android:id="@+id/rate_value" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:text="Sin tasa" android:textColor="#F5F5F7"
+        android:textSize="26sp" android:textStyle="bold" android:fontFamily="@font/manrope_medium"
+        android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end"
+        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="14sp" android:autoSizeMaxTextSize="26sp"/>
+    <ImageView android:id="@+id/rate_chart" android:layout_width="match_parent" android:layout_height="36dp"
+        android:layout_marginTop="7dp" android:layout_marginBottom="7dp"
+        android:scaleType="fitXY" android:visibility="gone" android:contentDescription="Historial de tasas BCV"/>
+    <TextView android:id="@+id/rate_updated" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="3dp" android:text="Sin tasa guardada" android:textColor="#A8ABB4"
+        android:textSize="10sp" android:fontFamily="@font/manrope_medium" android:includeFontPadding="false"
+        android:maxLines="2" android:ellipsize="end"/>
 </LinearLayout>

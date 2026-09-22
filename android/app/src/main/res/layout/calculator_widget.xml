@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/calculator_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="horizontal" android:gravity="center" android:padding="8dp"
+    android:background="@drawable/widget_background" android:contentDescription="Abrir calculadora de Sin Rial">
+    <ImageView android:id="@+id/calculator_icon" android:layout_width="24dp" android:layout_height="24dp"
+        android:src="@drawable/widget_calculator" android:importantForAccessibility="no" />
+    <TextView android:id="@+id/calculator_title" android:layout_width="0dp" android:layout_height="wrap_content"
+        android:layout_weight="1" android:layout_marginStart="6dp"
+        android:text="Calculadora" android:textColor="#F5F5F7"
+        android:textSize="13sp" android:fontFamily="@font/manrope_medium" android:includeFontPadding="false"
+        android:maxLines="1" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="9sp"
+        android:autoSizeMaxTextSize="13sp" />
+</LinearLayout>

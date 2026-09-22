@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_surface" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:padding="8dp" android:background="@drawable/widget_background"
+    android:gravity="center_vertical" android:orientation="vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:gravity="center_vertical">
+        <ImageView android:layout_width="28dp" android:layout_height="28dp"
+            android:src="@drawable/app_logo" android:importantForAccessibility="no"/>
+        <TextView android:id="@+id/widget_title" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:layout_marginStart="8dp"
+            android:text="Sin Rial" android:textSize="15sp" android:textStyle="bold"
+            android:textColor="#F5F5F7" android:fontFamily="@font/manrope_medium" android:includeFontPadding="false"/>
+        <TextView android:id="@+id/widget_caption" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:text="Movimientos" android:textSize="10sp" android:fontFamily="@font/manrope_medium"
+            android:textColor="#A8ABB4"/>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="8dp">
+        <TextView android:id="@+id/widget_income" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:layout_marginEnd="6dp" android:background="@drawable/widget_button_neutral"
+            android:gravity="center" android:text="Ingreso" android:textSize="14sp"
+            android:textColor="#58BE86" android:fontFamily="@font/manrope_medium" android:includeFontPadding="false"
+            android:autoSizeTextType="uniform" android:autoSizeMinTextSize="9sp" android:autoSizeMaxTextSize="14sp"
+            android:lines="1"/>
+        <TextView android:id="@+id/widget_expense" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:layout_marginEnd="6dp" android:background="@drawable/widget_button_neutral"
+            android:gravity="center" android:text="Gasto" android:textSize="14sp"
+            android:textColor="#EF6683" android:fontFamily="@font/manrope_medium" android:includeFontPadding="false"
+            android:autoSizeTextType="uniform" android:autoSizeMinTextSize="9sp" android:autoSizeMaxTextSize="14sp"
+            android:lines="1"/>
+        <TextView android:id="@+id/widget_transfer" android:layout_width="28dp" android:layout_height="match_parent"
+            android:background="@drawable/widget_button_neutral"
+            android:gravity="center" android:text="&#x21C4;" android:textSize="26sp"
+            android:contentDescription="Transferir entre cuentas"
+            android:textColor="#55BDBD" android:fontFamily="@font/manrope_medium" android:includeFontPadding="false"/>
+    </LinearLayout>
+</LinearLayout>

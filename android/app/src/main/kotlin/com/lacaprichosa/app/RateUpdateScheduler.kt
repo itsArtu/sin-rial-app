@@ -2,6 +2,7 @@ package com.lacaprichosa.app
 
 import android.Manifest
 import android.app.Notification
+import android.app.AlarmManager
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -21,7 +22,9 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import org.json.JSONObject
+import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Calendar
@@ -64,14 +67,18 @@ object SafeWorkManager {
 }
 
 object RateUpdateScheduler {
-    private const val WORK_NAME = "sin_rial_daily_rate_update"
+    private const val WORK_NAME = "sin_rial_rate_update_v2"
     private const val WIDGET_WORK_NAME = "sin_rial_widget_rate_update"
 
     fun schedule(context: Context): Boolean {
+        SafeWorkManager.get(context)?.cancelUniqueWork("sin_rial_daily_rate_update")
+        promoteSavedRate(context)
+        scheduleBoundary(context)
         return enqueue(context, ExistingWorkPolicy.KEEP)
     }
 
     fun scheduleNext(context: Context): Boolean {
+        scheduleBoundary(context)
         return enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
     }
 
@@ -87,7 +94,7 @@ object RateUpdateScheduler {
     private fun enqueue(
         context: Context,
         policy: ExistingWorkPolicy,
-        delayMillis: Long = delayUntilNextSixAm(),
+        delayMillis: Long = (BcvRatePolicy.nextFetch(System.currentTimeMillis()) - System.currentTimeMillis()).coerceAtLeast(0L),
         workName: String = WORK_NAME
     ): Boolean {
         val appContext = context.applicationContext
@@ -96,6 +103,7 @@ object RateUpdateScheduler {
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
         val request = OneTimeWorkRequestBuilder<RateUpdateWorker>()
+            .setInputData(workDataOf("chainSchedule" to (workName == WORK_NAME)))
             .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.HOURS)
@@ -113,17 +121,30 @@ object RateUpdateScheduler {
         }
     }
 
-    private fun delayUntilNextSixAm(): Long {
-        val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 6)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
+    fun promoteSavedRate(context: Context) {
+        val state = runCatching { NativeJsonStore.readMain(context) }.getOrNull() ?: return
+        if (BcvRatePolicy.apply(state, System.currentTimeMillis())) {
+            NativeJsonStore.updateRateFields(context, state)
+            UsdRateWidgetProvider.updateAll(context)
+            EurRateWidgetProvider.updateAll(context)
         }
-        if (calendar.timeInMillis <= System.currentTimeMillis()) {
-            calendar.add(Calendar.DAY_OF_YEAR, 1)
+    }
+
+    private fun scheduleBoundary(context: Context) {
+        val alarm = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val pending = PendingIntent.getBroadcast(context, 2603,
+            Intent(context, RateUpdateReceiver::class.java).setAction("com.lacaprichosa.app.RATE_BOUNDARY"),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val trigger = BcvRatePolicy.nextBoundary(System.currentTimeMillis())
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarm.canScheduleExactAlarms()) {
+                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pending)
+            } else {
+                alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pending)
+            }
+        } catch (_: SecurityException) {
+            alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pending)
         }
-        return (calendar.timeInMillis - System.currentTimeMillis()).coerceAtLeast(0L)
     }
 }
 
@@ -132,9 +153,12 @@ class RateUpdateWorker(
     workerParams: WorkerParameters
 ) : Worker(context, workerParams) {
     override fun doWork(): Result {
-        val updated = RateUpdateService.update(applicationContext)
+        RateUpdateScheduler.promoteSavedRate(applicationContext)
+        val updated = runCatching { RateUpdateService.update(applicationContext) }.getOrDefault(false)
         if (!updated) return Result.retry()
-        RateUpdateScheduler.scheduleNext(applicationContext)
+        if (inputData.getBoolean("chainSchedule", true)) {
+            RateUpdateScheduler.scheduleNext(applicationContext)
+        }
         return Result.success()
     }
 }
@@ -142,6 +166,7 @@ class RateUpdateWorker(
 class RateUpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         RateUpdateScheduler.schedule(context.applicationContext)
+        RateUpdateScheduler.refreshSoon(context.applicationContext)
     }
 }
 
@@ -154,51 +179,42 @@ object RateUpdateService {
     fun update(context: Context): Boolean {
         val data = fetchRateJson()
         val usd = data?.let { extractUsdRate(it) } ?: 0.0
-        if (data == null || !usd.isFinite() || usd <= 0.0) {
+        val eur = data?.let { extractNamedRate(it, "EUR") } ?: 0.0
+        if (data == null || !usd.isFinite() || usd <= 0.0 || !eur.isFinite() || eur <= 0.0) {
             val status = if (hasNetwork(context)) "error" else "offline"
             val failure = JSONObject().put("rateLastAttemptMillis", System.currentTimeMillis())
+                .put("rateLastFetchAttemptMillis", System.currentTimeMillis())
             for (key in listOf("rateFetchStatus", "eurRateFetchStatus", "usdtRateFetchStatus")) failure.put(key, status)
             NativeJsonStore.updateRateFields(context, failure)
             UsdRateWidgetProvider.updateAll(context)
             EurRateWidgetProvider.updateAll(context)
             return false
         }
-        val eur = extractNamedRate(data, "EUR")
+        val history = fetchHistory()
         val usdt = fetchUsdtRate()
         val effectiveDate = data.optString("effective_date").ifBlank {
             data.optString("date").ifBlank { currentIsoDate() }
         }
         val updatedAt = data.optString("updated_at")
-        val state = NativeJsonStore.readState(context)
+        val state = NativeJsonStore.readMain(context)
 
-        val oldUsd = state.optDouble("rate", 0.0)
-        if (oldUsd > 0.0 && abs(oldUsd - usd) > 0.0001) {
-            state.put("previousRate", oldUsd)
-        }
-        val oldEur = state.optDouble("eurRate", 0.0)
-        if (eur > 0.0 && oldEur > 0.0 && abs(oldEur - eur) > 0.0001) {
-            state.put("previousEurRate", oldEur)
-        }
+        state.put("bcvRateSnapshots", BcvRatePolicy.merge(BcvRatePolicy.saved(state), history,
+            JSONArray().put(JSONObject().put("USD", usd).put("EUR", eur)
+                .put("effective_date", effectiveDate).put("updated_at", updatedAt))))
+        BcvRatePolicy.apply(state, System.currentTimeMillis())
         val oldUsdt = state.optDouble("usdtRate", 0.0)
         if (usdt > 0.0 && oldUsdt > 0.0 && abs(oldUsdt - usdt) > 0.0001) {
             state.put("previousUsdtRate", oldUsdt)
         }
 
-        state.put("rate", usd)
-        state.put("lastRateDate", effectiveDate)
-        state.put("rateEffectiveDate", effectiveDate)
-        state.put("rateUpdatedAt", updatedAt)
-        if (eur > 0.0) {
-            state.put("eurRate", eur)
-            state.put("eurRateEffectiveDate", effectiveDate)
-            state.put("eurRateUpdatedAt", updatedAt)
-        }
         if (usdt > 0.0) {
             state.put("usdtRate", usdt)
             state.put("usdtRateUpdatedAt", currentIsoDate())
         }
         state.put("lastRateMillis", System.currentTimeMillis())
         state.put("rateLastAttemptMillis", System.currentTimeMillis())
+        state.put("rateLastFetchAttemptMillis", System.currentTimeMillis())
+        state.put("rateCheckedDate", BcvRatePolicy.dateKey(System.currentTimeMillis()))
         state.put("rateFetchStatus", "ok")
         state.put("eurRateFetchStatus", if (eur > 0.0) "ok" else "error")
         state.put("usdtRateFetchStatus", if (usdt > 0.0) "ok" else if (hasNetwork(context)) "error" else "offline")
@@ -211,6 +227,18 @@ object RateUpdateService {
         EurRateWidgetProvider.updateAll(context)
         checkReleaseUpdate(context)
         return true
+    }
+
+    private fun fetchHistory(): JSONArray {
+        val connection = URL("https://bcv.today/api/v1/history.json").openConnection() as HttpURLConnection
+        return try {
+            connection.connectTimeout = 8000
+            connection.readTimeout = 10000
+            connection.setRequestProperty("Accept", "application/json")
+            if (connection.responseCode !in 200..299) return JSONArray()
+            JSONArray(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+        } catch (_: Exception) { JSONArray() }
+        finally { connection.disconnect() }
     }
 
     private fun fetchRateJson(): JSONObject? {
@@ -325,7 +353,7 @@ object RateUpdateService {
     }
 
     private fun currentIsoDate(): String {
-        val calendar = Calendar.getInstance()
+        val calendar = Calendar.getInstance(BcvRatePolicy.zone)
         val year = calendar.get(Calendar.YEAR)
         val month = calendar.get(Calendar.MONTH) + 1
         val day = calendar.get(Calendar.DAY_OF_MONTH)

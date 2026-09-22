@@ -1,6 +1,80 @@
 part of 'main.dart';
 
+class HomeLedgerSnapshot {
+  HomeLedgerSnapshot(_RialAppState app, DateTime now) {
+    accounts = app.maps('accounts');
+    movements = sortedMovements(app.maps('movements'));
+    balanceAccounts = app.homeBalanceMode == 'vesOnly'
+        ? accounts.where((a) => a['currency'] == 'VES').toList()
+        : accounts;
+    usd = 0;
+    ves = 0;
+    total = 0;
+    totalVes = 0;
+    income = 0;
+    expenses = 0;
+    for (final account in accounts) {
+      final amount = numberValue(account['balance']);
+      if (account['currency'] == 'USD') usd += amount;
+      if (account['currency'] == 'VES') ves += amount;
+    }
+    for (final account in balanceAccounts) {
+      final amount = numberValue(account['balance']);
+      final currency = account['currency']?.toString() ?? 'USD';
+      total += app.convertForHome(amount, currency, app.homeBalanceCurrency);
+      totalVes += app.toVes(amount, currency);
+    }
+    for (final movement in movements) {
+      final amount = numberValue(movement['amount']);
+      final fee = numberValue(movement['feeAmount']);
+      final currency = movement['currency']?.toString() ?? 'USD';
+      if (movement['type'] == 'income') {
+        income += app.toUsd(math.max(0.0, amount - fee), currency);
+      } else if (isExpenseType(movement['type']?.toString())) {
+        expenses += app.toUsd(amount + fee, currency);
+      }
+    }
+    trend = buildBalanceTrend(
+      accounts: balanceAccounts,
+      movements: movements,
+      adjustments: app.maps('balanceAdjustments'),
+      convertValue: (amount, currency) =>
+          app.convertForHome(amount, currency, app.homeBalanceCurrency),
+      period: app.homeBalanceChangePeriod,
+      now: now,
+    );
+    final opening = trend.first.amount;
+    changePercent = opening.abs() < .01
+        ? 0
+        : (trend.last.amount - opening) / opening.abs() * 100;
+  }
+  late final List<Map<String, dynamic>> accounts, movements, balanceAccounts;
+  late final List<BalancePoint> trend;
+  late double usd, ves, total, totalVes, income, expenses, changePercent;
+}
+
+class HomeLedgerCache {
+  int _revision = -1, _minute = -1;
+  HomeLedgerSnapshot? _snapshot;
+  HomeLedgerSnapshot read(_RialAppState app, {DateTime? now}) {
+    final instant = now ?? DateTime.now();
+    final minute = instant.millisecondsSinceEpoch ~/ 60000;
+    // A new minute also invalidates the graph's endpoint and day/month boundaries.
+    if (_snapshot == null ||
+        _revision != app.revision.value ||
+        _minute != minute) {
+      _snapshot = HomeLedgerSnapshot(app, instant);
+      _revision = app.revision.value;
+      _minute = minute;
+    }
+    return _snapshot!;
+  }
+}
+
 const rateStateKeys = {
+  'bcvRateSnapshots',
+  'rateCheckedDate',
+  'rateLastFetchAttemptMillis',
   'rate',
   'previousRate',
   'lastRateDate',
@@ -295,11 +369,21 @@ String rateStatusText(
     state[prefix.isEmpty ? 'lastRateMillis' : '${prefix}LastRateMillis'],
   ).round();
   final date = state['${key}EffectiveDate']?.toString() ?? '';
+  final today = isoDate(caracasTime(now));
+  if (currency != 'USDT' && date.compareTo(today) > 0) {
+    return 'Adelantada · Vigente $date';
+  }
+  if (currency != 'USDT' &&
+      date.isNotEmpty &&
+      date.compareTo(today) < 0 &&
+      state['rateCheckedDate'] == today) {
+    return 'Última publicada · $date';
+  }
   final fresh = currency == 'USDT'
       ? millis > 0 &&
             now.difference(DateTime.fromMillisecondsSinceEpoch(millis)) <
                 const Duration(hours: 24)
-      : date == expectedRateDateKey(now);
+      : date == today || state['rateCheckedDate'] == today;
   return fresh ? 'Actualizada' : 'Última tasa guardada';
 }
 

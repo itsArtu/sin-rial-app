@@ -16,7 +16,7 @@ object DailyReminderScheduler {
     private const val SCHEDULE_KEY = "daily_reminder_schedule_v2"
 
     fun schedule(context: Context, force: Boolean = false) {
-        val state = NativeJsonStore.readState(context)
+        val state = runCatching { NativeJsonStore.readMain(context) }.getOrNull() ?: return
         val enabled = state.optBoolean("dailyMovementReminderEnabled", true)
         val hour = state.optInt("dailyReminderHour", 19).coerceIn(0, 23)
         val minute = state.optInt("dailyReminderMinute", 0).coerceIn(0, 59)
@@ -33,7 +33,8 @@ object DailyReminderScheduler {
         )
         val prefs = NativeJsonStore.prefs(context)
         // Debt due-date notices share this daily wake-up, even with the movement reminder off.
-        val debts = NativeJsonStore.readState(context).optJSONArray("debts")
+        val state = runCatching { NativeJsonStore.readState(context, setOf("debts")) }.getOrNull() ?: return
+        val debts = state.optJSONArray("debts")
         val hasDebtNotices = (0 until (debts?.length() ?: 0)).any { index ->
             val debt = debts?.optJSONObject(index)
             debt != null && debt.optBoolean("hasDueDate", true) &&

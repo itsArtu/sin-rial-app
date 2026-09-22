@@ -5,8 +5,9 @@
     android:layout_height="match_parent">
 
     <LinearLayout
+        android:id="@+id/widget_surface"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:layout_gravity="top"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
@@ -17,6 +18,7 @@
         android:orientation="horizontal">
 
         <FrameLayout
+            android:visibility="gone"
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:background="@drawable/widget_logo_plate">
@@ -32,6 +34,7 @@
 
         <TextView
             android:id="@+id/widget_title"
+            android:visibility="gone"
             android:layout_width="48dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="6dp"
@@ -42,12 +45,13 @@
             android:textColor="#FFFFFFFF"
             android:textSize="12sp"
             android:includeFontPadding="false"
+            android:fontFamily="@font/manrope_medium"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/widget_income"
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="match_parent"
             android:layout_marginEnd="6dp"
             android:layout_weight="1"
             android:background="@drawable/widget_button_neutral"
@@ -56,17 +60,18 @@
             android:textColor="#FFFFFFFF"
             android:textSize="14sp"
             android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="11sp"
+            android:autoSizeMinTextSize="9sp"
             android:autoSizeMaxTextSize="14sp"
             android:autoSizeStepGranularity="1sp"
             android:lines="1"
             android:includeFontPadding="false"
+            android:fontFamily="@font/manrope_medium"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/widget_expense"
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="@drawable/widget_button_neutral"
             android:gravity="center"
@@ -74,11 +79,12 @@
             android:textColor="#FFFFFFFF"
             android:textSize="14sp"
             android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="11sp"
+            android:autoSizeMinTextSize="9sp"
             android:autoSizeMaxTextSize="14sp"
             android:autoSizeStepGranularity="1sp"
             android:lines="1"
             android:includeFontPadding="false"
+            android:fontFamily="@font/manrope_medium"
             android:textStyle="bold" />
     </LinearLayout>
 </FrameLayout>

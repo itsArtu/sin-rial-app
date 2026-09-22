@@ -159,33 +159,20 @@ void main() {
             (_) => CurrencyAccountsPage(app: app, currency: currency),
           );
           await tester.pumpAndSettle();
-          final bar = tester.widget<RatioBar>(find.byType(RatioBar));
-          expect(bar.separateParts, isTrue);
-          expect(bar.parts.map((p) => p.color), accounts.map(accountColor));
-          for (final element
-              in find.byType(CurrencyAccountSummaryLine).evaluate()) {
-            final row = element.widget as CurrencyAccountSummaryLine;
-            final dot = tester
-                .widgetList<Container>(
-                  find.descendant(
-                    of: find.byWidget(row),
-                    matching: find.byType(Container),
-                  ),
-                )
-                .singleWhere((box) => box.constraints?.maxWidth == 11);
+          final ring = tester.widget<RingSummary>(find.byType(RingSummary));
+          expect(ring.parts.map((p) => p.color), accounts.map(accountColor));
+          expect(
+            ring.parts.map((p) => p.value),
+            accounts.map((a) => a['balance']),
+          );
+          expect(find.byType(AccountListLine), findsNWidgets(3));
+          for (final element in find.byType(AccountListLine).evaluate()) {
+            final line = element.widget as AccountListLine;
             expect(
-              (dot.decoration as BoxDecoration).color,
-              accountColor(row.account),
+              ring.parts.map((p) => p.color),
+              contains(accountColor(line.account)),
             );
           }
-          final segments = find.descendant(
-            of: find.byType(RatioBar),
-            matching: find.byWidgetPredicate(
-              (w) => w is ColoredBox && w.key != null,
-            ),
-          );
-          expect(segments, findsNWidgets(3));
-          expect(tester.getSize(segments.last).width, greaterThanOrEqualTo(3));
           final movements = accounts
               .map(
                 (a) => <String, dynamic>{

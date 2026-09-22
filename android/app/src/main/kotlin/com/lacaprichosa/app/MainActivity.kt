@@ -12,26 +12,60 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.view.WindowInsetsController
+import android.view.WindowManager
+import androidx.activity.result.contract.ActivityResultContracts
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
 
-class MainActivity : FlutterFragmentActivity() {
+open class MainActivity : FlutterFragmentActivity() {
+    protected open val quickAccess: Boolean = false
+    private var loadedRevision: Long? = null
     private val channelName = "rial/native_state"
     private var screenReceiver: BroadcastReceiver? = null
+    private var screenOffPending = false
+    private var pdfResult: MethodChannel.Result? = null
+    private var pdfBytes: ByteArray? = null
+    private val createPdf = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        val bytes = pdfBytes
+        pdfBytes = null
+        if (uri == null || bytes == null) {
+            pdfResult?.success(false)
+            pdfResult = null
+        } else {
+            val resolver = applicationContext.contentResolver
+            Thread {
+                val error = runCatching {
+                    val stream = resolver.openOutputStream(uri, "wt") ?: error("No output stream")
+                    stream.use { it.write(bytes) }
+                }.exceptionOrNull()
+                runOnUiThread {
+                    if (error == null) pdfResult?.success(true)
+                    else pdfResult?.error("PDF_SAVE_FAILED", "No se pudo guardar el PDF", null)
+                    pdfResult = null
+                }
+            }.start()
+        }
+    }
 
     companion object {
+        private val stateExecutor = Executors.newSingleThreadExecutor()
         const val ACTION_WIDGET_MOVEMENT = "com.lacaprichosa.app.WIDGET_MOVEMENT"
         const val EXTRA_WIDGET_MOVEMENT_TYPE = "movement_type"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         super.onCreate(savedInstanceState)
-        DailyReminderScheduler.schedule(this)
-        RateUpdateScheduler.schedule(this)
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
+        stateExecutor.execute {
+            runCatching { DailyReminderScheduler.schedule(applicationContext) }
+            runCatching { RateUpdateScheduler.schedule(applicationContext) }
+        }
         storeLaunchAction(intent)
         registerScreenOffReceiver()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (!quickAccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1907)
         }
     }
@@ -44,10 +78,18 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        DailyReminderScheduler.schedule(this)
+        stateExecutor.execute { runCatching { DailyReminderScheduler.schedule(applicationContext) } }
+    }
+
+    override fun onPause() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        super.onPause()
     }
 
     override fun onDestroy() {
+        pdfResult?.error("PDF_INTERRUPTED", "La exportacion fue interrumpida", null)
+        pdfResult = null
+        pdfBytes = null
         screenReceiver?.let { unregisterReceiver(it) }
         screenReceiver = null
         super.onDestroy()
@@ -56,34 +98,76 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+            if (call.method in setOf("readState", "readRateState", "stateChanged", "writeState", "writeSplitState", "configureSecurity", "verifyPin")) {
+                stateExecutor.execute {
+                    try {
+                        val response: Any = when (call.method) {
+                            "readState" -> NativeJsonStore.readUiState(this).let { (state, revision) ->
+                                loadedRevision = revision
+                                state
+                            }
+                            "stateChanged" -> loadedRevision != NativeJsonStore.uiRevision(this)
+                            "readRateState" -> NativeJsonStore.readMain(this).toString()
+                            "configureSecurity" -> PinSecurity.configure(this,
+                                requireNotNull(call.argument<String>("pin")), call.argument<Boolean>("biometrics") == true)
+                            "verifyPin" -> PinSecurity.verify(this, call.argument<String>("pin") ?: "")
+                            else -> {
+                                val state = requireNotNull(call.argument<String>("state"))
+                                val revision = requireNotNull(loadedRevision) { "Read state before writing" }
+                                loadedRevision = if (call.method == "writeState") NativeJsonStore.writeState(this, state, revision)
+                                else NativeJsonStore.writeSplitState(this, state,
+                                    call.argument<Map<String, String>>("parts") ?: emptyMap(), revision)
+                                runCatching { DailyReminderScheduler.schedule(this) }
+                                runCatching { RateUpdateScheduler.schedule(this) }
+                                runCatching { MovementWidgetProvider.updateAll(this) }
+                                runCatching { UsdRateWidgetProvider.updateAll(this) }
+                                runCatching { EurRateWidgetProvider.updateAll(this) }
+                                runCatching { CalculatorWidgetProvider.updateAll(this) }
+                                true
+                            }
+                        }
+                        runOnUiThread { result.success(response) }
+                    } catch (_: NativeJsonStore.StaleStateException) {
+                        runOnUiThread { result.error("STATE_CONFLICT", "Los datos cambiaron en otra ventana. Vuelve a cargar antes de guardar.", null) }
+                    } catch (_: Exception) {
+                        runOnUiThread { result.error("SECURE_STORAGE_UNAVAILABLE", "No se pudo acceder al almacenamiento protegido. Tus datos no se han borrado.", null) }
+                    }
+                }
+                return@setMethodCallHandler
+            }
             val prefs = NativeJsonStore.prefs(this)
             when (call.method) {
-                "readState" -> result.success(NativeJsonStore.readState(this).toString())
-                "writeState" -> {
-                    val state = call.argument<String>("state") ?: "{}"
-                    NativeJsonStore.writeState(this, state)
-                    DailyReminderScheduler.schedule(this)
-                    RateUpdateScheduler.schedule(this)
-                    MovementWidgetProvider.updateAll(this)
-                    UsdRateWidgetProvider.updateAll(this)
-                    EurRateWidgetProvider.updateAll(this)
+                "quickAction" -> result.success(if (quickAccess) QuickAccessActivity.actionFrom(intent) else null)
+                "closeQuickAccess" -> {
+                    result.success(quickAccess)
+                    if (quickAccess) finishAndRemoveTask()
+                }
+                "openFullApp" -> {
+                    result.success(true)
+                    startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    if (quickAccess) finishAndRemoveTask()
+                }
+                "setScreenPrivacy" -> {
+                    if (call.argument<Boolean>("locked") != false) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                     result.success(true)
                 }
-                "writeSplitState" -> {
-                    val state = call.argument<String>("state") ?: "{}"
-                    val rawParts = call.argument<Map<*, *>>("parts") ?: emptyMap<Any, Any>()
-                    val parts = rawParts.mapNotNull { (key, value) ->
-                        val name = key?.toString() ?: return@mapNotNull null
-                        val raw = value?.toString() ?: return@mapNotNull null
-                        name to raw
-                    }.toMap()
-                    NativeJsonStore.writeSplitState(this, state, parts)
-                    DailyReminderScheduler.schedule(this)
-                    RateUpdateScheduler.schedule(this)
-                    MovementWidgetProvider.updateAll(this)
-                    UsdRateWidgetProvider.updateAll(this)
-                    EurRateWidgetProvider.updateAll(this)
-                    result.success(true)
+                "exportBudgetPdf" -> {
+                    if (pdfResult != null) {
+                        result.error("PDF_BUSY", "Ya hay una exportacion en curso", null)
+                    } else {
+                        try {
+                            pdfBytes = requireNotNull(call.argument<ByteArray>("bytes"))
+                            require(pdfBytes!!.size >= 5 && String(pdfBytes!!, 0, 5, Charsets.US_ASCII) == "%PDF-")
+                            pdfResult = result
+                            val name = call.argument<String>("name") ?: "Sin-Rial-presupuesto.pdf"
+                            createPdf.launch(name.replace(Regex("[^a-zA-Z0-9.\\-]"), "_"))
+                        } catch (_: Exception) {
+                            pdfBytes = null
+                            pdfResult = null
+                            result.error("PDF_UNAVAILABLE", "No se pudo abrir el selector de archivos", null)
+                        }
+                    }
                 }
                 "scheduleDailyReminder" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: true
@@ -125,11 +209,16 @@ class MainActivity : FlutterFragmentActivity() {
                     )
                 }
                 "consumeScreenOff" -> {
-                    val wasOff = prefs.getBoolean("screen_off_pending", false)
+                    val wasOff = screenOffPending || prefs.getBoolean("screen_off_pending", false)
+                    screenOffPending = false
                     prefs.edit().putBoolean("screen_off_pending", false).apply()
                     result.success(wasOff)
                 }
                 "consumeLaunchAction" -> {
+                    if (quickAccess) {
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
                     val action = prefs.getString("launch_action", null)
                     prefs.edit().remove("launch_action").apply()
                     result.success(action)
@@ -140,15 +229,19 @@ class MainActivity : FlutterFragmentActivity() {
                     applySystemBars(dark, color)
                     result.success(true)
                 }
+                "pinHomeWidget" -> {
+                    result.success(WidgetPinning.request(this, call.argument<String>("type")))
+                }
                 "openUrl" -> {
                     val url = call.argument<String>("url")?.trim().orEmpty()
-                    if (url.isEmpty()) {
+                    val uri = Uri.parse(url)
+                    if (uri.scheme != "https" || uri.host.isNullOrBlank() || !uri.userInfo.isNullOrEmpty()) {
                         result.success(false)
                         return@setMethodCallHandler
                     }
                     val opened = runCatching {
                         startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                            Intent(Intent.ACTION_VIEW, uri).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                         )
@@ -166,6 +259,7 @@ class MainActivity : FlutterFragmentActivity() {
         screenReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                    screenOffPending = true
                     NativeJsonStore.prefs(context)
                         .edit()
                         .putBoolean("screen_off_pending", true)
@@ -177,6 +271,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun storeLaunchAction(intent: Intent?) {
+        if (quickAccess) return
         if (intent?.action != ACTION_WIDGET_MOVEMENT) return
         val type = intent.getStringExtra(EXTRA_WIDGET_MOVEMENT_TYPE) ?: return
         if (type != "expense" && type != "income" && type != "transfer" && type != "account") return
@@ -187,7 +282,10 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun applySystemBars(dark: Boolean, color: Int) {
-        window.statusBarColor = color
+        window.statusBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+        }
         window.navigationBarColor = color
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or

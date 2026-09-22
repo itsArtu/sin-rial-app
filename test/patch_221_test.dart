@@ -147,7 +147,6 @@ void main() {
         () => app.state['homeShortcutButtons'] = [
           'settings',
           'calculator',
-          'movement',
           'debts',
         ],
       );
@@ -178,23 +177,15 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Guardar personalizaci\u00f3n'));
       await tester.pumpAndSettle();
-      expect(app.state['homeShortcutButtons'], [
-        'calculator',
-        'settings',
-        'movement',
-      ]);
+      expect(app.state['homeShortcutButtons'], ['calculator', 'settings']);
       expect(order(), [
         'home-shortcut-calculator',
         'home-shortcut-settings',
-        'home-shortcut-movement',
+        'home-customize',
       ]);
       final writes = calls.where((call) => call.method == 'writeSplitState');
       final saved = jsonDecode(writes.last.arguments['state'] as String) as Map;
-      expect(saved['homeShortcutButtons'], [
-        'calculator',
-        'settings',
-        'movement',
-      ]);
+      expect(saved['homeShortcutButtons'], ['calculator', 'settings']);
       app.pushPage(
         tester.element(find.byType(HomePage)),
         (_) => HomeCustomizePage(app: app),
@@ -213,7 +204,6 @@ void main() {
       expect(app.state['homeShortcutButtons'], [
         'calculator',
         'settings',
-        'movement',
         'debts',
       ]);
       expect(tester.takeException(), isNull);

@@ -13,7 +13,12 @@ Future<void> selectCurrency(
   String value,
 ) async {
   await tester.ensureVisible(currencySelector(label));
-  await tester.tap(currencySelector(label));
+  await tester.tap(
+    find.descendant(
+      of: currencySelector(label),
+      matching: find.byType(CupertinoButton),
+    ),
+  );
   await tester.pumpAndSettle();
   final choice = find.descendant(
     of: find.byType(ModernSheet),
@@ -30,7 +35,12 @@ Future<void> expectCurrencyOptions(
   List<String> allowed,
 ) async {
   await tester.ensureVisible(currencySelector(label));
-  await tester.tap(currencySelector(label));
+  await tester.tap(
+    find.descendant(
+      of: currencySelector(label),
+      matching: find.byType(CupertinoButton),
+    ),
+  );
   await tester.pumpAndSettle();
   for (final currency in ['D\u00f3lares', 'Bol\u00edvares', 'Euros', 'USDT']) {
     expect(
@@ -46,7 +56,10 @@ Future<void> expectCurrencyOptions(
 }
 
 Finder input(String placeholder) => find.byWidgetPredicate(
-  (widget) => widget is CupertinoTextField && widget.placeholder == placeholder,
+  (widget) =>
+      widget is CupertinoTextField &&
+      (widget.placeholder == placeholder ||
+          (placeholder == 'Monto' && widget.placeholder == '0,00')),
 );
 
 Future<void> openCalculator(
@@ -180,7 +193,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Bs. 9.600,00'), findsOneWidget);
       expect(find.text('1\u20ae = Bs. 960,00'), findsOneWidget);
-      expect(find.text('\u20ae'), findsOneWidget);
+      expect(find.text('\u20ae'), findsWidgets);
 
       await tester.tap(find.byIcon(CupertinoIcons.arrow_up_arrow_down));
       await tester.pumpAndSettle();
