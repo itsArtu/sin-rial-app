@@ -26,6 +26,7 @@ class _BudgetPageState extends State<BudgetPage>
         plan: plan,
         items: budgetPlanItems(app, plan['id'].toString()),
         movements: app.maps('movements'),
+        accounts: app.maps('accounts'),
         usdRate: app.rate,
         eurRate: app.eurRate,
       );
@@ -1609,9 +1610,10 @@ class BudgetCreationStatus extends StatelessWidget {
                                       key: const ValueKey(
                                         'budget-creating-spinner',
                                       ),
-                                      child: CupertinoActivityIndicator(
-                                        radius: 25,
+                                      child: RialLoadingIndicator(
+                                        size: 50,
                                         color: theme.accent,
+                                        semanticsLabel: 'Creando presupuesto',
                                       ),
                                     )
                                   : Container(

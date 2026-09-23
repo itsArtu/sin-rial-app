@@ -43,9 +43,13 @@ usando su propia base independiente.
   Los contadores son persistentes, el reloj es monotono dentro del mismo arranque
   y una escritura Flutter antigua no puede reemplazar la seguridad nativa.
 - La verificacion costosa se ejecuta fuera del hilo de interfaz.
-- Proteccion de la ventana durante bloqueo/segundo plano y exclusion de la vista
-  financiera del arbol de accesibilidad mientras esta cubierta. Las capturas
-  voluntarias siguen disponibles con la app desbloqueada.
+- Proteccion de la ventana mientras esta bloqueada o se verifica el bloqueo
+  al regresar a primer plano. La vista cubierta se excluye de accesibilidad.
+- La privacidad en multitarea es opcional y esta desactivada por defecto, tanto
+  para instalaciones nuevas como anteriores. Ajustes > Seguridad permite ocultar
+  la vista en recientes, segundo plano y al bajar las notificaciones. No cambia
+  el PIN, la biometria ni el bloqueo tras apagar la pantalla o superar la espera.
+  Las capturas voluntarias siguen disponibles con la app desbloqueada y activa.
 - Notificaciones de deudas marcadas como privadas en la pantalla bloqueada.
 - Enlaces externos de actualizacion limitados a HTTPS.
 

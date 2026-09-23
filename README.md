@@ -2,7 +2,7 @@
 
 App personal de finanzas hecha con Flutter.
 
-Version actual: **Sin Rial 3.0** (`3.0+69`).
+Version actual: **Sin Rial 3.0** (`3.0+71`).
 
 [Descargar la ultima version](https://github.com/itsArtu/sin-rial-app/releases/latest) · [Novedades de 3.0](release/3.0.md)
 

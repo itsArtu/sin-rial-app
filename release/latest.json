@@ -1,8 +1,8 @@
 {
   "version": "3.0",
-  "build": 69,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.0%2B69/sin-rial-3.0.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.0%2B69",
-  "sha256": "355821A40433A177BE02DD42A11AD5AA7E6C15F592600BB2ADCBB6B6B1F7377E",
-  "notes": "Sin Rial 3.0: nuevo diseno, presupuestos por pasos con PDF, ahorros de pareja y Bolso/San, calculadora con proxima tasa BCV, deudas en EUR y USDT, widgets compactos con registro rapido protegido y calculadora independiente. Migracion automatica a SQLite con registros cifrados y PIN reforzado. Incluye las correcciones de recordatorios, comisiones y colores de 2.2.1 y 2.2.2. Instala sobre la version anterior: no desinstales ni borres datos. El PDF no es un respaldo restaurable."
+  "build": 71,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.0%2B71/sin-rial-3.0-build71.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.0%2B71",
+  "sha256": "FBB6D6CAF0F18A967DCC1EE716B7B0B776B2F0B43F9D0CDAEF9D37EA459C5545",
+  "notes": "Sin Rial 3.0: nuevo diseno, presupuestos guiados con PDF ampliado y movimientos detallados, balances compactos, privacidad en multitarea opcional y nuevas animaciones de carga. Ahorros de pareja y Bolso/San, proxima tasa BCV, deudas en EUR y USDT, widgets compactos y ventanas rapidas. SQLite con registros cifrados y PIN reforzado. Incluye las correcciones de 2.2.1 y 2.2.2. Instala sobre la version anterior: no desinstales ni borres datos. El PDF no es un respaldo restaurable."
 }

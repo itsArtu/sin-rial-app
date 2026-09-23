@@ -46,7 +46,7 @@ const _appVersionName = String.fromEnvironment(
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 69,
+  defaultValue: 71,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -284,8 +284,13 @@ class _RialBootstrapState extends State<RialBootstrap> {
                 ? null
                 : (_, child) => QuickAccessFrame(child: child!),
             home: const CupertinoPageScaffold(
-              backgroundColor: Color(0xFF07080C),
-              child: Center(child: CupertinoActivityIndicator(radius: 15)),
+              backgroundColor: Color(0xFF000000),
+              child: Center(
+                child: RialLoadingIndicator(
+                  color: Color(0xFF55BD91),
+                  semanticsLabel: 'Cargando Sin Rial',
+                ),
+              ),
             ),
           );
         }
@@ -627,6 +632,7 @@ Map<String, dynamic> defaultState() {
     'pinHash': '',
     'pinLength': 0,
     'biometricEnabled': false,
+    'screenPrivacyEnabled': false,
     'onboardingComplete': false,
     'accounts': <dynamic>[],
     'movements': <dynamic>[],
@@ -754,6 +760,7 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
       (state['pinHash']?.toString().isNotEmpty ?? false) &&
       (state['pinSalt']?.toString().isNotEmpty ?? false);
   state['biometricEnabled'] = state['biometricEnabled'] == true;
+  state['screenPrivacyEnabled'] = state['screenPrivacyEnabled'] == true;
   state['themeColor'] = themeColorByKey(state['themeColor']?.toString() ?? '')
       .key;
   final hasLegacyData =
@@ -1281,10 +1288,14 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    _lastLifecycleState = lifecycleState;
     if (lifecycleState == AppLifecycleState.paused ||
         lifecycleState == AppLifecycleState.hidden ||
         lifecycleState == AppLifecycleState.inactive) {
-      setState(() => _privacySuspended = true);
+      setState(() {
+        _privacySuspended = true;
+        _checkingResumeSecurity = false;
+      });
       _lastPrivacyRequest = null;
     }
     if (!securityEnabled ||
@@ -1307,10 +1318,17 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   }
 
   Future<void> _resumeAfterSecurityCheck() async {
+    if (backgroundedAt != null) {
+      setState(() => _checkingResumeSecurity = true);
+    }
     await reloadExternalChanges();
     await _lockIfNeededAfterResume();
     if (!mounted) return;
-    setState(() => _privacySuspended = false);
+    if (_lastLifecycleState != AppLifecycleState.resumed) return;
+    setState(() {
+      _privacySuspended = false;
+      _checkingResumeSecurity = false;
+    });
     _updateScreenPrivacy();
     if (!mounted || locked) return;
     if (!isQuickAccess || widget.quickAction == 'calculator')
@@ -1320,6 +1338,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   Future<void> _resumeWithoutSecurity() async {
     await reloadExternalChanges();
     if (!mounted) return;
+    if (_lastLifecycleState != AppLifecycleState.resumed) return;
     setState(() => _privacySuspended = false);
     _updateScreenPrivacy();
     backgroundedAt = null;
@@ -1401,6 +1420,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       numberValue(state['pinLength']).round().clamp(0, 6).toInt();
   bool get biometricEnabled => state['biometricEnabled'] == true;
   bool get securityEnabled => pinEnabled || biometricEnabled;
+  bool get screenPrivacyEnabled => state['screenPrivacyEnabled'] == true;
   bool get securitySetupRequired =>
       state['onboardingComplete'] == true && !securitySetupComplete;
 
@@ -1523,6 +1543,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     final keepPinHash = state['pinHash']?.toString() ?? '';
     final keepPinLength = numberValue(state['pinLength']).round();
     final keepBiometricEnabled = biometricEnabled;
+    final keepScreenPrivacyEnabled = screenPrivacyEnabled;
     final keepRate = rate;
     final keepPreviousRate = numberValue(state['previousRate']);
     final keepLastRateDate = state['lastRateDate']?.toString() ?? '';
@@ -1551,6 +1572,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       state['pinHash'] = keepPinHash;
       state['pinLength'] = keepPinLength;
       state['biometricEnabled'] = keepBiometricEnabled;
+      state['screenPrivacyEnabled'] = keepScreenPrivacyEnabled;
       state['rate'] = keepRate;
       state['previousRate'] = keepPreviousRate > 0
           ? keepPreviousRate
@@ -1866,19 +1888,29 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   }
 
   bool securityBusy = false;
-  bool? _lastPrivacyRequest;
+  (bool, bool, bool)? _lastPrivacyRequest;
   bool _privacySuspended = false;
+  bool _checkingResumeSecurity = false;
+  AppLifecycleState _lastLifecycleState = AppLifecycleState.resumed;
+  bool get _showPrivacyCurtain =>
+      _checkingResumeSecurity || (screenPrivacyEnabled && _privacySuspended);
   String pinError = '';
 
   void _updateScreenPrivacy() {
-    final protect = locked || _privacySuspended;
-    if (_lastPrivacyRequest == protect) return;
-    _lastPrivacyRequest = protect;
+    final request = (
+      locked || _checkingResumeSecurity,
+      screenPrivacyEnabled,
+      _privacySuspended,
+    );
+    if (_lastPrivacyRequest == request) return;
+    _lastPrivacyRequest = request;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       try {
         await _storeChannel.invokeMethod<void>('setScreenPrivacy', {
-          'locked': locked || _privacySuspended,
+          'locked': locked || _checkingResumeSecurity,
+          'hideInBackground': screenPrivacyEnabled,
+          'suspended': _privacySuspended,
         });
       } catch (_) {}
     });
@@ -2405,9 +2437,12 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
               fit: StackFit.expand,
               children: [
                 ExcludeSemantics(
-                  excluding: shouldShowLockOverlay || _privacySuspended,
+                  excluding: shouldShowLockOverlay || _showPrivacyCurtain,
                   child: IgnorePointer(
-                    ignoring: shouldShowLockOverlay || _privacySuspended,
+                    ignoring:
+                        shouldShowLockOverlay ||
+                        _privacySuspended ||
+                        _checkingResumeSecurity,
                     child: child ?? const SizedBox.shrink(),
                   ),
                 ),
@@ -2450,7 +2485,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
-                if (_privacySuspended && !shouldShowLockOverlay)
+                if (_showPrivacyCurtain && !shouldShowLockOverlay)
                   Positioned.fill(
                     child: ColoredBox(
                       key: const ValueKey('privacy-curtain'),
@@ -5849,20 +5884,19 @@ class HomePage extends StatelessWidget {
       } else if (section == 'accounts') {
         sections.addAll([
           SectionHeader(theme: t, title: 'Mis balances'),
-          SizedBox(
-            height: 178,
-            child: accounts.isEmpty
-                ? EmptyCard(theme: t, text: 'Agrega tu primera cuenta')
-                : ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: 2,
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (_, index) {
-                      final currency = index == 0 ? 'VES' : 'USD';
-                      return BalanceGroupCard(app: app, currency: currency);
-                    },
-                  ),
-          ),
+          if (accounts.isEmpty)
+            EmptyCard(theme: t, text: 'Agrega tu primera cuenta')
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  BalanceGroupCard(app: app, currency: 'VES'),
+                  const SizedBox(width: 12),
+                  BalanceGroupCard(app: app, currency: 'USD'),
+                ],
+              ),
+            ),
         ]);
       } else if (section == 'upcoming') {
         sections.add(UpcomingPaymentsSection(app: app));
@@ -6161,9 +6195,10 @@ class BalanceHero extends StatelessWidget {
                           height: 28,
                           child: Center(
                             child: loadingRate
-                                ? CupertinoActivityIndicator(
-                                    color: theme.muted,
-                                    radius: 8,
+                                ? RialLoadingIndicator(
+                                    color: theme.accent,
+                                    size: 18,
+                                    semanticsLabel: null,
                                   )
                                 : Icon(
                                     CupertinoIcons.arrow_clockwise,
@@ -7962,7 +7997,8 @@ class BalanceGroupCard extends StatelessWidget {
         (_) => CurrencyAccountsPage(app: app, currency: currency),
       ),
       child: Container(
-        width: 264,
+        key: ValueKey('balance-group-$currency'),
+        width: math.min(264.0, MediaQuery.sizeOf(context).width - 32),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: t.card,
@@ -7970,9 +8006,11 @@ class BalanceGroupCard extends StatelessWidget {
           border: Border.all(color: t.border),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              key: ValueKey('balance-heading-$currency'),
               children: [
                 CurrencyBadgeCircle(theme: t, currency: currency),
                 const SizedBox(width: 8),
@@ -7990,15 +8028,19 @@ class BalanceGroupCard extends StatelessWidget {
                 ),
               ],
             ),
-            const Spacer(),
-            Text(
-              app.secureMoney(total, currency),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: t.ink,
-                fontSize: 25,
-                fontWeight: FontWeight.w600,
+            const SizedBox(height: 8),
+            FittedBox(
+              key: ValueKey('balance-amount-$currency'),
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                app.secureMoney(total, currency),
+                maxLines: 1,
+                style: TextStyle(
+                  color: t.ink,
+                  fontSize: 25,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             const SizedBox(height: 5),
@@ -12036,6 +12078,21 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             SectionHeader(theme: t, title: 'Seguridad'),
+            SettingsSwitchTile(
+              theme: t,
+              icon: CupertinoIcons.lock_shield,
+              title: 'Privacidad en multitarea',
+              subtitle:
+                  'Ocultar la vista en recientes y al bajar las notificaciones',
+              value: app.screenPrivacyEnabled,
+              onTap: () {
+                app.mutate(
+                  () => app.state['screenPrivacyEnabled'] =
+                      !app.screenPrivacyEnabled,
+                );
+                setState(() {});
+              },
+            ),
             SettingsSwitchTile(
               theme: t,
               icon: app.hideAmounts

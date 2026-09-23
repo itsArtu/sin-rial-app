@@ -1,5 +1,40 @@
 part of 'main.dart';
 
+class RialLoadingIndicator extends StatelessWidget {
+  const RialLoadingIndicator({
+    super.key,
+    required this.color,
+    this.size = 32,
+    this.semanticsLabel = 'Cargando',
+  });
+
+  final Color color;
+  final double size;
+  final String? semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: semanticsLabel,
+    excludeSemantics: true,
+    child: SizedBox.square(
+      dimension: size,
+      child: RepaintBoundary(
+        child: material.CircularProgressIndicator(
+          // A static arc respects reduced motion without announcing a fake percentage.
+          value: MediaQuery.disableAnimationsOf(context) ? .7 : null,
+          color: color,
+          backgroundColor: color.withValues(alpha: .16),
+          strokeWidth: (size / 12).clamp(2.0, 4.0),
+          strokeCap: StrokeCap.round,
+          strokeAlign: material.CircularProgressIndicator.strokeAlignInside,
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints.tightFor(width: size, height: size),
+        ),
+      ),
+    ),
+  );
+}
+
 Color homeHeaderColor(RTheme theme) =>
     Color.lerp(theme.bg, theme.accent, theme.dark ? .26 : .10)!;
 

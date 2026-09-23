@@ -25,6 +25,7 @@ open class MainActivity : FlutterFragmentActivity() {
     private val channelName = "rial/native_state"
     private var screenReceiver: BroadcastReceiver? = null
     private var screenOffPending = false
+    private val screenPrivacy by lazy { ScreenPrivacyController(this) }
     private var pdfResult: MethodChannel.Result? = null
     private var pdfBytes: ByteArray? = null
     private val createPdf = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
@@ -58,7 +59,7 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
+        screenPrivacy.onResume()
         stateExecutor.execute {
             runCatching { DailyReminderScheduler.schedule(applicationContext) }
             runCatching { RateUpdateScheduler.schedule(applicationContext) }
@@ -78,11 +79,12 @@ open class MainActivity : FlutterFragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        screenPrivacy.onResume()
         stateExecutor.execute { runCatching { DailyReminderScheduler.schedule(applicationContext) } }
     }
 
     override fun onPause() {
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        screenPrivacy.onPause()
         super.onPause()
     }
 
@@ -148,8 +150,11 @@ open class MainActivity : FlutterFragmentActivity() {
                     if (quickAccess) finishAndRemoveTask()
                 }
                 "setScreenPrivacy" -> {
-                    if (call.argument<Boolean>("locked") != false) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-                    else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    screenPrivacy.update(
+                        locked = call.argument<Boolean>("locked") != false,
+                        hideInBackground = call.argument<Boolean>("hideInBackground") == true,
+                        suspended = call.argument<Boolean>("suspended") == true
+                    )
                     result.success(true)
                 }
                 "exportBudgetPdf" -> {

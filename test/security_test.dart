@@ -190,7 +190,9 @@ void main() {
           }
           return call.method == 'scheduleRateUpdate' ? true : null;
         });
-    await tester.pumpWidget(RialApp(initialState: protectedState()));
+    await tester.pumpWidget(
+      RialApp(initialState: protectedState()..['screenPrivacyEnabled'] = true),
+    );
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(lockKey), '1234');
     await tester.pumpAndSettle();
@@ -208,6 +210,115 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(LockScreen), findsOneWidget);
     expect(privacy.last, true);
+  });
+
+  test('Multitasking privacy defaults off and only accepts a boolean', () {
+    expect(defaultState()['screenPrivacyEnabled'], false);
+    expect(withDefaults({})['screenPrivacyEnabled'], false);
+    expect(
+      withDefaults({'screenPrivacyEnabled': 'true'})['screenPrivacyEnabled'],
+      false,
+    );
+    expect(
+      withDefaults({'screenPrivacyEnabled': true})['screenPrivacyEnabled'],
+      true,
+    );
+  });
+
+  for (final enabled in [false, true]) {
+    testWidgets('Background visibility respects the opt-in: $enabled', (
+      tester,
+    ) async {
+      final calls = <Map>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'verifyPin') return {'accepted': true};
+            if (call.method == 'consumeScreenOff') return false;
+            if (call.method == 'setScreenPrivacy')
+              calls.add(call.arguments as Map);
+            return call.method == 'scheduleRateUpdate' ? true : null;
+          });
+      await tester.pumpWidget(
+        RialApp(
+          initialState: protectedState()..['screenPrivacyEnabled'] = enabled,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(lockKey), '1234');
+      await tester.pumpAndSettle();
+      for (final lifecycle in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.paused,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(lifecycle);
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('privacy-curtain')),
+          enabled ? findsOneWidget : findsNothing,
+        );
+        expect(calls.last['hideInBackground'], enabled);
+        expect(calls.last['suspended'], true);
+        expect(calls.last['locked'], false);
+      }
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('privacy-curtain')), findsNothing);
+      expect(find.byType(LockScreen), findsNothing);
+      expect(calls.last['suspended'], false);
+    });
+  }
+
+  testWidgets('Opting out does not bypass the PIN after the screen was off', (
+    tester,
+  ) async {
+    final gate = Completer<bool>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'verifyPin') return {'accepted': true};
+          if (call.method == 'consumeScreenOff') return gate.future;
+          return call.method == 'scheduleRateUpdate' ? true : null;
+        });
+    await tester.pumpWidget(RialApp(initialState: protectedState()));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(lockKey), '1234');
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('privacy-curtain')), findsNothing);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('privacy-curtain')), findsOneWidget);
+    gate.complete(true);
+    await tester.pumpAndSettle();
+    expect(find.byType(LockScreen), findsOneWidget);
+  });
+
+  testWidgets('A pending resume cannot undo a newer privacy curtain', (
+    tester,
+  ) async {
+    final gate = Completer<bool>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'verifyPin') return {'accepted': true};
+          if (call.method == 'consumeScreenOff') return gate.future;
+          return call.method == 'scheduleRateUpdate' ? true : null;
+        });
+    await tester.pumpWidget(
+      RialApp(initialState: protectedState()..['screenPrivacyEnabled'] = true),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(lockKey), '1234');
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    gate.complete(false);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('privacy-curtain')), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('privacy-curtain')), findsNothing);
   });
 
   for (final dark in [true, false])
