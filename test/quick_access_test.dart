@@ -270,6 +270,8 @@ void main() {
   testWidgets('Bank expense uses existing automatic commission rules', (
     tester,
   ) async {
+    stored['rate'] = 852.42;
+    stored['rateEffectiveDate'] = isoDate(caracasTime(DateTime.now()));
     stored['accounts'] = [
       {
         'id': 'bank',
@@ -284,6 +286,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('quick-save')));
     await tester.pumpAndSettle();
     final movement = (stored['movements'] as List).single;
+    expect(movement['bcvUsdRate'], 852.42);
     final expectedFee = estimatedBankFee(
       method: 'payment_mobile_p2p',
       amount: 100,

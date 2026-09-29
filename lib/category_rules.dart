@@ -37,7 +37,7 @@ const Map<String, List<String>> categoryKeywords = {
     'cancelacion tdc',
     'deuda tdc',
   ],
-  'Cuotas': [
+  'Deuda': [
     'cuota',
     'cuotas',
     'cashea',
@@ -473,6 +473,28 @@ const Map<String, List<String>> categoryKeywords = {
 
 String _categorySearchText(String value) =>
     normalizeText(value).replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+
+String canonicalCategory(String value) => switch (_categorySearchText(value)) {
+  'wifi' || 'wi fi' => 'Servicios',
+  'pasaje' => 'Transporte',
+  'cuotas' => 'Deuda',
+  _ => value.trim(),
+};
+
+void migrateCategoryNames(Map<String, dynamic> state) {
+  for (final collection in ['movements', 'budgets']) {
+    state[collection] = [
+      for (final item in state[collection] as List)
+        if (item is Map &&
+            item['category'] is String &&
+            canonicalCategory(item['category'] as String) != item['category'])
+          {...item, 'category': canonicalCategory(item['category'] as String)}
+        else
+          item,
+    ];
+  }
+  // Keep IDs, amounts and currencies; budget views sum limits by category.
+}
 
 final _categoryPatterns = {
   for (final entry in categoryKeywords.entries)

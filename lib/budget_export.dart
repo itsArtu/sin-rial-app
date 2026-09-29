@@ -57,7 +57,12 @@ Map<String, dynamic> budgetReport({
     final amount = numberValue(movement['amount']);
     final fee = numberValue(movement['feeAmount']);
     // Convert amount + fee together, exactly as the budget summary does.
-    final total = budgetUsd(moneyAdd(amount, fee), currency, usdRate, eurRate);
+    final total = movementBudgetUsd(
+      movement,
+      moneyAdd(amount, fee),
+      usdRate,
+      eurRate,
+    );
     final account = accountsById[movement['accountId']];
     details.add({
       'timestamp': date.millisecondsSinceEpoch,
@@ -125,7 +130,7 @@ Map<String, dynamic> budgetReport({
             'USD',
           ),
     'rateNote':
-        'Resumen en USD. Tasas al exportar, no tasas hist\u00f3ricas: USD/VES ' +
+        'Resumen en USD. Cada movimiento usa su tasa BCV registrada. Para l\u00edmites y registros antiguos sin tasa guardada, tasas al exportar: USD/VES ' +
         (usdRate > 0 ? formatNumber(usdRate) : 'no disponible') +
         ' | EUR/VES ' +
         (eurRate > 0 ? formatNumber(eurRate) : 'no disponible') +

@@ -107,7 +107,7 @@ void main() {
     expect(result['spent'], r'$42,60');
     expect(result['remaining'], r'$117,40');
     expect(result['unassigned'], r'$90,00');
-    expect(result['rateNote'], contains('no tasas hist'));
+    expect(result['rateNote'], contains('tasa BCV registrada'));
     expect(jsonEncode([plan, items, accounts, movements]), before);
   });
 

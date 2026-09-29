@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -77,6 +79,31 @@ Future<dynamic> openFixture(WidgetTester tester, String type) async {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    if (!const bool.fromEnvironment('FINANCE_GOLDENS')) return;
+    final manifest =
+        jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
+    for (final entry in manifest.cast<Map>()) {
+      final loader = FontLoader(entry['family'] as String);
+      for (final font in (entry['fonts'] as List).cast<Map>()) {
+        loader.addFont(rootBundle.load(font['asset'] as String));
+      }
+      await loader.load();
+    }
+    for (final family in [
+      '.SF Pro Text',
+      '.SF Pro Display',
+      'CupertinoSystemText',
+      'CupertinoSystemDisplay',
+      'Roboto',
+      'Ahem',
+    ]) {
+      await (FontLoader(
+        family,
+      )..addFont(rootBundle.load('assets/fonts/Manrope-Medium.ttf'))).load();
+    }
+  });
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -101,6 +128,7 @@ void main() {
       expect(find.text('Registro de prueba'), findsOneWidget);
       expect(find.text('16/09/2026'), findsOneWidget);
       expect(find.text('11:08 AM'), findsOneWidget);
+      expect(find.byKey(const ValueKey('movement-detail-bcv')), findsNothing);
       expect(
         find.text('Comisión'),
         type == 'income' ? findsNothing : findsOneWidget,
@@ -165,6 +193,101 @@ void main() {
     expect(app.movementById('movement-test')['amount'], 60.0);
     expect(app.debtById('debt-test')['paidAmount'], 60.0);
     expect(find.text('-\$60,00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  for (final width in [320.0, 390.0]) {
+    for (final type in ['expense', 'income', 'transfer']) {
+      testWidgets(
+        'Detail $type shows recorded BCV and respects privacy at $width',
+        (tester) async {
+          final dynamic app = await openFixture(tester, type);
+          tester.view.physicalSize = Size(width, 844);
+          app.mutate(() {
+            app.accountById('source')['currency'] = 'VES';
+            app.movementById('movement-test').addAll({
+              'currency': 'VES',
+              'amount': 1000.0,
+              'feeAmount': 3.0,
+              'rate': 200.0,
+              'bcvUsdRate': 100.0,
+              'bcvEurRate': 120.0,
+              'bcvEffectiveDate': '2026-09-16',
+            });
+            app.state['rate'] = 900.0;
+          });
+          await tester.pumpAndSettle();
+          final equivalent = find.byKey(const ValueKey('movement-detail-bcv'));
+          expect(tester.widget<DebtDetailRow>(equivalent).value, r'$10,00');
+          expect(find.text('Equivalente BCV').hitTestable(), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          if (const bool.fromEnvironment('FINANCE_GOLDENS') &&
+              type == 'expense') {
+            await expectLater(
+              find.byType(RialApp),
+              matchesGoldenFile(
+                '../build/detail-bcv-qa/detail-${width.toInt()}.png',
+              ),
+            );
+          }
+          app.mutate(() => app.state['rate'] = 1500.0);
+          await tester.pumpAndSettle();
+          expect(tester.widget<DebtDetailRow>(equivalent).value, r'$10,00');
+          app.mutate(() => app.state['hideAmounts'] = true);
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<DebtDetailRow>(equivalent).value,
+            app.secureMoney(10.0, 'USD'),
+          );
+          expect(find.text(r'$10,00'), findsNothing);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+        },
+      );
+    }
+  }
+
+  testWidgets('Legacy detail resolves dated BCV, not today or transfer rate', (
+    tester,
+  ) async {
+    final dynamic app = await openFixture(tester, 'transfer');
+    app.mutate(() {
+      app.movementById('movement-test').addAll({
+        'currency': 'VES',
+        'amount': 1000.0,
+        'rate': 200.0,
+        'date': '25/09/2026 06:15 PM',
+      });
+      app.state['rate'] = 999.0;
+      app.state['bcvRateHistory'] = normalizeBcvHistory([
+        {'date': '2026-09-25', 'USD': 100.0, 'EUR': 120.0},
+        {
+          'date': '2026-09-28',
+          'USD': 125.0,
+          'EUR': 150.0,
+          'updated_at': '2026-09-25T21:00:00Z',
+        },
+      ]);
+    });
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey('movement-detail-bcv'));
+    expect(tester.widget<DebtDetailRow>(row).value, r'$8,00');
+    app.mutate(
+      () => app.movementById('movement-test')['date'] = '25/09/2026 05:59 PM',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.widget<DebtDetailRow>(row).value, r'$10,00');
+    app.mutate(
+      () => app.movementById('movement-test')['date'] = '01/01/1980 12:00 PM',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<DebtDetailRow>(row).value,
+      'No disponible para esta fecha',
+    );
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

@@ -1,8 +1,8 @@
 {
-  "version": "3.0",
-  "build": 71,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.0%2B71/sin-rial-3.0-build71.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.0%2B71",
-  "sha256": "FBB6D6CAF0F18A967DCC1EE716B7B0B776B2F0B43F9D0CDAEF9D37EA459C5545",
-  "notes": "Sin Rial 3.0: nuevo diseno, presupuestos guiados con PDF ampliado y movimientos detallados, balances compactos, privacidad en multitarea opcional y nuevas animaciones de carga. Ahorros de pareja y Bolso/San, proxima tasa BCV, deudas en EUR y USDT, widgets compactos y ventanas rapidas. SQLite con registros cifrados y PIN reforzado. Incluye las correcciones de 2.2.1 y 2.2.2. Instala sobre la version anterior: no desinstales ni borres datos. El PDF no es un respaldo restaurable."
+  "version": "3.1",
+  "build": 74,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.1%2B74/sin-rial-3.1-build74.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.1%2B74",
+  "sha256": "806CA617796DF200EB6BB69F9E6E14E43019F52CD3FBA0C9C26BB2E2CF048224",
+  "notes": "Sin Rial 3.1: abonos en deudas sin cuotas, resumen mensual por categoria y cuenta con porcentajes de ingresos, equivalente BCV en movimientos recientes y detalle, y tasas historicas segun la fecha y hora del movimiento. La calculadora mantiene visible su resultado al ocultar montos personales. Categorias Wifi/Servicios, Pasaje/Transporte y Cuotas/Deuda unificadas. Incluye todas las mejoras de 3.0 y las correcciones anteriores. Actualiza directamente sobre tu version actual: no desinstales ni borres datos. El PDF no es un respaldo restaurable."
 }

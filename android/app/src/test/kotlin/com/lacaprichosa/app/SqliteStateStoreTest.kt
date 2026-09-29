@@ -240,9 +240,12 @@ class SqliteStateStoreTest {
         val source = fixture().put("rateLastAttemptMillis", 1)
         NativeJsonStore.writeState(context, source.toString())
         val before = sqlitePayloads(context)
-        NativeJsonStore.updateRateFields(context, JSONObject().put("rateLastAttemptMillis", 100).put("rate", 950.25))
+        val history = JSONObject("""{"2026-09-21":{"USD":849.564,"EUR":974.09}}""")
+        NativeJsonStore.updateRateFields(context, JSONObject().put("rateLastAttemptMillis", 100)
+            .put("rate", 950.25).put("bcvRateHistory", history))
         NativeJsonStore.writeState(context, source.toString())
         assertEquals(950.25, NativeJsonStore.readMain(context).getDouble("rate"), 0.0)
+        assertEquals(history.toString(), NativeJsonStore.readMain(context).getJSONObject("bcvRateHistory").toString())
         for (name in NativeJsonStore.partNames) assertEquals(before[name], sqlitePayloads(context)[name])
     }
 

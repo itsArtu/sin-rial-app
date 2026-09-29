@@ -13,7 +13,7 @@ object NativeJsonStore {
     private val objectKeys = listOf("savingsFunds")
     internal val partNames = arrayKeys + objectKeys
     internal var cipher = StateCipher()
-    private val rateKeys = listOf("bcvRateSnapshots", "rateCheckedDate", "rateLastFetchAttemptMillis",
+    private val rateKeys = listOf("bcvRateSnapshots", "bcvRateHistory", "rateCheckedDate", "rateLastFetchAttemptMillis",
         "rate", "previousRate", "lastRateDate", "rateEffectiveDate", "rateUpdatedAt", "lastRateMillis",
         "eurRate", "previousEurRate", "eurRateEffectiveDate", "eurRateUpdatedAt", "eurLastRateMillis",
         "usdtRate", "previousUsdtRate", "usdtRateUpdatedAt", "usdtLastRateMillis",

@@ -79,7 +79,7 @@ void main() {
       'Comida': 'Comida',
       'Comida para la casa': 'Comida',
       'Mercado Libre': 'Compras',
-      'Cuota de Cashea': 'Cuotas',
+      'Cuota de Cashea': 'Deuda',
       'Curso de cocina': 'Educación',
       'Pago de la tarjeta de crédito': 'Pago TDC',
       'Abono TDC Banesco': 'Pago TDC',

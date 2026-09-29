@@ -470,6 +470,11 @@ class ModernMenu extends StatelessWidget {
               () => open(MovementHistoryPage(app: app)),
             ),
             IconGridItem(
+              'Resumen mensual',
+              CupertinoIcons.chart_pie,
+              () => open(MonthlySpendingPage(app: app)),
+            ),
+            IconGridItem(
               'Metas y ahorros',
               CupertinoIcons.flag,
               () => open(SavingsPage(app: app)),

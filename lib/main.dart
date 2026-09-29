@@ -30,6 +30,7 @@ part 'redesign_ui.dart';
 part 'profile_date.dart';
 part 'budget_export.dart';
 part 'quick_access.dart';
+part 'monthly_spending.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,11 +43,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.0',
+  defaultValue: '3.1',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 71,
+  defaultValue: 74,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -99,10 +100,8 @@ const List<List<String>> wallets = [
 const List<String> budgetCategories = [
   'Casa',
   'Comida',
-  'Wifi',
   'Barbería',
   'Suscripciones',
-  'Pasaje',
   'Transporte',
   'Delivery',
   'Servicios',
@@ -110,7 +109,7 @@ const List<String> budgetCategories = [
   'Educación',
   'Compras',
   'Recarga saldo',
-  'Cuotas',
+  'Deuda',
   'Comisiones bancarias',
   'Pago TDC',
   'La mamalona',
@@ -215,6 +214,7 @@ IconData categoryIcon(String category) {
       return CupertinoIcons.bag_fill;
     case 'recarga saldo':
       return CupertinoIcons.device_phone_portrait;
+    case 'deuda':
     case 'cuotas':
       return CupertinoIcons.calendar_badge_plus;
     case 'comisiones bancarias':
@@ -708,6 +708,7 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
     state['budgetPlansMigrated'] = false;
     migrateBudgetPlans(state);
   }
+  migrateCategoryNames(state);
   for (final item in state['accounts'] as List) {
     if (item is Map && isWalletProvider(item['provider']?.toString() ?? '')) {
       item['kind'] = 'wallet';
@@ -792,6 +793,7 @@ class BcvRateResult {
     required this.effectiveDate,
     required this.updatedAt,
     this.snapshots = const [],
+    this.history = const {},
   });
 
   final double rate;
@@ -800,6 +802,7 @@ class BcvRateResult {
   final String effectiveDate;
   final String updatedAt;
   final List<Map<String, dynamic>> snapshots;
+  final Map<String, dynamic> history;
 }
 
 class BcvRateService {
@@ -832,7 +835,8 @@ class BcvRateService {
       if (!rate.isFinite || rate <= 0) return null;
       final eurRate = _extractNamedRate(data, 'EUR');
       if (!eurRate.isFinite || eurRate <= 0) return null;
-      final snapshots = bcvSnapshots([data, ...await _fetchHistory(client)]);
+      final history = await _fetchHistory(client);
+      final snapshots = bcvSnapshots([data, ...history]);
       final usdtRate = await _fetchUsdtRate(client);
       return BcvRateResult(
         rate: rate,
@@ -844,6 +848,7 @@ class BcvRateService {
             : data['date']?.toString() ?? isoDate(DateTime.now()),
         updatedAt: data['updated_at']?.toString() ?? '',
         snapshots: snapshots,
+        history: normalizeBcvHistory([...history, data]),
       );
     } on SocketException {
       lastFailure = 'offline';
@@ -1667,6 +1672,10 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     }
     if (result != null) {
       mutate(() {
+        state['bcvRateHistory'] = {
+          ...?state['bcvRateHistory'] as Map?,
+          ...result.history,
+        };
         state['bcvRateSnapshots'] = bcvSnapshots([
           ...savedBcvSnapshots(state),
           ...result.snapshots,
@@ -1991,6 +2000,13 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     return rate > 0 ? amount / rate : 0;
   }
 
+  double movementToUsd(Map<String, dynamic> movement, double amount) {
+    if (recordedBcvQuote(movement) != null) {
+      return movementBudgetUsd(movement, amount, rate, eurRate);
+    }
+    return toUsd(amount, movement['currency']?.toString() ?? 'USD');
+  }
+
   double toVes(double amount, String currency) {
     if (currency == 'VES') return amount;
     if (currency == 'EUR') {
@@ -2186,6 +2202,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
 
   void saveMovement(Map<String, dynamic> movement, {String? editingId}) {
     movement = Map<String, dynamic>.from(movement);
+    if (movement['category'] is String) {
+      movement['category'] = canonicalCategory(movement['category'] as String);
+    }
     movement['id'] = editingId ?? movement['id'] ?? id();
     if (movement['type'] == 'income') {
       movement['feeAmount'] = 0.0;
@@ -2721,6 +2740,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     String? defaultDebtId,
     String? defaultDescription,
     double? defaultAmount,
+    bool partialDebtPayment = false,
     bool lockAccount = false,
   }) {
     if (movement == null && !ensureCanCreateMovement(context, defaultType)) {
@@ -2737,6 +2757,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           defaultDebtId: defaultDebtId,
           defaultDescription: defaultDescription,
           defaultAmount: defaultAmount,
+          partialDebtPayment: partialDebtPayment,
           lockAccount: lockAccount,
           onSave: (next) {
             try {
@@ -2755,7 +2776,11 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     );
   }
 
-  void openDebtMovement(BuildContext context, Map<String, dynamic> debt) {
+  void openDebtMovement(
+    BuildContext context,
+    Map<String, dynamic> debt, {
+    bool partial = false,
+  }) {
     final kind = debt['kind']?.toString() == 'receivable'
         ? 'receivable'
         : 'payable';
@@ -2779,6 +2804,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           : null,
       defaultDebtId: debt['id']?.toString() ?? '',
       defaultDescription: debt['title']?.toString(),
+      partialDebtPayment: partial,
     );
   }
 
@@ -5914,7 +5940,7 @@ class HomePage extends StatelessWidget {
           else
             ...movements
                 .take(5)
-                .map((m) => MovementTile(app: app, movement: m)),
+                .map((m) => MovementTile(app: app, movement: m, showBcv: true)),
         ]);
       }
     }
@@ -7441,12 +7467,7 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
       _filtered = sortedMovements(_filtered);
       _total = _filtered.fold<double>(
         0,
-        (sum, m) =>
-            sum +
-            app.toUsd(
-              movementListAmount(m),
-              m['currency']?.toString() ?? 'USD',
-            ),
+        (sum, m) => sum + app.movementToUsd(m, movementListAmount(m)),
       );
       _cachedRevision = app.revision.value;
       _cachedFilter = filter;
@@ -7522,6 +7543,17 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                       app: app,
                       mode: widget.mode,
                       onChanged: (value) => setState(() => filter = value),
+                    ),
+                    SecondaryActionButton(
+                      theme: t,
+                      label: 'Resumen mensual',
+                      onPressed: () => app.pushPage(
+                        context,
+                        (_) => MonthlySpendingPage(
+                          app: app,
+                          initialMonth: selectedMonth,
+                        ),
+                      ),
                     ),
                     RCard(
                       theme: t,
@@ -7675,9 +7707,7 @@ List<AccountDistributionEntry> accountDistribution(
     if (id.isEmpty) continue;
     final raw = movementListAmount(movement);
     if (raw <= 0) continue;
-    totals[id] =
-        (totals[id] ?? 0) +
-        app.toUsd(raw, movement['currency']?.toString() ?? 'USD');
+    totals[id] = (totals[id] ?? 0) + app.movementToUsd(movement, raw);
   }
 
   final entries = <AccountDistributionEntry>[];
@@ -7735,7 +7765,7 @@ List<MonthlyMovementSummary> monthlyMovementSummaries(
     final month = monthKeyFromDate(movement['date']?.toString());
     final raw = movementListAmount(movement);
     if (raw <= 0) continue;
-    final amountUsd = app.toUsd(raw, movement['currency']?.toString() ?? 'USD');
+    final amountUsd = app.movementToUsd(movement, raw);
     totalsByMonth[month] = (totalsByMonth[month] ?? 0) + amountUsd;
     final accountId = movement['accountId']?.toString() ?? '';
     final bucket = accountTotalsByMonth.putIfAbsent(
@@ -8406,7 +8436,13 @@ class AccountMiniCard extends StatelessWidget {
 }
 
 class MovementTile extends StatelessWidget {
-  const MovementTile({super.key, required this.app, required this.movement});
+  const MovementTile({
+    super.key,
+    required this.app,
+    required this.movement,
+    this.showBcv = false,
+  });
+  final bool showBcv;
   final _RialAppState app;
   final Map<String, dynamic> movement;
 
@@ -8426,6 +8462,14 @@ class MovementTile extends StatelessWidget {
         ? t.accent
         : t.red;
     final account = app.accountById(movement['accountId']?.toString() ?? '');
+    final quote = showBcv && currency == 'VES'
+        ? recordedBcvQuote(movement) ??
+              movementBcvQuote(
+                app.state,
+                parseMovementDate(movement['date']?.toString()),
+              )
+        : null;
+    final usdRate = numberValue(quote?['USD']);
     return GestureDetector(
       onTap: () => app.pushPage(
         context,
@@ -8485,16 +8529,43 @@ class MovementTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              app.secureSignedMoney(
-                numberValue(movement['amount']),
-                currency,
-                sign,
-              ),
-              style: TextStyle(
-                color: color,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      app.secureSignedMoney(
+                        numberValue(movement['amount']),
+                        currency,
+                        sign,
+                      ),
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  if (showBcv && currency == 'VES') ...[
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        usdRate > 0
+                            ? '${app.secureMoney(moneyConvert(numberValue(movement['amount']), 1, usdRate), 'USD')} BCV'
+                            : 'BCV no disponible',
+                        key: ValueKey('movement-bcv-${movement['id']}'),
+                        style: TextStyle(
+                          color: t.muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -8559,6 +8630,10 @@ class MovementDetailPage extends StatelessWidget {
     final debtId = movement['debtId']?.toString() ?? '';
     final debt = app.debtById(debtId);
     final date = parseMovementDate(movement['date']?.toString());
+    final bcvQuote = currency == 'VES'
+        ? recordedBcvQuote(movement) ?? movementBcvQuote(app.state, date)
+        : null;
+    final bcvUsdRate = numberValue(bcvQuote?['USD']);
     final method = movement['paymentMethod']?.toString() ?? '';
     final feeMode = movement['feeMode']?.toString() ?? '';
     final scope = movement['bankTransferScope']?.toString() ?? '';
@@ -8612,6 +8687,20 @@ class MovementDetailPage extends StatelessWidget {
             ),
           ),
         ),
+        if (currency == 'VES')
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: DebtDetailRow(
+              key: const ValueKey('movement-detail-bcv'),
+              theme: t,
+              label: 'Equivalente BCV',
+              bottom: false,
+              fitValue: bcvUsdRate > 0,
+              value: bcvUsdRate > 0
+                  ? app.secureMoney(moneyConvert(amount, 1, bcvUsdRate), 'USD')
+                  : 'No disponible para esta fecha',
+            ),
+          ),
         const SizedBox(height: 20),
         Row(
           children: [
@@ -9030,7 +9119,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
                         child: Text(
                           result == null
                               ? 'Falta una tasa válida'
-                              : app.secureMoney(result, to),
+                              : money(result, to),
                           style: TextStyle(
                             color: t.ink,
                             fontSize: 38,
@@ -10665,7 +10754,11 @@ class DebtDetailPage extends StatelessWidget {
                           [
                             if (creditor.isNotEmpty) creditor,
                             kind == 'receivable' ? 'Por cobrar' : 'Por pagar',
-                            completed ? 'Completamente pagado' : 'Pendiente',
+                            completed
+                                ? 'Completamente pagado'
+                                : paid > 0
+                                ? 'Abonado parcialmente'
+                                : 'Pendiente',
                           ].join(' · '),
                           style: TextStyle(
                             color: completed ? t.green : t.muted,
@@ -10807,6 +10900,14 @@ class DebtDetailPage extends StatelessWidget {
                     ? 'Registrar cobro'
                     : 'Registrar pago',
                 onPressed: () => app.openDebtMovement(context, debt),
+              ),
+            if (!completed && !hasInstallments)
+              SecondaryActionButton(
+                key: const ValueKey('debt-partial-payment'),
+                theme: t,
+                label: 'Registrar abono',
+                onPressed: () =>
+                    app.openDebtMovement(context, debt, partial: true),
               ),
             SecondaryActionButton(
               theme: t,
@@ -11167,28 +11268,45 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
                     setState(() => currency = currencyCodeFromLabel(value)),
               ),
             ),
-            KindSelector(
-              theme: t,
-              value: hasInitial ? 'yes' : 'no',
-              items: const [
-                KindSelectorItem(
-                  value: 'no',
-                  label: 'Sin inicial',
-                  icon: CupertinoIcons.xmark_circle_fill,
-                ),
-                KindSelectorItem(
-                  value: 'yes',
-                  label: 'Con inicial',
-                  icon: CupertinoIcons.check_mark_circled_solid,
-                ),
-              ],
-              onChanged: (value) => setState(() => hasInitial = value == 'yes'),
-            ),
+            if (hasInstallments)
+              KindSelector(
+                theme: t,
+                value: hasInitial ? 'yes' : 'no',
+                items: const [
+                  KindSelectorItem(
+                    value: 'no',
+                    label: 'Sin inicial',
+                    icon: CupertinoIcons.xmark_circle_fill,
+                  ),
+                  KindSelectorItem(
+                    value: 'yes',
+                    label: 'Con inicial',
+                    icon: CupertinoIcons.check_mark_circled_solid,
+                  ),
+                ],
+                onChanged: (value) =>
+                    setState(() => hasInitial = value == 'yes'),
+              )
+            else
+              SettingsSwitchTile(
+                theme: t,
+                icon: CupertinoIcons.checkmark_circle,
+                title: 'Abono previo',
+                subtitle: kind == 'receivable'
+                    ? 'Monto ya cobrado antes de este registro'
+                    : 'Monto ya pagado antes de este registro',
+                value: hasInitial,
+                onTap: () => setState(() => hasInitial = !hasInitial),
+              ),
             if (hasInitial)
               RField(
                 theme: t,
                 controller: initial,
-                placeholder: 'Inicial pagada',
+                placeholder: hasInstallments
+                    ? 'Inicial pagada'
+                    : kind == 'receivable'
+                    ? 'Monto ya cobrado'
+                    : 'Monto ya pagado',
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
@@ -11198,7 +11316,7 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
               theme: t,
               icon: CupertinoIcons.calendar_badge_plus,
               title: 'Tiene cuotas',
-              subtitle: 'Activa si se pagará por partes',
+              subtitle: 'Calendario de cuotas fijas',
               value: hasInstallments,
               onTap: () => setState(() {
                 hasInstallments = !hasInstallments;
@@ -11573,6 +11691,8 @@ class DebtTile extends StatelessWidget {
                   Text(
                     [
                       if (paid) 'Pagado',
+                      if (!paid && numberValue(debt['paidAmount']) > 0)
+                        'Abonado parcialmente',
                       if (creditor.isNotEmpty) creditor,
                       kind == 'receivable' ? 'Por cobrar' : 'Por pagar',
                       if (hasInstallments) '$installments cuotas',
@@ -12461,6 +12581,7 @@ class MovementEditor extends StatefulWidget {
     this.defaultDebtId,
     this.defaultDescription,
     this.defaultAmount,
+    this.partialDebtPayment = false,
     this.lockAccount = false,
     this.quick = false,
   });
@@ -12472,6 +12593,7 @@ class MovementEditor extends StatefulWidget {
   final String? defaultDebtId;
   final String? defaultDescription;
   final double? defaultAmount;
+  final bool partialDebtPayment;
   final bool lockAccount;
   final bool quick;
   final FutureOr<void> Function(Map<String, dynamic>) onSave;
@@ -12499,6 +12621,15 @@ class _MovementEditorState extends State<MovementEditor> {
   String feeMode = 'auto';
   String bankTransferScope = 'other_bank';
   bool categoryTouched = false;
+
+  Map<String, dynamic>? get bcvQuote {
+    final previous = widget.movement;
+    if (previous != null && previous['date'] == date) {
+      final recorded = recordedBcvQuote(previous);
+      if (recorded != null) return recorded;
+    }
+    return movementBcvQuote(widget.app.state, parseMovementDate(date));
+  }
 
   @override
   void initState() {
@@ -12639,8 +12770,8 @@ class _MovementEditorState extends State<MovementEditor> {
     }
     final quotes = {
       'VES': 1.0,
-      'USD': app.rate,
-      'EUR': app.eurRate,
+      'USD': numberValue(bcvQuote?['USD']),
+      'EUR': numberValue(bcvQuote?['EUR']),
       'USDT': app.usdtRate,
     };
     final source = quotes[from] ?? 0;
@@ -12654,7 +12785,7 @@ class _MovementEditorState extends State<MovementEditor> {
       final applied = numberValue(previous['debtAppliedAmount']);
       if (applied > 0) return applied;
     }
-    return debtNextPaymentAmount(debt);
+    return widget.partialDebtPayment ? 0 : debtNextPaymentAmount(debt);
   }
 
   void applyDebtDefaults(String id, {bool overwriteAmount = true}) {
@@ -12761,7 +12892,11 @@ class _MovementEditorState extends State<MovementEditor> {
         backgroundColor: t.bg.withOpacity(.85),
         border: null,
         middle: Text(
-          widget.movement == null ? 'Nuevo movimiento' : 'Editar movimiento',
+          widget.movement != null
+              ? 'Editar movimiento'
+              : widget.partialDebtPayment
+              ? 'Registrar abono'
+              : 'Nuevo movimiento',
         ),
       ),
       child: SafeArea(
@@ -12861,6 +12996,17 @@ class _MovementEditorState extends State<MovementEditor> {
                       icon: CupertinoIcons.checkmark_seal_fill,
                       onTap: () => pickDebt(context),
                     ),
+                  if (selectedDebt != null && type != 'transfer')
+                    DebtDetailRow(
+                      key: const ValueKey('debt-payment-remaining'),
+                      theme: t,
+                      label: 'Saldo pendiente',
+                      value: app.secureMoney(
+                        debtRemainingAmount(selectedDebt),
+                        debtCurrency,
+                      ),
+                      fitValue: true,
+                    ),
                   if (type == 'expense')
                     OptionField(
                       theme: t,
@@ -12895,6 +13041,16 @@ class _MovementEditorState extends State<MovementEditor> {
                             context,
                             selected: accountId,
                             onSelect: (id) => setState(() {
+                              final oldQuote = parseAmount(
+                                debtExchangeRate.text,
+                              );
+                              final partialAmount = oldQuote > 0
+                                  ? moneyConvert(
+                                      parseAmount(amount.text),
+                                      1,
+                                      oldQuote,
+                                    )
+                                  : 0.0;
                               accountId = id;
                               if (targetId == accountId) {
                                 targetId = firstAccountId(except: accountId);
@@ -12904,6 +13060,20 @@ class _MovementEditorState extends State<MovementEditor> {
                                   debtId,
                                   overwriteAmount: true,
                                 );
+                                if (widget.partialDebtPayment) {
+                                  final nextQuote = parseAmount(
+                                    debtExchangeRate.text,
+                                  );
+                                  amount.text =
+                                      partialAmount > 0 && nextQuote > 0
+                                      ? plain(
+                                          moneyConvert(
+                                            partialAmount,
+                                            nextQuote,
+                                          ),
+                                        )
+                                      : '';
+                                }
                               }
                             }),
                           ),
@@ -13101,6 +13271,14 @@ class _MovementEditorState extends State<MovementEditor> {
                     icon: CupertinoIcons.calendar,
                     onTap: () => pickDateTime(context),
                   ),
+                  if (sourceCurrency == 'VES' || sourceCurrency == 'EUR')
+                    DebtDetailRow(
+                      theme: t,
+                      label: 'BCV de la fecha',
+                      value: bcvQuote == null
+                          ? 'Tasa no disponible'
+                          : 'Bs. ${decimal(numberValue(bcvQuote!['USD']))} / USD',
+                    ),
                   if (previewAmount > 0)
                     Padding(
                       padding: const EdgeInsets.symmetric(
@@ -13171,13 +13349,18 @@ class _MovementEditorState extends State<MovementEditor> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
-              child: PrimaryActionButton(
-                key: const ValueKey('movement-editor-save'),
-                theme: t,
-                label: widget.movement == null
-                    ? 'Guardar movimiento'
-                    : 'Guardar cambios',
-                onPressed: save,
+              child: IgnorePointer(
+                ignoring: _saving,
+                child: PrimaryActionButton(
+                  key: const ValueKey('movement-editor-save'),
+                  theme: t,
+                  label: _saving
+                      ? 'Comprobando movimiento...'
+                      : widget.movement == null
+                      ? 'Guardar movimiento'
+                      : 'Guardar cambios',
+                  onPressed: save,
+                ),
               ),
             ),
           ],
@@ -13203,8 +13386,26 @@ class _MovementEditorState extends State<MovementEditor> {
       context,
       theme: widget.app.theme,
       initial: initial,
-      onSelected: (value) => setState(() => date = formatDateTime(value)),
+      onSelected: changeMovementDate,
     );
+  }
+
+  void changeMovementDate(DateTime value) {
+    setState(() {
+      final debt = widget.app.debtById(debtId);
+      final previousQuote = parseAmount(debtExchangeRate.text);
+      final paid = previousQuote > 0
+          ? moneyConvert(parseAmount(amount.text), 1, previousQuote)
+          : 0.0;
+      date = formatDateTime(value);
+      if (debt != null && debt['currency'] != 'USDT') {
+        final quote = debtQuote(debt);
+        debtExchangeRate.text = quote > 0 ? quote.toString() : '';
+        if (quote > 0 && paid > 0) {
+          amount.text = plain(moneyConvert(paid, quote));
+        }
+      }
+    });
   }
 
   void pickAccount(
@@ -13314,6 +13515,15 @@ class _MovementEditorState extends State<MovementEditor> {
 
   Future<void> save() async {
     if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await saveValidatedMovement();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> saveValidatedMovement() async {
     final app = widget.app;
     final source = app.accountById(accountId);
     if (source == null) {
@@ -13332,8 +13542,34 @@ class _MovementEditorState extends State<MovementEditor> {
       );
       return;
     }
-    var targetAmount = parseAmount(amount.text);
     final debt = app.debtById(debtId);
+    final needsBcv =
+        source['currency'] == 'VES' ||
+        source['currency'] == 'EUR' ||
+        (debt != null &&
+            debt['currency'] != source['currency'] &&
+            debt['currency'] != 'USDT');
+    bool hasRequiredQuote() =>
+        bcvQuote != null &&
+        ((source['currency'] != 'EUR' && debt?['currency'] != 'EUR') ||
+            numberValue(bcvQuote?['EUR']) > 0);
+    if (needsBcv && !hasRequiredQuote()) {
+      await app.refreshRate(manual: true, force: true, checkForUpdates: false);
+      if (!mounted) return;
+      if (!hasRequiredQuote()) {
+        showModernNotice(
+          context,
+          title: 'Tasa de la fecha no disponible',
+          message:
+              'No se pudo obtener la tasa BCV para $date. Conecta a internet y vuelve a intentarlo. No se usará la tasa de otro día.',
+        );
+        return;
+      }
+      if (debt != null && debt['currency'] != 'USDT') {
+        debtExchangeRate.text = debtQuote(debt).toString();
+      }
+    }
+    var targetAmount = parseAmount(amount.text);
     if (debt != null &&
         type != 'transfer' &&
         parseAmount(debtExchangeRate.text) <= 0) {
@@ -13347,6 +13583,21 @@ class _MovementEditorState extends State<MovementEditor> {
       return;
     }
     var targetCurrency = source['currency']?.toString() ?? 'USD';
+    if (widget.partialDebtPayment && debt != null && type != 'transfer') {
+      final applied = moneyConvert(
+        parseAmount(amount.text),
+        1,
+        parseAmount(debtExchangeRate.text),
+      );
+      if (moneyCents(applied) > moneyCents(debtRemainingAmount(debt))) {
+        showModernNotice(
+          context,
+          title: 'Abono mayor al saldo pendiente',
+          message: 'Revisa el monto del abono antes de guardarlo.',
+        );
+        return;
+      }
+    }
     if (type == 'transfer') {
       final target = app.accountById(targetId);
       if (target == null || targetId == accountId) {
@@ -13373,7 +13624,6 @@ class _MovementEditorState extends State<MovementEditor> {
             : moneyConvert(parseAmount(amount.text), 1, customRate);
       }
     }
-    if (widget.quick) setState(() => _saving = true);
     try {
       await widget.onSave({
         'id': widget.movement?['id'] ?? _quickMovementId,
@@ -13419,7 +13669,10 @@ class _MovementEditorState extends State<MovementEditor> {
         'targetAmount': targetAmount,
         'targetCurrency': targetCurrency,
         'date': date,
-        'rate': parseAmount(rate.text) > 0 ? parseAmount(rate.text) : app.rate,
+        ...movementBcvFields(bcvQuote),
+        'rate': type == 'transfer' && parseAmount(rate.text) > 0
+            ? parseAmount(rate.text)
+            : numberValue(bcvQuote?['USD']),
       });
     } on FormatException catch (error) {
       if (mounted)
@@ -13435,8 +13688,6 @@ class _MovementEditorState extends State<MovementEditor> {
           title: 'No se pudo guardar',
           message: 'El movimiento no se ha confirmado. Revisa los datos e intenta otra vez.',
         );
-    } finally {
-      if (mounted && widget.quick) setState(() => _saving = false);
     }
   }
 }

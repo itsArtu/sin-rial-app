@@ -138,7 +138,7 @@ BudgetSpending summarizeBudgetSpending(
       final valueCents = currency == 'USD' || currency == 'USDT'
           ? sourceCents
           : moneyCents(
-              budgetUsd(sourceCents / 100, currency, usdRate, eurRate),
+              movementBudgetUsd(movement, sourceCents / 100, usdRate, eurRate),
             );
       cents[key] = (cents[key] ?? 0) + valueCents;
     } on FormatException {
@@ -191,10 +191,8 @@ Color budgetCategoryColor(String category, RTheme theme) {
   const hues = [
     210.0,
     34.0,
-    185.0,
     285.0,
     325.0,
-    170.0,
     235.0,
     18.0,
     55.0,

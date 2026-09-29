@@ -27,11 +27,10 @@ class HomeLedgerSnapshot {
     for (final movement in movements) {
       final amount = numberValue(movement['amount']);
       final fee = numberValue(movement['feeAmount']);
-      final currency = movement['currency']?.toString() ?? 'USD';
       if (movement['type'] == 'income') {
-        income += app.toUsd(math.max(0.0, amount - fee), currency);
+        income += app.movementToUsd(movement, math.max(0.0, amount - fee));
       } else if (isExpenseType(movement['type']?.toString())) {
-        expenses += app.toUsd(amount + fee, currency);
+        expenses += app.movementToUsd(movement, amount + fee);
       }
     }
     trend = buildBalanceTrend(
@@ -73,6 +72,7 @@ class HomeLedgerCache {
 
 const rateStateKeys = {
   'bcvRateSnapshots',
+  'bcvRateHistory',
   'rateCheckedDate',
   'rateLastFetchAttemptMillis',
   'rate',
