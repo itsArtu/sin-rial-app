@@ -231,13 +231,8 @@ void main() {
   ) async {
     final dynamic app = await payment.openExpense(tester);
     await payment.choose(tester, 'Comisi\u00f3n', 'Manual');
-    final manualFee = find.byWidgetPredicate(
-      (widget) =>
-          widget is CupertinoTextField &&
-          widget.placeholder == 'Comisi\u00f3n manual',
-    );
-    await tester.ensureVisible(manualFee);
-    await tester.enterText(manualFee, '75');
+    final manualFee = payment.option('Comisi\u00f3n manual');
+    await payment.editFee(tester, '75');
     await tester.tap(
       find.descendant(
         of: find.byType(KindSelector),
@@ -311,6 +306,16 @@ void main() {
         tester.widget<DebtDetailRow>(row('Transferencia bancaria')).value,
         'Otro banco',
       );
+      await tester.scrollUntilVisible(
+        row('Comisi\u00f3n aplicada'),
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('movement-editor-fields')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       expect(
         tester.widget<DebtDetailRow>(row('Comisi\u00f3n aplicada')).value,
         'Bs. 30,00',
@@ -320,11 +325,31 @@ void main() {
         tester.widget<DebtDetailRow>(row('Transferencia bancaria')).value,
         'Mismo banco',
       );
+      await tester.scrollUntilVisible(
+        row('Comisi\u00f3n aplicada'),
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('movement-editor-fields')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       expect(
         tester.widget<DebtDetailRow>(row('Comisi\u00f3n aplicada')).value,
         'Bs. 0,00',
       );
       await payment.choose(tester, 'Cuenta destino', 'Otro banco');
+      await tester.scrollUntilVisible(
+        row('Comisi\u00f3n aplicada'),
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('movement-editor-fields')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       expect(
         tester.widget<DebtDetailRow>(row('Comisi\u00f3n aplicada')).value,
         'Bs. 30,00',
@@ -332,8 +357,8 @@ void main() {
       await tester.tap(find.text('Guardar movimiento'));
       await tester.pumpAndSettle();
       expect(app.maps('movements').single['feeAmount'], 30);
-      expect(app.accountById('source')['balance'], 9970);
-      expect(app.accountById('other')['balance'], 10100);
+      expect(app.accountById('source')['balance'], 10000);
+      expect(app.accountById('other')['balance'], 10070);
       await closeFixture(tester);
     });
   }

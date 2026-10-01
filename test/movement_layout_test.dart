@@ -160,7 +160,7 @@ void main() {
       final count = mode == MovementHistoryMode.all ? 2 : 1;
       expect(find.text('$count operaciones'), findsOneWidget);
       final currentTotal = mode == MovementHistoryMode.all
-          ? 30.0
+          ? 10.0
           : mode == MovementHistoryMode.income
           ? 20.0
           : 10.0;
@@ -189,7 +189,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('$count operaciones'), findsOneWidget);
       final priorTotal = mode == MovementHistoryMode.all
-          ? 90.0
+          ? 10.0
           : mode == MovementHistoryMode.income
           ? 50.0
           : 40.0;
@@ -202,7 +202,10 @@ void main() {
       final summary = tester.widget<MonthlyMovementSummaryCard>(
         find.byType(MonthlyMovementSummaryCard),
       );
-      expect(summary.summary.totalUsd, priorTotal);
+      expect(
+        summary.summary.totalUsd,
+        mode == MovementHistoryMode.all ? 90.0 : priorTotal,
+      );
       expect(monthLabelForKey(summary.summary.monthKey), priorLabel);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

@@ -373,7 +373,10 @@ extension _QuickMovementForm on _MovementEditorState {
                         () => pickAccount(
                           context,
                           selected: accountId,
-                          onSelect: (id) => _setViewState(() => accountId = id),
+                          onSelect: (id) => _setViewState(() {
+                            accountId = id;
+                            resetDollarFee();
+                          }),
                         ),
                       ),
                       if (type == 'expense')
@@ -424,6 +427,33 @@ extension _QuickMovementForm on _MovementEditorState {
                             ),
                           ),
                         ),
+                      if (type == 'expense' &&
+                          supportsDollarFees(source) &&
+                          !isBankCommissionCategory(category)) ...[
+                        choice(
+                          'Comisión',
+                          feeModeLabel(feeMode),
+                          CupertinoIcons.percent,
+                          () => pickValue(
+                            context,
+                            const ['Automática', 'Manual', 'Sin comisión'],
+                            feeModeLabel(feeMode),
+                            (value) => _setViewState(() {
+                              feeMode = feeModeFromLabel(value);
+                              feeUnit = 'percent';
+                            }),
+                          ),
+                        ),
+                        if (feeMode != 'none')
+                          choice(
+                            'Comisión (%)',
+                            feePercent.text.isEmpty
+                                ? 'Sin definir'
+                                : '${compactDecimal(parseAmount(feePercent.text))}%',
+                            CupertinoIcons.percent,
+                            () => editCommission(percent: true),
+                          ),
+                      ],
                       if (appliedFee > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 12),

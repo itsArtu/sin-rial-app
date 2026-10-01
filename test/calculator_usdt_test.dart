@@ -206,9 +206,10 @@ void main() {
       await tester.ensureVisible(toggle);
       await tester.tap(toggle);
       await tester.pumpAndSettle();
-      final customRate = input('Tasa USDT/VES personalizada');
+      final customRate = find.byKey(const ValueKey('custom-rate-input'));
       await tester.ensureVisible(customRate);
       await tester.enterText(customRate, '1000');
+      await tester.tap(find.text('Aplicar'));
       await tester.pumpAndSettle();
       expect(find.text('\u20ae9,60'), findsOneWidget);
 
@@ -242,9 +243,10 @@ void main() {
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
-    final customRate = input('Tasa USDT/VES personalizada');
+    final customRate = find.byKey(const ValueKey('custom-rate-input'));
     await tester.ensureVisible(customRate);
     await tester.enterText(customRate, '1000');
+    await tester.tap(find.text('Aplicar'));
     await tester.pumpAndSettle();
     expect(find.text('Bs. 10.000,00'), findsOneWidget);
     expect(tester.takeException(), isNull);

@@ -25,12 +25,16 @@ class HomeLedgerSnapshot {
       totalVes += app.toVes(amount, currency);
     }
     for (final movement in movements) {
+      final date = parseMovementDate(movement['date']?.toString());
+      if (date.year != now.year || date.month != now.month) continue;
       final amount = numberValue(movement['amount']);
       final fee = numberValue(movement['feeAmount']);
       if (movement['type'] == 'income') {
         income += app.movementToUsd(movement, math.max(0.0, amount - fee));
       } else if (isExpenseType(movement['type']?.toString())) {
         expenses += app.movementToUsd(movement, amount + fee);
+      } else if (movement['type'] == 'transfer' && fee > 0) {
+        expenses += app.movementToUsd(movement, fee);
       }
     }
     trend = buildBalanceTrend(
@@ -209,7 +213,7 @@ List<BalancePoint> buildBalanceTrend({
     final income = m['type'] == 'income';
     accountEvent(
       m['accountId']?.toString() ?? '',
-      income ? moneySubtract(amount, fee) : -moneyAdd(amount, fee),
+      income ? moneySubtract(amount, fee) : -movementDebitAmount(m),
       date,
     );
     if (m['type'] == 'transfer') {

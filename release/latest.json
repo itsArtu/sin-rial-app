@@ -1,8 +1,9 @@
 {
-  "version": "3.1",
-  "build": 74,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.1%2B74/sin-rial-3.1-build74.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.1%2B74",
-  "sha256": "806CA617796DF200EB6BB69F9E6E14E43019F52CD3FBA0C9C26BB2E2CF048224",
-  "notes": "Sin Rial 3.1: abonos en deudas sin cuotas, resumen mensual por categoria y cuenta con porcentajes de ingresos, equivalente BCV en movimientos recientes y detalle, y tasas historicas segun la fecha y hora del movimiento. La calculadora mantiene visible su resultado al ocultar montos personales. Categorias Wifi/Servicios, Pasaje/Transporte y Cuotas/Deuda unificadas. Incluye todas las mejoras de 3.0 y las correcciones anteriores. Actualiza directamente sobre tu version actual: no desinstales ni borres datos. El PDF no es un respaldo restaurable."
+  "version": "3.1.1",
+  "build": 75,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.1.1%2B75/sin-rial-3.1.1-build75.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.1.1%2B75",
+  "sha256": "09A769DDF2E65F34BDCD72340A97E349184532B55953CD6496DD6A42411D0513",
+  "size": 65935607,
+  "notes": "Sin Rial 3.1.1: descarga de actualizaciones dentro de la app con verificacion de integridad y confirmacion de Android. Comisiones en cuentas en dolares; las transferencias nuevas descuentan la comision del monto enviado y permiten cobrarla aparte. Comision y tasa personalizada en ventanas emergentes. Historial con ingresos menos gastos igual al total, equivalente historico BCV y mejor separacion del resumen mensual. Ingresos y gastos del inicio corresponden al mes actual. Calculadora con miles y dos decimales; volver cierra primero el teclado. Actualiza sobre tu version actual: no desinstales ni borres datos."
 }

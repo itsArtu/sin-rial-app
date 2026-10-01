@@ -179,11 +179,8 @@ void main() {
     (tester) async {
       final dynamic app = await payments.openExpense(tester);
       await payments.choose(tester, 'Comisión', 'Manual');
-      final manualFee = find.byWidgetPredicate(
-        (w) => w is CupertinoTextField && w.placeholder == 'Comisión manual',
-      );
-      await tester.ensureVisible(manualFee);
-      await tester.enterText(manualFee, '75');
+      final manualFee = payments.option('Comisión manual');
+      await payments.editFee(tester, '75');
       await describe(tester, 'Comisión bancaria');
       expect(selectedCategory(tester), 'Comisiones bancarias');
       expect(payments.option('Forma de pago'), findsNothing);

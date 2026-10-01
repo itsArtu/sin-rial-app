@@ -51,6 +51,7 @@ open class MainActivity : FlutterFragmentActivity() {
     }
 
     companion object {
+        private val updateExecutor = Executors.newSingleThreadExecutor()
         private val stateExecutor = Executors.newSingleThreadExecutor()
         const val ACTION_WIDGET_MOVEMENT = "com.lacaprichosa.app.WIDGET_MOVEMENT"
         const val EXTRA_WIDGET_MOVEMENT_TYPE = "movement_type"
@@ -100,6 +101,39 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+            if (call.method in setOf("startApkUpdate", "apkUpdateStatus", "cancelApkUpdate", "installApkUpdate", "allowApkUpdates")) {
+                val updater = ApkUpdater(applicationContext)
+                if (call.method == "allowApkUpdates") {
+                    try { updater.requestPermission(this); result.success(true) }
+                    catch (_: Exception) { result.error("UPDATE_PERMISSION", "No se pudieron abrir los permisos de instalacion", null) }
+                    return@setMethodCallHandler
+                }
+                updateExecutor.execute {
+                    try {
+                        val response = when (call.method) {
+                            "startApkUpdate" -> updater.begin(
+                                call.argument<String>("url") ?: "", call.argument<String>("sha256") ?: "",
+                                call.argument<Number>("build")?.toLong() ?: 0,
+                                call.argument<Number>("size")?.toLong() ?: 0, call.argument<String>("version") ?: "")
+                            "cancelApkUpdate" -> { updater.cancel(); mapOf("status" to "idle") }
+                            "installApkUpdate" -> {
+                                if (updater.canInstall()) { updater.verify(); mapOf("status" to "install") }
+                                else mapOf("status" to "permission")
+                            }
+                            else -> updater.status()
+                        }
+                        runOnUiThread {
+                            try {
+                                if (response["status"] == "install") updater.openInstaller(this)
+                                result.success(response)
+                            } catch (_: Exception) { result.error("UPDATE_INSTALL", "Android no pudo abrir el instalador", null) }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread { result.error("UPDATE_FAILED", error.message ?: "No se pudo actualizar", null) }
+                    }
+                }
+                return@setMethodCallHandler
+            }
             if (call.method in setOf("readState", "readRateState", "stateChanged", "writeState", "writeSplitState", "configureSecurity", "verifyPin")) {
                 stateExecutor.execute {
                     try {
@@ -276,6 +310,10 @@ open class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun storeLaunchAction(intent: Intent?) {
+        if (intent?.action == "com.lacaprichosa.app.OPEN_UPDATE") {
+            NativeJsonStore.prefs(this).edit().putString("launch_action", "update").apply()
+            return
+        }
         if (quickAccess) return
         if (intent?.action != ACTION_WIDGET_MOVEMENT) return
         val type = intent.getStringExtra(EXTRA_WIDGET_MOVEMENT_TYPE) ?: return

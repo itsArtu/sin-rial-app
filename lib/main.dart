@@ -31,6 +31,10 @@ part 'profile_date.dart';
 part 'budget_export.dart';
 part 'quick_access.dart';
 part 'monthly_spending.dart';
+part 'calculator_rate_dialog.dart';
+part 'app_update.dart';
+part 'dollar_fees.dart';
+part 'keyboard_dismiss.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,11 +47,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.1',
+  defaultValue: '3.1.1',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 74,
+  defaultValue: 75,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -976,6 +980,8 @@ class UpdateInfo {
     this.releaseUrl = '',
     this.notes = '',
     this.title = '',
+    this.sha256 = '',
+    this.size = 0,
   });
 
   final String version;
@@ -984,6 +990,8 @@ class UpdateInfo {
   final String releaseUrl;
   final String notes;
   final String title;
+  final String sha256;
+  final int size;
 
   String get identity => build > 0 ? '$build' : version;
 
@@ -1080,6 +1088,8 @@ class UpdateService {
       releaseUrl: releaseUrl,
       notes: firstText(data, const ['notes', 'body', 'changelog']),
       title: firstText(data, const ['title', 'release_name']),
+      sha256: firstText(data, const ['sha256']).toLowerCase(),
+      size: numberValue(data['size']).toInt(),
     );
   }
 
@@ -1126,6 +1136,10 @@ class UpdateService {
       releaseUrl: releaseUrl,
       notes: data['body']?.toString().trim() ?? '',
       title: data['name']?.toString().trim() ?? tag,
+      sha256: (apkAsset?['digest']?.toString() ?? '')
+          .replaceFirst(RegExp(r'^sha256:'), '')
+          .toLowerCase(),
+      size: numberValue(apkAsset?['size']).toInt(),
     );
   }
 }
@@ -1159,6 +1173,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   final LocalAuthentication localAuth = LocalAuthentication();
   Timer? rateRefreshTimer;
   Timer? rateBoundaryTimer;
+  Timer? _dayBoundaryTimer;
   bool openAccountAfterOnboarding = false;
   bool rateLoading = false;
   bool updateChecking = false;
@@ -1267,6 +1282,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     locked = stateHasSecurity(state);
     WidgetsBinding.instance.addObserver(this);
     _pageController = PageController();
+    _scheduleDayBoundary();
     scheduleDailyReminderFromState();
     unawaited(NativeStateStore.scheduleRateUpdate());
     if (!isQuickAccess || widget.quickAction == 'calculator') {
@@ -1285,14 +1301,51 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     rateRefreshTimer?.cancel();
     rateBoundaryTimer?.cancel();
+    _dayBoundaryTimer?.cancel();
     _undoTimer?.cancel();
     _pageController.dispose();
     revision.dispose();
     super.dispose();
   }
 
+  void _scheduleDayBoundary() {
+    _dayBoundaryTimer?.cancel();
+    final now = DateTime.now();
+    _dayBoundaryTimer = Timer(
+      DateTime(now.year, now.month, now.day + 1).difference(now),
+      () {
+        if (!mounted) return;
+        setState(() => revision.value++);
+        _scheduleDayBoundary();
+      },
+    );
+  }
+
+  bool get _keyboardVisible => WidgetsBinding.instance.platformDispatcher.views
+      .any((view) => view.viewInsets.bottom > 0);
+
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+  }
+
+  @override
+  Future<bool> didPopRoute() async {
+    if (!_keyboardVisible) return false;
+    _dismissKeyboard();
+    return true;
+  }
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent backEvent) =>
+      _keyboardVisible;
+
+  @override
+  void handleCommitBackGesture() => _dismissKeyboard();
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed) _scheduleDayBoundary();
     _lastLifecycleState = lifecycleState;
     if (lifecycleState == AppLifecycleState.paused ||
         lifecycleState == AppLifecycleState.hidden ||
@@ -1370,7 +1423,14 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (isQuickAccess) return;
     final action = await NativeStateStore.consumeLaunchAction();
     if (!mounted || action == null) return;
-    if (!['expense', 'income', 'transfer', 'account'].contains(action)) return;
+    if (![
+      'expense',
+      'income',
+      'transfer',
+      'account',
+      'update',
+    ].contains(action))
+      return;
     setState(() => pendingLaunchAction = action);
   }
 
@@ -1741,15 +1801,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     UpdateInfo update,
   ) async {
     updatePromptVisible = false;
-    final opened = await NativeStateStore.openUrl(update.downloadUrl);
-    if (!context.mounted) return;
-    if (!opened) {
-      showModernNotice(
-        context,
-        title: 'No se pudo abrir',
-        message: 'Abre manualmente este enlace: ${update.downloadUrl}',
-      );
-    }
+    await pushPage(context, (_) => AppUpdatePage(update: update, theme: theme));
   }
 
   Future<void> checkForReleaseUpdate(
@@ -2050,7 +2102,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       } else if (type == 'transfer') {
         source['balance'] = moneySubtract(
           balance,
-          moneyAdd(amount, fee) * direction,
+          movementDebitAmount(movement) * direction,
         );
       } else {
         source['balance'] = moneySubtract(
@@ -2241,7 +2293,28 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
             numberValue(movement['targetAmount']) <= 0)) {
       throw const FormatException('Destino o monto de transferencia no válido');
     }
-    if (movement['type'] == 'transfer') {
+    final feeSource = accountById(movement['accountId'].toString());
+    if (supportsDollarFees(feeSource) &&
+        (movement['type'] == 'transfer' || movement['type'] == 'expense') &&
+        movement['feeUnit'] != null) {
+      if (movement['feeMode'] == 'auto' && movement['feePercent'] == null) {
+        throw const FormatException('Confirma el porcentaje de comision');
+      }
+      movement['feeAmount'] =
+          movement['type'] == 'expense' &&
+              isBankCommissionCategory(movement['category']?.toString() ?? '')
+          ? 0
+          : dollarOperationFee(
+              amount: numberValue(movement['amount']),
+              mode: movement['feeMode']?.toString() ?? 'none',
+              unit: movement['feeUnit'].toString(),
+              value: movement['feeUnit'] == 'percent'
+                  ? numberValue(movement['feePercent'])
+                  : numberValue(movement['feeAmount']),
+            );
+    }
+    if (movement['type'] == 'transfer' &&
+        (!supportsDollarFees(feeSource) || movement['feeUnit'] == null)) {
       final source = accountById(movement['accountId'].toString());
       final target = accountById(movement['targetAccountId'].toString());
       movement['feeAmount'] = bankTransferFee(
@@ -2256,6 +2329,16 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           canConfigureBankFee(source, type: 'transfer', target: target)
           ? bankTransferScopeForAccounts(source, target)
           : '';
+    }
+    if (movement['type'] == 'transfer' && movement['feeTreatment'] != null) {
+      movement['targetAmount'] = transferDestinationAmount(
+        amount: numberValue(movement['amount']),
+        fee: numberValue(movement['feeAmount']),
+        treatment: movement['feeTreatment'].toString(),
+        sourceCurrency: movement['currency'].toString(),
+        targetCurrency: movement['targetCurrency'].toString(),
+        rate: numberValue(movement['rate']),
+      );
     }
     if (movement.containsKey('debtExchangeRate') &&
         (!numberValue(movement['debtExchangeRate']).isFinite ||
@@ -2280,6 +2363,16 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       () {
         final list = rawList('movements');
         final type = movement['type']?.toString() ?? '';
+        if (supportsDollarFees(feeSource) &&
+            movement['feeMode'] == 'auto' &&
+            movement['feePercent'] != null &&
+            (type == 'expense' || type == 'transfer')) {
+          feeSource![dollarFeePreferenceKey(
+                type,
+                movement['paymentMethod']?.toString() ?? '',
+              )] =
+              movement['feePercent'];
+        }
         if (type == 'income' || isExpenseType(type)) {
           state['lastMovementAccountId'] =
               movement['accountId']?.toString() ?? '';
@@ -2631,67 +2724,71 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
               ),
             ),
           ),
-          home: Builder(
-            builder: (context) {
-              if (isQuickAccess) return quickAccessHome();
-              if (state['onboardingComplete'] != true) {
-                return _AppEntrance(child: _OnboardingPage(app: this));
-              }
-              if (securitySetupRequired) {
+          home: KeyboardDismissScope(
+            child: Builder(
+              builder: (context) {
+                if (isQuickAccess) return quickAccessHome();
+                if (state['onboardingComplete'] != true) {
+                  return _AppEntrance(child: _OnboardingPage(app: this));
+                }
+                if (securitySetupRequired) {
+                  return _AppEntrance(
+                    child: SecuritySetupPage(
+                      app: this,
+                      requiredSetup: true,
+                      onDone: () {},
+                    ),
+                  );
+                }
+                if (!locked && openAccountAfterOnboarding) {
+                  openAccountAfterOnboarding = false;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) openAccountEditor(context);
+                  });
+                }
+                if (!locked && pendingLaunchAction != null) {
+                  final action = pendingLaunchAction!;
+                  pendingLaunchAction = null;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) {
+                      if (action == 'update') {
+                        unawaited(checkForReleaseUpdate(context, manual: true));
+                      } else if (action == 'account') {
+                        openAccountEditor(context);
+                      } else {
+                        openMovementEditor(context, defaultType: action);
+                      }
+                    }
+                  });
+                }
                 return _AppEntrance(
-                  child: SecuritySetupPage(
-                    app: this,
-                    requiredSetup: true,
-                    onDone: () {},
+                  child: CupertinoPageScaffold(
+                    backgroundColor: t.bg,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: PageView(
+                            controller: _pageController,
+                            physics: const NeverScrollableScrollPhysics(),
+                            children: [
+                              RepaintBoundary(child: HomePage(app: this)),
+                              RepaintBoundary(child: BudgetPage(app: this)),
+                              RepaintBoundary(child: MenuPage(app: this)),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: BottomChrome(app: this),
+                        ),
+                      ],
+                    ),
                   ),
                 );
-              }
-              if (!locked && openAccountAfterOnboarding) {
-                openAccountAfterOnboarding = false;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (context.mounted) openAccountEditor(context);
-                });
-              }
-              if (!locked && pendingLaunchAction != null) {
-                final action = pendingLaunchAction!;
-                pendingLaunchAction = null;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (context.mounted) {
-                    if (action == 'account') {
-                      openAccountEditor(context);
-                    } else {
-                      openMovementEditor(context, defaultType: action);
-                    }
-                  }
-                });
-              }
-              return _AppEntrance(
-                child: CupertinoPageScaffold(
-                  backgroundColor: t.bg,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: PageView(
-                          controller: _pageController,
-                          physics: const NeverScrollableScrollPhysics(),
-                          children: [
-                            RepaintBoundary(child: HomePage(app: this)),
-                            RepaintBoundary(child: BudgetPage(app: this)),
-                            RepaintBoundary(child: MenuPage(app: this)),
-                          ],
-                        ),
-                      ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: BottomChrome(app: this),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
+              },
+            ),
           ),
         ),
       ),
@@ -4027,7 +4124,7 @@ class FluidPageRoute<T> extends PageRouteBuilder<T> {
         transitionDuration: const Duration(milliseconds: 280),
         reverseTransitionDuration: const Duration(milliseconds: 210),
         pageBuilder: (context, animation, secondaryAnimation) =>
-            builder(context),
+            KeyboardDismissScope(child: builder(context)),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           if (MediaQuery.disableAnimationsOf(context)) return child;
           final eased = animation.drive(CurveTween(curve: Curves.easeOutCubic));
@@ -4577,7 +4674,7 @@ class UpdatePromptSheet extends StatelessWidget {
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: Text(
-                    'Se abrirá GitHub para descargar el APK y Android te pedirá confirmar la instalación.${notes.isEmpty ? '' : '\n\n$notes'}',
+                    notes.isEmpty ? 'Sin Rial $versionText' : notes,
                     style: TextStyle(
                       color: theme.muted,
                       fontSize: 14,
@@ -7442,6 +7539,8 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
   List<String> _months = [];
   List<Map<String, dynamic>> _filtered = [];
   double _total = 0;
+  double _income = 0;
+  double _expenses = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -7465,10 +7564,29 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
           .where((m) => filter.matches(m, byId))
           .toList();
       _filtered = sortedMovements(_filtered);
-      _total = _filtered.fold<double>(
-        0,
-        (sum, m) => sum + app.movementToUsd(m, movementListAmount(m)),
-      );
+      _income = 0;
+      _expenses = 0;
+      for (final movement in _filtered) {
+        final type = movement['type'];
+        if (type == 'income') {
+          _income += app.movementToUsd(movement, movementListAmount(movement));
+        } else if (isExpenseType(type?.toString())) {
+          _expenses += app.movementToUsd(
+            movement,
+            movementListAmount(movement),
+          );
+        } else if (type == 'transfer') {
+          _expenses += app.movementToUsd(
+            movement,
+            numberValue(movement['feeAmount']),
+          );
+        }
+      }
+      _total = switch (widget.mode) {
+        MovementHistoryMode.all => moneySubtract(_income, _expenses),
+        MovementHistoryMode.income => _income,
+        MovementHistoryMode.expense => _expenses,
+      };
       _cachedRevision = app.revision.value;
       _cachedFilter = filter;
       _cachedMonth = selectedMonth;
@@ -7545,6 +7663,7 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                       onChanged: (value) => setState(() => filter = value),
                     ),
                     SecondaryActionButton(
+                      key: const ValueKey('movement-monthly-summary'),
                       theme: t,
                       label: 'Resumen mensual',
                       onPressed: () => app.pushPage(
@@ -7555,7 +7674,9 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 18),
                     RCard(
+                      key: const ValueKey('movement-history-totals'),
                       theme: t,
                       child: Row(
                         children: [
@@ -7570,17 +7691,66 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                                     fontSize: 13,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
+                                if (widget.mode == MovementHistoryMode.all) ...[
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        'Ingresos ${app.secureMoney(_income, 'USD')}',
+                                        key: const ValueKey('filtered-income'),
+                                        style: TextStyle(
+                                          color: t.green,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        '-',
+                                        style: TextStyle(
+                                          color: t.muted,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Gastos ${app.secureMoney(_expenses, 'USD')}',
+                                        key: const ValueKey(
+                                          'filtered-expenses',
+                                        ),
+                                        style: TextStyle(
+                                          color: t.red,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                const SizedBox(height: 8),
                                 FittedBox(
                                   fit: BoxFit.scaleDown,
-                                  child: Text(
-                                    app.secureMoney(_total, 'USD'),
-                                    key: const ValueKey('filtered-total'),
-                                    style: TextStyle(
-                                      color: amountColor(t),
-                                      fontSize: 26,
-                                      fontWeight: FontWeight.w800,
-                                    ),
+                                  child: Row(
+                                    children: [
+                                      if (widget.mode ==
+                                          MovementHistoryMode.all)
+                                        Text(
+                                          '= ',
+                                          style: TextStyle(
+                                            color: t.muted,
+                                            fontSize: 22,
+                                          ),
+                                        ),
+                                      Text(
+                                        app.secureMoney(_total, 'USD'),
+                                        key: const ValueKey('filtered-total'),
+                                        style: TextStyle(
+                                          color: amountColor(t),
+                                          fontSize: 26,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -7647,6 +7817,7 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                     key: ValueKey(_filtered[index]['id']),
                     app: app,
                     movement: _filtered[index],
+                    showBcv: true,
                   ),
                 ),
               ),
@@ -8793,11 +8964,26 @@ class MovementDetailPage extends StatelessWidget {
           row('Comisión', app.secureMoney(fee, currency)),
           if (feeMode.isNotEmpty)
             row('Cálculo de comisión', feeModeLabel(feeMode)),
+          if (movement['feeUnit'] == 'percent')
+            row(
+              'Porcentaje de comisión',
+              '${compactDecimal(numberValue(movement['feePercent']))}%',
+            ),
         ],
         row(
           income ? 'Total recibido' : 'Total debitado',
-          app.secureMoney(income ? amount - fee : amount + fee, currency),
+          app.secureMoney(
+            income ? amount - fee : movementDebitAmount(movement),
+            currency,
+          ),
         ),
+        if (transfer && fee > 0)
+          row(
+            'Aplicar comisión',
+            transferFeeIsDeducted(movement)
+                ? 'Descontar del monto'
+                : 'Cobrar aparte',
+          ),
         if (transfer) ...[
           row(
             'Cuenta de destino',
@@ -9007,6 +9193,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
                 const SizedBox(height: 16),
                 CupertinoTextField(
                   controller: amount,
+                  inputFormatters: [amount.formatter],
                   placeholder: '0,00',
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
@@ -9209,28 +9396,45 @@ class _CalculatorPageState extends State<CalculatorPage> {
               SettingsSwitchTile(
                 theme: t,
                 title: 'Usar tasa personalizada',
-                subtitle: 'Solo para esta conversión $rateCurrency/VES',
+                subtitle: useCustomRate
+                    ? 'Bs. ${formatNumber(customValue)} / $rateCurrency'
+                    : '$rateCurrency/VES',
                 icon: CupertinoIcons.checkmark_circle_fill,
                 value: useCustomRate,
-                onTap: () => setState(() {
-                  if (!useCustomRate &&
-                      customRate.text.isEmpty &&
-                      baseRate > 0) {
-                    customRate.text = baseRate.toString();
+                onTap: () async {
+                  if (useCustomRate) {
+                    setState(() => useCustomRate = false);
+                    return;
                   }
-                  useCustomRate = !useCustomRate;
-                  if (useCustomRate) useNextRate = false;
-                }),
+                  final value = await showRateInputDialog(
+                    context,
+                    t,
+                    rateCurrency,
+                    customValue > 0 ? customValue : baseRate,
+                  );
+                  if (!mounted || value == null) return;
+                  setState(() {
+                    customRate.text = value.toString();
+                    useCustomRate = true;
+                    useNextRate = false;
+                  });
+                },
                 framed: true,
               ),
             if (canCustomizeRate && useCustomRate)
-              RField(
-                theme: t,
-                controller: customRate,
-                placeholder: 'Tasa $rateCurrency/VES personalizada',
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
+              CupertinoButton(
+                onPressed: () async {
+                  final value = await showRateInputDialog(
+                    context,
+                    t,
+                    rateCurrency,
+                    customValue,
+                  );
+                  if (mounted && value != null) {
+                    setState(() => customRate.text = value.toString());
+                  }
+                },
+                child: const Text('Editar tasa'),
               ),
           ],
         ),
@@ -12614,6 +12818,9 @@ class _MovementEditorState extends State<MovementEditor> {
   final amount = MoneyEditingController();
   final desc = TextEditingController();
   final fee = MoneyEditingController();
+  final feePercent = TextEditingController();
+  String feeUnit = 'percent';
+  String feeTreatment = 'deducted';
   final rate = TextEditingController();
   final debtExchangeRate = TextEditingController();
   String paymentMethod = 'payment_mobile_p2p';
@@ -12711,6 +12918,71 @@ class _MovementEditorState extends State<MovementEditor> {
       }
     }
     widget.app.revision.addListener(syncMissingDebtQuote);
+    if (m != null) feeTreatment = m['feeTreatment']?.toString() ?? 'added';
+    resetDollarFee(existing: m);
+  }
+
+  void resetDollarFee({Map<String, dynamic>? existing}) {
+    final source = widget.app.accountById(accountId);
+    if (!supportsDollarFees(source)) {
+      if (existing == null) {
+        feeMode = 'auto';
+        fee.clear();
+        feePercent.clear();
+        paymentMethod = 'payment_mobile_p2p';
+      }
+      return;
+    }
+    if (existing == null && type == 'expense') paymentMethod = 'debit_card';
+    final saved = dollarFeePercentForAccount(source, type, paymentMethod);
+    feeUnit =
+        existing?['feeUnit']?.toString() ??
+        (existing != null ? 'amount' : 'percent');
+    final percent = existing?['feePercent'] ?? saved;
+    feePercent.text = percent == null ? '' : percent.toString();
+    if (existing == null) {
+      feeMode = saved == null ? 'none' : 'auto';
+      fee.clear();
+    } else if (existing['feeUnit'] == null) {
+      // Legacy USD movements must retain their original fee when edited.
+      feeMode = numberValue(existing['feeAmount']) > 0 ? 'manual' : 'none';
+    }
+  }
+
+  double dollarFeeForSave() => dollarOperationFee(
+    amount: parseAmount(amount.text),
+    mode: feeMode,
+    unit: feeMode == 'auto' ? 'percent' : feeUnit,
+    value: feeMode == 'auto' || feeUnit == 'percent'
+        ? parseAmount(feePercent.text)
+        : parseAmount(fee.text),
+  );
+
+  double get dollarFeePreview {
+    try {
+      return dollarFeeForSave();
+    } on FormatException {
+      return 0;
+    }
+  }
+
+  Future<void> editCommission({required bool percent}) async {
+    final source = widget.app.accountById(accountId);
+    final controller = percent ? feePercent : fee;
+    final value = await showDecimalInputDialog(
+      context,
+      theme: widget.app.theme,
+      title: percent ? 'Comisión (%)' : 'Comisión manual',
+      subtitle: percent
+          ? 'Porcentaje'
+          : displayCurrency(source?['currency']?.toString() ?? 'USD'),
+      initial: parseAmount(controller.text),
+      inputKey: const ValueKey('commission-input'),
+      allowZero: true,
+      maximum: percent ? 100 : 999999999,
+    );
+    if (!mounted || value == null) return;
+    setState(() => controller.text = compactDecimal(value));
   }
 
   void syncMissingDebtQuote() {
@@ -12732,6 +13004,7 @@ class _MovementEditorState extends State<MovementEditor> {
     amount.dispose();
     desc.dispose();
     fee.dispose();
+    feePercent.dispose();
     rate.dispose();
     debtExchangeRate.dispose();
     super.dispose();
@@ -12821,12 +13094,11 @@ class _MovementEditorState extends State<MovementEditor> {
         source['currency'] != target['currency'];
     final sourceCurrency = source?['currency']?.toString() ?? 'USD';
     final targetCurrency = target?['currency']?.toString() ?? sourceCurrency;
+    final dollarFees =
+        supportsDollarFees(source) &&
+        type != 'income' &&
+        (type != 'expense' || !isBankCommissionCategory(category));
     final enteredRate = parseAmount(rate.text);
-    final targetAmount = exchange && enteredRate > 0
-        ? sourceCurrency == 'USD'
-              ? moneyConvert(parseAmount(amount.text), enteredRate)
-              : moneyConvert(parseAmount(amount.text), 1, enteredRate)
-        : parseAmount(amount.text);
     final canOperationFee =
         type == 'expense' &&
         canConfigureBankFee(
@@ -12839,7 +13111,9 @@ class _MovementEditorState extends State<MovementEditor> {
     final canTransferFee =
         type == 'transfer' &&
         canConfigureBankFee(source, type: type, target: target);
-    final autoOperationFee = canOperationFee && effectiveFeeMode == 'auto'
+    final autoOperationFee = dollarFees && effectiveFeeMode == 'auto'
+        ? dollarFeePreview
+        : canOperationFee && effectiveFeeMode == 'auto'
         ? estimatedBankFee(
             method: type == 'income' ? 'bank_transfer' : paymentMethod,
             amount: parseAmount(amount.text),
@@ -12848,7 +13122,9 @@ class _MovementEditorState extends State<MovementEditor> {
             bankTransferScope: bankTransferScope,
           )
         : 0.0;
-    final autoTransferFee = type == 'transfer'
+    final autoTransferFee = type == 'transfer' && dollarFees
+        ? dollarFeePreview
+        : type == 'transfer'
         ? bankTransferFee(source, target, moneyRound(parseAmount(amount.text)))
         : 0.0;
     final selectedDebt = app.debtById(debtId);
@@ -12873,14 +13149,33 @@ class _MovementEditorState extends State<MovementEditor> {
         (type == 'expense' || type == 'income') &&
         (hasLinkableDebt || selectedDebt != null);
     final previewAmount = moneyRound(parseAmount(amount.text));
-    final previewFee = type == 'transfer'
+    final previewFee = dollarFees
+        ? dollarFeePreview
+        : type == 'transfer'
         ? autoTransferFee
         : effectiveFeeMode == 'manual'
         ? moneyRound(parseAmount(fee.text))
         : autoOperationFee;
     final previewTotal = type == 'income'
         ? moneySubtract(previewAmount, previewFee)
+        : type == 'transfer' && feeTreatment == 'deducted'
+        ? previewAmount
         : moneyAdd(previewAmount, previewFee);
+    var targetAmount = 0.0;
+    if (type == 'transfer' && previewAmount > 0) {
+      try {
+        targetAmount = transferDestinationAmount(
+          amount: previewAmount,
+          fee: previewFee,
+          treatment: feeTreatment,
+          sourceCurrency: sourceCurrency,
+          targetCurrency: targetCurrency,
+          rate: enteredRate,
+        );
+      } on FormatException {
+        // Saving reports the invalid fee or rate; the preview must remain usable.
+      }
+    }
 
     if (widget.quick)
       return buildQuickMovement(source, previewFee, previewTotal);
@@ -12942,6 +13237,7 @@ class _MovementEditorState extends State<MovementEditor> {
                           : preferredAccountId();
                     }
                     targetId = firstAccountId(except: accountId);
+                    resetDollarFee();
                     if (type == 'expense' && !categoryTouched) {
                       category = categoryFromDescription(desc.text) ?? 'Otro';
                     }
@@ -13052,6 +13348,7 @@ class _MovementEditorState extends State<MovementEditor> {
                                     )
                                   : 0.0;
                               accountId = id;
+                              resetDollarFee();
                               if (targetId == accountId) {
                                 targetId = firstAccountId(except: accountId);
                               }
@@ -13154,8 +13451,9 @@ class _MovementEditorState extends State<MovementEditor> {
                     ),
                   if (type == 'expense' &&
                       !isBankCommissionCategory(category) &&
-                      isNationalBankAccount(source) &&
-                      sourceCurrency == 'VES')
+                      ((isNationalBankAccount(source) &&
+                              sourceCurrency == 'VES') ||
+                          supportsDollarFees(source)))
                     OptionField(
                       theme: t,
                       label: 'Forma de pago',
@@ -13163,32 +13461,44 @@ class _MovementEditorState extends State<MovementEditor> {
                       icon: CupertinoIcons.creditcard_fill,
                       onTap: () => pickValue(
                         context,
-                        const [
-                          'Pago móvil',
-                          'Pago móvil C2P',
-                          'Transferencia bancaria',
-                          'Tarjeta',
-                        ],
+                        sourceCurrency == 'USD'
+                            ? const ['Tarjeta', 'Transferencia bancaria']
+                            : const [
+                                'Pago móvil',
+                                'Pago móvil C2P',
+                                'Transferencia bancaria',
+                                'Tarjeta',
+                              ],
                         paymentMethodLabel(paymentMethod),
                         (value) => setState(() {
                           paymentMethod = paymentMethodFromLabel(value);
-                          if (isFeeExemptPaymentMethod(paymentMethod)) {
+                          if (sourceCurrency == 'USD') {
+                            final saved = dollarFeePercentForAccount(
+                              source,
+                              type,
+                              paymentMethod,
+                            );
+                            feePercent.text = saved?.toString() ?? '';
+                            feeMode = saved == null ? 'none' : 'auto';
+                          } else if (isFeeExemptPaymentMethod(paymentMethod)) {
                             fee.clear();
                             feeMode = 'auto';
                           }
                         }),
                       ),
                     ),
-                  if (canOperationFee)
+                  if (canOperationFee || dollarFees)
                     OptionField(
                       theme: t,
                       label: 'Comisión',
-                      value: feeModeLabel(effectiveFeeMode),
+                      value: feeModeLabel(
+                        dollarFees ? feeMode : effectiveFeeMode,
+                      ),
                       icon: CupertinoIcons.percent,
                       onTap: () => pickValue(
                         context,
                         const ['Automática', 'Manual', 'Sin comisión'],
-                        feeModeLabel(effectiveFeeMode),
+                        feeModeLabel(dollarFees ? feeMode : effectiveFeeMode),
                         (value) => setState(() {
                           feeMode = feeModeFromLabel(value);
                           if (feeMode != 'manual') fee.clear();
@@ -13197,6 +13507,7 @@ class _MovementEditorState extends State<MovementEditor> {
                     ),
                   if (type == 'expense' &&
                       canOperationFee &&
+                      !dollarFees &&
                       effectiveFeeMode != 'none' &&
                       paymentMethod == 'bank_transfer')
                     OptionField(
@@ -13213,7 +13524,7 @@ class _MovementEditorState extends State<MovementEditor> {
                         }),
                       ),
                     ),
-                  if (canTransferFee)
+                  if (canTransferFee && !dollarFees)
                     DebtDetailRow(
                       theme: t,
                       label: 'Transferencia bancaria',
@@ -13221,15 +13532,65 @@ class _MovementEditorState extends State<MovementEditor> {
                         bankTransferScopeForAccounts(source, target),
                       ),
                     ),
-                  if (canOperationFee && effectiveFeeMode == 'manual')
-                    RField(
-                      theme: t,
-                      controller: fee,
-                      placeholder: 'Comisión manual',
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                  if (dollarFees && feeMode != 'none') ...[
+                    if (type == 'expense' && paymentMethod == 'debit_card')
+                      DebtDetailRow(
+                        theme: t,
+                        label: 'Tarjeta',
+                        value: dollarCardLabel(source!),
                       ),
-                      onChanged: (_) => setState(() {}),
+                    if (feeMode == 'manual')
+                      OptionField(
+                        theme: t,
+                        label: 'Tipo de comisión',
+                        value: feeUnit == 'percent'
+                            ? 'Porcentaje'
+                            : 'Monto fijo',
+                        icon: CupertinoIcons.percent,
+                        onTap: () => pickValue(
+                          context,
+                          const ['Porcentaje', 'Monto fijo'],
+                          feeUnit == 'percent' ? 'Porcentaje' : 'Monto fijo',
+                          (value) => setState(
+                            () => feeUnit = value == 'Porcentaje'
+                                ? 'percent'
+                                : 'amount',
+                          ),
+                        ),
+                      ),
+                    if (feeMode == 'auto' || feeUnit == 'percent')
+                      OptionField(
+                        key: const ValueKey('commission-value'),
+                        theme: t,
+                        label: feeMode == 'auto'
+                            ? 'Porcentaje automático de esta cuenta'
+                            : 'Comisión (%)',
+                        value: feePercent.text.isEmpty
+                            ? 'Sin definir'
+                            : '${compactDecimal(parseAmount(feePercent.text))}%',
+                        icon: CupertinoIcons.percent,
+                        onTap: () => editCommission(percent: true),
+                      ),
+                    if (feeMode == 'auto')
+                      Text(
+                        'Tarifa guardada para esta cuenta',
+                        style: TextStyle(color: t.muted, fontSize: 12),
+                      ),
+                  ],
+                  if ((canOperationFee &&
+                          !dollarFees &&
+                          effectiveFeeMode == 'manual') ||
+                      (dollarFees &&
+                          feeMode == 'manual' &&
+                          feeUnit == 'amount'))
+                    OptionField(
+                      key: const ValueKey('commission-value'),
+                      theme: t,
+                      label: 'Comisión manual',
+                      value:
+                          '${compactDecimal(parseAmount(fee.text))} $sourceCurrency',
+                      icon: CupertinoIcons.money_dollar,
+                      onTap: () => editCommission(percent: false),
                     ),
                   if (autoOperationFee > 0 || autoTransferFee > 0)
                     RCard(
@@ -13262,6 +13623,27 @@ class _MovementEditorState extends State<MovementEditor> {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                  if (type == 'transfer' && previewFee > 0)
+                    OptionField(
+                      theme: t,
+                      label: 'Aplicar comisión',
+                      value: feeTreatment == 'deducted'
+                          ? 'Descontar del monto'
+                          : 'Cobrar aparte',
+                      icon: CupertinoIcons.minus_circle,
+                      onTap: () => pickValue(
+                        context,
+                        const ['Descontar del monto', 'Cobrar aparte'],
+                        feeTreatment == 'deducted'
+                            ? 'Descontar del monto'
+                            : 'Cobrar aparte',
+                        (value) => setState(
+                          () => feeTreatment = value == 'Descontar del monto'
+                              ? 'deducted'
+                              : 'added',
+                        ),
                       ),
                     ),
                   OptionField(
@@ -13493,6 +13875,7 @@ class _MovementEditorState extends State<MovementEditor> {
     )) {
       return 0;
     }
+    if (supportsDollarFees(source)) return dollarFeeForSave();
     if (feeMode == 'none') return 0;
     if (feeMode == 'manual') return parseAmount(fee.text);
     return estimatedBankFee(
@@ -13505,6 +13888,7 @@ class _MovementEditorState extends State<MovementEditor> {
   }
 
   double estimatedTransferFeeForSave(Map<String, dynamic> source) {
+    if (supportsDollarFees(source)) return dollarFeeForSave();
     final target = widget.app.accountById(targetId);
     return bankTransferFee(
       source,
@@ -13625,14 +14009,43 @@ class _MovementEditorState extends State<MovementEditor> {
       }
     }
     try {
+      final dollarFees =
+          supportsDollarFees(source) &&
+          type != 'income' &&
+          (type != 'expense' || !isBankCommissionCategory(category));
+      if (dollarFees && feeMode != 'none') {
+        if ((feeMode == 'auto' || feeUnit == 'percent') &&
+            feePercent.text.trim().isEmpty) {
+          throw const FormatException(
+            'Confirma el porcentaje de comisión de esta cuenta',
+          );
+        }
+        dollarFeeForSave();
+      }
+      if (type == 'transfer') {
+        targetAmount = transferDestinationAmount(
+          amount: parseAmount(amount.text),
+          fee: estimatedTransferFeeForSave(source),
+          treatment: feeTreatment,
+          sourceCurrency: source['currency']?.toString() ?? 'USD',
+          targetCurrency: targetCurrency,
+          rate: parseAmount(rate.text),
+        );
+      }
       await widget.onSave({
         'id': widget.movement?['id'] ?? _quickMovementId,
         'type': type,
+        if (type == 'transfer') 'feeTreatment': feeTreatment,
         'paymentMethod':
             type == 'expense' && !isBankCommissionCategory(category)
             ? paymentMethod
             : '',
-        'feeMode': type == 'expense' || type == 'income'
+        if (dollarFees) 'feeUnit': feeMode == 'auto' ? 'percent' : feeUnit,
+        if (dollarFees && (feeMode == 'auto' || feeUnit == 'percent'))
+          'feePercent': parseAmount(feePercent.text),
+        'feeMode': dollarFees
+            ? feeMode
+            : type == 'expense' || type == 'income'
             ? canConfigureBankFee(
                     source,
                     type: type,
@@ -15976,6 +16389,10 @@ bool canConfigureBankFee(
   String method = 'bank_transfer',
 }) {
   if (type == 'income') return false;
+  if (supportsDollarFees(account)) {
+    return (type == 'transfer' && target != null) ||
+        (type == 'expense' && !isBankCommissionCategory(category));
+  }
   if (isFeeExemptCategory(category)) return false;
   if (isFeeExemptPaymentMethod(method)) return false;
   if (!isNationalBankAccount(account)) return false;
@@ -16009,7 +16426,9 @@ double bankTransferFee(
   Map<String, dynamic>? target,
   double amount,
 ) {
-  if (!canConfigureBankFee(source, type: 'transfer', target: target)) return 0;
+  if (source?['currency'] != 'VES' ||
+      !canConfigureBankFee(source, type: 'transfer', target: target))
+    return 0;
   return estimatedBankFee(
     method: 'bank_transfer',
     amount: amount,

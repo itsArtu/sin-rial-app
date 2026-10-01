@@ -16,6 +16,18 @@ Finder option(String label) => find.byWidgetPredicate(
 );
 
 Future<void> choose(WidgetTester tester, String label, String value) async {
+  if (option(label).evaluate().isEmpty) {
+    await tester.scrollUntilVisible(
+      option(label),
+      -180,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('movement-editor-fields')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+  }
   await tester.ensureVisible(option(label));
   await tester.tap(option(label));
   await tester.pumpAndSettle();
@@ -25,6 +37,16 @@ Future<void> choose(WidgetTester tester, String label, String value) async {
   );
   await tester.ensureVisible(item);
   await tester.tap(item);
+  await tester.pumpAndSettle();
+}
+
+Future<void> editFee(WidgetTester tester, String value) async {
+  final field = find.byKey(const ValueKey('commission-value'));
+  await tester.ensureVisible(field);
+  await tester.tap(field);
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const ValueKey('commission-input')), value);
+  await tester.tap(find.text('Aplicar'));
   await tester.pumpAndSettle();
 }
 
@@ -131,13 +153,8 @@ void main() {
         lessThan(tester.getTopLeft(option('Comisi\u00f3n')).dy),
       );
       await choose(tester, 'Comisi\u00f3n', 'Manual');
-      final manualFee = find.byWidgetPredicate(
-        (widget) =>
-            widget is CupertinoTextField &&
-            widget.placeholder == 'Comisi\u00f3n manual',
-      );
-      await tester.ensureVisible(manualFee);
-      await tester.enterText(manualFee, '75');
+      final manualFee = option('Comisi\u00f3n manual');
+      await editFee(tester, '75');
       await choose(tester, 'Forma de pago', method);
       expect(option('Forma de pago'), findsOneWidget);
       expect(option('Comisi\u00f3n'), findsNothing);

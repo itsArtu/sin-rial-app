@@ -477,7 +477,8 @@ object RateUpdateService {
         val contentIntent = PendingIntent.getActivity(
             context,
             UPDATE_NOTIFICATION_ID,
-            Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
+            Intent(context, MainActivity::class.java).apply {
+                action = "com.lacaprichosa.app.OPEN_UPDATE"
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
