@@ -9,6 +9,49 @@ void main() {
   const channel = MethodChannel('rial/native_state');
 
   test(
+    'Large histories decode off-thread without losing records or security',
+    () async {
+      final original = defaultState()
+        ..addAll({
+          'pinEnabled': true,
+          'pinHash': 'protected-hash',
+          'pinSalt': 'protected-salt',
+          'screenPrivacyEnabled': true,
+          'movements': List.generate(
+            5000,
+            (i) => {
+              'id': 'movement-$i',
+              'amount': 12.34,
+              'currency': 'VES',
+              'date': '02/10/2026 10:00 AM',
+              'category': 'Wifi',
+            },
+          ),
+        });
+      final raw = jsonEncode(original);
+      expect(raw.length, greaterThan(256 * 1024));
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async => raw);
+      final loaded = await NativeStateStore.load();
+      final movements = loaded['movements'] as List;
+      expect(movements, hasLength(5000));
+      expect(movements.last['id'], 'movement-4999');
+      expect(movements.last['amount'], 12.34);
+      expect(movements.last['category'], 'Servicios');
+      expect(loaded['pinEnabled'], isTrue);
+      expect(loaded['pinHash'], original['pinHash']);
+      expect(loaded['pinSalt'], original['pinSalt']);
+      expect(loaded['screenPrivacyEnabled'], isTrue);
+    },
+  );
+
+  test('Invalid storage is rejected rather than replaced with empty state', () {
+    for (final raw in ['[]', 'null', '{invalid']) {
+      expect(() => decodeStoredState(raw), throwsFormatException);
+    }
+  });
+
+  test(
     'SQLite bridge includes plans and shared savings in separate parts',
     () async {
       final original = defaultState()

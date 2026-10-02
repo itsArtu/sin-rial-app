@@ -35,6 +35,7 @@ part 'calculator_rate_dialog.dart';
 part 'app_update.dart';
 part 'dollar_fees.dart';
 part 'keyboard_dismiss.dart';
+part 'motion.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,11 +48,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.1.1',
+  defaultValue: '3.1.2',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 75,
+  defaultValue: 78,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -298,7 +299,10 @@ class _RialBootstrapState extends State<RialBootstrap> {
             ),
           );
         }
-        return RialApp(initialState: data, quickAction: widget.quickAction);
+        return RialApp._loaded(
+          initialState: data,
+          quickAction: widget.quickAction,
+        );
       },
     );
   }
@@ -366,6 +370,14 @@ class _SplitStatePayload {
   final Map<String, String> allParts;
 }
 
+Map<String, dynamic> decodeStoredState(String raw) {
+  final decoded = jsonDecode(raw);
+  if (decoded is! Map) {
+    throw const FormatException('Almacenamiento no v\u00e1lido');
+  }
+  return withDefaults(decoded.cast<String, dynamic>());
+}
+
 class NativeStateStore {
   static const List<String> _splitStateKeys = [
     'accounts',
@@ -393,10 +405,10 @@ class NativeStateStore {
     if (raw == null || raw.trim().isEmpty) {
       throw const FormatException('No se pudo leer el almacenamiento');
     }
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map)
-      throw const FormatException('Almacenamiento no válido');
-    final state = withDefaults(decoded.cast<String, dynamic>());
+    // Large histories must not block the loading animation's UI isolate.
+    final state = raw.length >= 256 * 1024
+        ? await compute(decodeStoredState, raw, debugLabel: 'load-finance-state')
+        : decodeStoredState(raw);
     _rememberMainStateOnly(state);
     persistenceError.value = null;
     persistenceConflict = false;
@@ -1149,10 +1161,14 @@ bool isWalletProvider(String provider) {
 }
 
 class RialApp extends StatefulWidget {
-  const RialApp({super.key, required this.initialState, this.quickAction});
+  const RialApp({super.key, required this.initialState, this.quickAction})
+      : _normalized = false;
+  const RialApp._loaded({required this.initialState, this.quickAction})
+      : _normalized = true;
 
   final Map<String, dynamic> initialState;
   final String? quickAction;
+  final bool _normalized;
 
   @override
   State<RialApp> createState() => _RialAppState();
@@ -1278,17 +1294,22 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    state = withDefaults(widget.initialState);
+    state = widget._normalized
+        ? widget.initialState
+        : withDefaults(widget.initialState);
     locked = stateHasSecurity(state);
     WidgetsBinding.instance.addObserver(this);
     _pageController = PageController();
     _scheduleDayBoundary();
-    scheduleDailyReminderFromState();
-    unawaited(NativeStateStore.scheduleRateUpdate());
-    if (!isQuickAccess || widget.quickAction == 'calculator') {
-      unawaited(refreshRateIfNeeded(checkForUpdates: !isQuickAccess));
-    }
-    if (!isQuickAccess) unawaited(checkNativeLaunchAction());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      scheduleDailyReminderFromState();
+      unawaited(NativeStateStore.scheduleRateUpdate());
+      if (!isQuickAccess || widget.quickAction == 'calculator') {
+        unawaited(refreshRateIfNeeded(checkForUpdates: !isQuickAccess));
+      }
+      if (!isQuickAccess) unawaited(checkNativeLaunchAction());
+    });
     rateRefreshTimer = Timer.periodic(const Duration(minutes: 30), (_) {
       if ((!isQuickAccess || widget.quickAction == 'calculator') &&
           !_privacySuspended)
@@ -1345,7 +1366,10 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
-    if (lifecycleState == AppLifecycleState.resumed) _scheduleDayBoundary();
+    if (lifecycleState == AppLifecycleState.resumed) {
+      _scheduleDayBoundary();
+      _lastSystemBarsRequest = null;
+    }
     _lastLifecycleState = lifecycleState;
     if (lifecycleState == AppLifecycleState.paused ||
         lifecycleState == AppLifecycleState.hidden ||
@@ -1578,7 +1602,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         _pageController.animateToPage(
           index,
           duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
+          curve: Curves.easeInOutCubic,
         ),
       );
     }
@@ -1873,7 +1897,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       barrierDismissible: true,
       barrierLabel: 'Cerrar',
       barrierColor: CupertinoColors.black.withOpacity(t.dark ? .50 : .28),
-      transitionDuration: const Duration(milliseconds: 190),
+      transitionDuration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 240),
       pageBuilder: (dialogContext, _, __) {
         return Align(
           alignment: Alignment.bottomCenter,
@@ -1903,20 +1929,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           ),
         );
       },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curve = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, .055),
-            end: Offset.zero,
-          ).animate(curve),
-          child: child,
-        );
-      },
+      transitionBuilder: softSheetTransition,
     ).whenComplete(() => updatePromptVisible = false);
   }
 
@@ -1950,6 +1963,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
 
   bool securityBusy = false;
   (bool, bool, bool)? _lastPrivacyRequest;
+  (bool, int)? _lastSystemBarsRequest;
   bool _privacySuspended = false;
   bool _checkingResumeSecurity = false;
   AppLifecycleState _lastLifecycleState = AppLifecycleState.resumed;
@@ -2330,6 +2344,13 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           ? bankTransferScopeForAccounts(source, target)
           : '';
     }
+    if (movement['type'] == 'transfer' &&
+        transferFeeMustBeAdded(
+          feeSource,
+          accountById(movement['targetAccountId'].toString()),
+        )) {
+      movement['feeTreatment'] = 'added';
+    }
     if (movement['type'] == 'transfer' && movement['feeTreatment'] != null) {
       movement['targetAmount'] = transferDestinationAmount(
         amount: numberValue(movement['amount']),
@@ -2527,10 +2548,14 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           ? Brightness.light
           : Brightness.dark,
     );
-    SystemChrome.setSystemUIOverlayStyle(overlayStyle);
-    unawaited(
-      NativeStateStore.setSystemBars(dark: dark, color: t.bg.toARGB32()),
-    );
+    final barsRequest = (dark, t.bg.toARGB32());
+    if (_lastSystemBarsRequest != barsRequest) {
+      _lastSystemBarsRequest = barsRequest;
+      SystemChrome.setSystemUIOverlayStyle(overlayStyle);
+      unawaited(
+        NativeStateStore.setSystemBars(dark: dark, color: barsRequest.$2),
+      );
+    }
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: RThemeScope(
@@ -3466,7 +3491,10 @@ Future<bool> requestCurrentPin(BuildContext context, _RialAppState app) async {
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(t.dark ? .50 : .28),
-    transitionDuration: const Duration(milliseconds: 180),
+    transitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 240),
+    transitionBuilder: softSheetTransition,
     pageBuilder: (dialogContext, _, __) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         focus.requestFocus();
@@ -4121,27 +4149,11 @@ class _StepDot extends StatelessWidget {
 class FluidPageRoute<T> extends PageRouteBuilder<T> {
   FluidPageRoute({required WidgetBuilder builder})
     : super(
-        transitionDuration: const Duration(milliseconds: 280),
-        reverseTransitionDuration: const Duration(milliseconds: 210),
+        transitionDuration: const Duration(milliseconds: 260),
+        reverseTransitionDuration: const Duration(milliseconds: 240),
         pageBuilder: (context, animation, secondaryAnimation) =>
             KeyboardDismissScope(child: builder(context)),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          if (MediaQuery.disableAnimationsOf(context)) return child;
-          final eased = animation.drive(CurveTween(curve: Curves.easeOutCubic));
-          return FadeTransition(
-            opacity: animation.drive(CurveTween(curve: const Interval(0, .75))),
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, .035),
-                end: Offset.zero,
-              ).animate(eased),
-              child: ScaleTransition(
-                scale: Tween<double>(begin: .985, end: 1).animate(eased),
-                child: RepaintBoundary(child: child),
-              ),
-            ),
-          );
-        },
+        transitionsBuilder: softSheetTransition,
       );
 }
 
@@ -4244,7 +4256,9 @@ void showModernActionSheet(
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(t.dark ? .50 : .28),
-    transitionDuration: const Duration(milliseconds: 190),
+    transitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 240),
     pageBuilder: (dialogContext, _, __) {
       return Align(
         alignment: Alignment.bottomCenter,
@@ -4270,20 +4284,7 @@ void showModernActionSheet(
         ),
       );
     },
-    transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final curve = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, .055),
-          end: Offset.zero,
-        ).animate(curve),
-        child: child,
-      );
-    },
+    transitionBuilder: softSheetTransition,
   );
 }
 
@@ -5043,7 +5044,9 @@ Future<DateTime?> pickModernDate({
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(theme.dark ? .52 : .30),
-    transitionDuration: const Duration(milliseconds: 180),
+    transitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 240),
     pageBuilder: (dialogContext, _, __) {
       final maxHeight = math
           .min(MediaQuery.of(dialogContext).size.height * .78, 560.0)
@@ -5308,20 +5311,7 @@ Future<DateTime?> pickModernDate({
         ),
       );
     },
-    transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final curve = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, .08),
-          end: Offset.zero,
-        ).animate(curve),
-        child: FadeTransition(opacity: animation, child: child),
-      );
-    },
+    transitionBuilder: softSheetTransition,
   );
 }
 
@@ -5340,7 +5330,9 @@ Future<DateTime?> pickModernTime({
     barrierDismissible: true,
     barrierLabel: 'Cerrar',
     barrierColor: CupertinoColors.black.withOpacity(theme.dark ? .52 : .30),
-    transitionDuration: const Duration(milliseconds: 170),
+    transitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 240),
     pageBuilder: (dialogContext, _, __) {
       return Padding(
         padding: EdgeInsets.only(
@@ -5538,20 +5530,7 @@ Future<DateTime?> pickModernTime({
         ),
       );
     },
-    transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final curve = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, .08),
-          end: Offset.zero,
-        ).animate(curve),
-        child: FadeTransition(opacity: animation, child: child),
-      );
-    },
+    transitionBuilder: softSheetTransition,
   );
 }
 
@@ -8199,7 +8178,12 @@ class BalanceGroupCard extends StatelessWidget {
       ),
       child: Container(
         key: ValueKey('balance-group-$currency'),
-        width: math.min(264.0, MediaQuery.sizeOf(context).width - 32),
+        constraints: const BoxConstraints(minHeight: 132),
+        width: math.min(
+          (180 + (MediaQuery.textScalerOf(context).scale(13) / 13 - 1) * 40)
+              .clamp(180.0, 220.0),
+          MediaQuery.sizeOf(context).width - 36,
+        ),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: t.card,
@@ -13127,6 +13111,10 @@ class _MovementEditorState extends State<MovementEditor> {
         : type == 'transfer'
         ? bankTransferFee(source, target, moneyRound(parseAmount(amount.text)))
         : 0.0;
+    final separateTransferFee = transferFeeMustBeAdded(source, target);
+    final effectiveTransferTreatment = separateTransferFee
+        ? 'added'
+        : feeTreatment;
     final selectedDebt = app.debtById(debtId);
     final debtCurrency =
         selectedDebt?['currency']?.toString() ?? sourceCurrency;
@@ -13158,7 +13146,7 @@ class _MovementEditorState extends State<MovementEditor> {
         : autoOperationFee;
     final previewTotal = type == 'income'
         ? moneySubtract(previewAmount, previewFee)
-        : type == 'transfer' && feeTreatment == 'deducted'
+        : type == 'transfer' && effectiveTransferTreatment == 'deducted'
         ? previewAmount
         : moneyAdd(previewAmount, previewFee);
     var targetAmount = 0.0;
@@ -13167,7 +13155,7 @@ class _MovementEditorState extends State<MovementEditor> {
         targetAmount = transferDestinationAmount(
           amount: previewAmount,
           fee: previewFee,
-          treatment: feeTreatment,
+          treatment: effectiveTransferTreatment,
           sourceCurrency: sourceCurrency,
           targetCurrency: targetCurrency,
           rate: enteredRate,
@@ -13201,23 +13189,24 @@ class _MovementEditorState extends State<MovementEditor> {
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
               child: KindSelector(
                 key: const ValueKey('movement-editor-type'),
+                separated: true,
                 theme: t,
                 value: type,
                 items: const [
                   KindSelectorItem(
                     value: 'expense',
                     label: 'Gasto',
-                    icon: CupertinoIcons.arrow_up_right_circle_fill,
+                    icon: CupertinoIcons.arrow_up_right,
                   ),
                   KindSelectorItem(
                     value: 'income',
                     label: 'Ingreso',
-                    icon: CupertinoIcons.arrow_down_left_circle_fill,
+                    icon: CupertinoIcons.arrow_down_left,
                   ),
                   KindSelectorItem(
                     value: 'transfer',
                     label: 'Transferir',
-                    icon: CupertinoIcons.arrow_right_arrow_left_circle_fill,
+                    icon: CupertinoIcons.arrow_right_arrow_left,
                   ),
                 ],
                 onChanged: (v) {
@@ -13625,7 +13614,9 @@ class _MovementEditorState extends State<MovementEditor> {
                         ],
                       ),
                     ),
-                  if (type == 'transfer' && previewFee > 0)
+                  if (type == 'transfer' &&
+                      previewFee > 0 &&
+                      !separateTransferFee)
                     OptionField(
                       theme: t,
                       label: 'Aplicar comisión',
@@ -14022,11 +14013,15 @@ class _MovementEditorState extends State<MovementEditor> {
         }
         dollarFeeForSave();
       }
+      final effectiveTransferTreatment =
+          transferFeeMustBeAdded(source, app.accountById(targetId))
+          ? 'added'
+          : feeTreatment;
       if (type == 'transfer') {
         targetAmount = transferDestinationAmount(
           amount: parseAmount(amount.text),
           fee: estimatedTransferFeeForSave(source),
-          treatment: feeTreatment,
+          treatment: effectiveTransferTreatment,
           sourceCurrency: source['currency']?.toString() ?? 'USD',
           targetCurrency: targetCurrency,
           rate: parseAmount(rate.text),
@@ -14035,7 +14030,7 @@ class _MovementEditorState extends State<MovementEditor> {
       await widget.onSave({
         'id': widget.movement?['id'] ?? _quickMovementId,
         'type': type,
-        if (type == 'transfer') 'feeTreatment': feeTreatment,
+        if (type == 'transfer') 'feeTreatment': effectiveTransferTreatment,
         'paymentMethod':
             type == 'expense' && !isBankCommissionCategory(category)
             ? paymentMethod
@@ -14312,7 +14307,8 @@ Widget softEntrance(
     builder: (context) {
       // A page route already animates its content as a single layer.
       if (MediaQuery.disableAnimationsOf(context) ||
-          ModalRoute.of(context) is FluidPageRoute) {
+          ModalRoute.of(context) is FluidPageRoute ||
+          context.findAncestorWidgetOfExactType<RialMotionTransition>() != null) {
         return child;
       }
       return TweenAnimationBuilder<double>(
@@ -15085,15 +15081,125 @@ class KindSelector extends StatelessWidget {
     required this.value,
     required this.items,
     required this.onChanged,
+    this.separated = false,
   });
 
   final RTheme theme;
   final String value;
   final List<KindSelectorItem> items;
   final ValueChanged<String> onChanged;
+  final bool separated;
 
   @override
   Widget build(BuildContext context) {
+    if (separated) {
+      const gap = 8.0;
+      final selected = items.indexWhere((item) => item.value == value);
+      final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+      final height = 70.0 + math.max(0.0, (scale - 1) * 18);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 18),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width =
+                (constraints.maxWidth - gap * (items.length - 1)) /
+                items.length;
+            return SizedBox(
+              height: height,
+              child: Stack(
+                children: [
+                  Row(
+                    children: [
+                      for (var index = 0; index < items.length; index++) ...[
+                        if (index > 0) const SizedBox(width: gap),
+                        Expanded(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: theme.field,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: theme.border),
+                            ),
+                            child: SizedBox(height: height),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (selected >= 0)
+                    AnimatedPositioned(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      left: selected * (width + gap),
+                      top: 0,
+                      width: width,
+                      height: height,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: theme.accent.withValues(alpha: .14),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.accent.withValues(alpha: .55),
+                          ),
+                        ),
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      for (var index = 0; index < items.length; index++) ...[
+                        if (index > 0) const SizedBox(width: gap),
+                        Expanded(
+                          child: Semantics(
+                            selected: index == selected,
+                            child: CupertinoButton(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              onPressed: () => onChanged(items[index].value),
+                              child: SizedBox(
+                                height: height,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      items[index].icon,
+                                      size: 20,
+                                      color: index == selected
+                                          ? theme.accent
+                                          : theme.muted,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        items[index].label,
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: index == selected
+                                              ? theme.ink
+                                              : theme.muted,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
       padding: const EdgeInsets.all(5),

@@ -9,14 +9,22 @@ void main() {
     expect(compareVersionNames(version.version, '2.1.13'), greaterThan(0));
   });
 
-  test('Installed 3.1.1 does not offer itself or an older release', () {
-    const current = UpdateInfo(version: '3.1.1', build: 75, apkUrl: 'app.apk');
+  test('Installed 3.1.2 does not offer itself or an older release', () {
+    const current = UpdateInfo(version: '3.1.2', build: 78, apkUrl: 'app.apk');
     const previous = UpdateInfo(version: '2.2.3', build: 67, apkUrl: 'old.apk');
     const tested = UpdateInfo(version: '3.0', build: 73, apkUrl: 'tested.apk');
-    const next = UpdateInfo(version: '3.1.2', build: 76, apkUrl: 'next.apk');
+    const next = UpdateInfo(version: '3.1.3', build: 79, apkUrl: 'next.apk');
     expect(current.isNewer, isFalse);
     expect(previous.isNewer, isFalse);
     expect(tested.isNewer, isFalse);
+    for (final build in [75, 76, 77]) {
+      expect(
+        UpdateInfo(version: '3.1.1', build: build, apkUrl: 'app.apk').isNewer,
+        isFalse,
+      );
+      expect(current.build, greaterThan(build));
+      expect(compareVersionNames(current.version, '3.1.1'), greaterThan(0));
+    }
     expect(next.isNewer, isTrue);
   });
 

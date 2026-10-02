@@ -847,16 +847,7 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
       transitionDuration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
           : const Duration(milliseconds: 220),
-      transitionBuilder: (context, a, _, child) => FadeTransition(
-        opacity: a,
-        child: SlideTransition(
-          position: Tween(
-            begin: const Offset(0, .08),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
-      ),
+      transitionBuilder: softSheetTransition,
       pageBuilder: (context, _, __) =>
           BudgetIncomeSheet(theme: widget.app.theme, sources: incomes),
     );

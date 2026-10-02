@@ -172,13 +172,17 @@ void main() {
       tester,
     ) async {
       final dynamic app = await fixture(tester);
-      final input = movement(
-        'transfer',
-        targetId: target,
-      )..['bankTransferScope'] = target == 'other' ? 'same_bank' : 'other_bank';
+      final input = movement('transfer', targetId: target)
+        ..addAll({
+          'bankTransferScope': target == 'other' ? 'same_bank' : 'other_bank',
+          'feeTreatment': 'deducted',
+          'targetAmount': 9925.0,
+        });
       app.saveMovement(input);
       final expectedFee = target == 'other' ? 30 : 0;
       expect(app.movementById('m')['feeAmount'], expectedFee);
+      expect(app.movementById('m')['feeTreatment'], 'added');
+      expect(input['feeTreatment'], 'deducted');
       expect(
         app.movementById('m')['bankTransferScope'],
         target == 'other' ? 'other_bank' : 'same_bank',
@@ -320,6 +324,15 @@ void main() {
         tester.widget<DebtDetailRow>(row('Comisi\u00f3n aplicada')).value,
         'Bs. 30,00',
       );
+      expect(payment.option('Aplicar comisi\u00f3n'), findsNothing);
+      expect(
+        tester.widget<DebtDetailRow>(row('Total a debitar')).value,
+        'Bs. 10.030,00',
+      );
+      expect(
+        tester.widget<DebtDetailRow>(row('Llega a destino')).value,
+        'Bs. 10.000,00',
+      );
       await payment.choose(tester, 'Cuenta destino', 'Mismo banco');
       expect(
         tester.widget<DebtDetailRow>(row('Transferencia bancaria')).value,
@@ -357,8 +370,8 @@ void main() {
       await tester.tap(find.text('Guardar movimiento'));
       await tester.pumpAndSettle();
       expect(app.maps('movements').single['feeAmount'], 30);
-      expect(app.accountById('source')['balance'], 10000);
-      expect(app.accountById('other')['balance'], 10070);
+      expect(app.accountById('source')['balance'], 9970);
+      expect(app.accountById('other')['balance'], 10100);
       await closeFixture(tester);
     });
   }

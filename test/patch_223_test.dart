@@ -354,6 +354,12 @@ void main() {
     (tester) async {
       await calculator.openCalculator(tester);
       final dynamic app = tester.state(find.byType(RialApp));
+      // Keep this unpublished-rate fixture valid after Friday's 18:00 advance.
+      app.mutate(() {
+        app.state['rateEffectiveDate'] = isoDate(caracasTime(DateTime.now()));
+        app.state['bcvRateSnapshots'] = <dynamic>[];
+      });
+      await tester.pumpAndSettle();
       final toggle = find.byKey(const ValueKey('calculator-next-rate'));
       await tester.ensureVisible(toggle);
       expect(tester.widget<SettingsSwitchTile>(toggle).onTap, isNull);

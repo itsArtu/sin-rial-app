@@ -5,22 +5,11 @@ Widget softDialogTransition(
   Animation<double> animation,
   Animation<double> secondaryAnimation,
   Widget child,
-) {
-  if (MediaQuery.disableAnimationsOf(context)) return child;
-  final opacity = animation.drive(CurveTween(curve: Curves.easeInOutCubic));
-  return FadeTransition(
-    opacity: opacity,
-    child: ScaleTransition(
-      scale: animation.drive(
-        Tween<double>(
-          begin: .98,
-          end: 1,
-        ).chain(CurveTween(curve: Curves.easeOutCubic)),
-      ),
-      child: child,
-    ),
-  );
-}
+) => RialMotionTransition(
+  animation: animation,
+  offset: const Offset(0, .01),
+  child: child,
+);
 
 Future<DateTime?> appBirthDatePicker(
   BuildContext context,

@@ -21,7 +21,7 @@ import java.util.concurrent.Executors
 
 open class MainActivity : FlutterFragmentActivity() {
     protected open val quickAccess: Boolean = false
-    private var loadedRevision: Long? = null
+    @Volatile private var loadedRevision: Long? = null
     private val channelName = "rial/native_state"
     private var screenReceiver: BroadcastReceiver? = null
     private var screenOffPending = false
@@ -61,10 +61,6 @@ open class MainActivity : FlutterFragmentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         super.onCreate(savedInstanceState)
         screenPrivacy.onResume()
-        stateExecutor.execute {
-            runCatching { DailyReminderScheduler.schedule(applicationContext) }
-            runCatching { RateUpdateScheduler.schedule(applicationContext) }
-        }
         storeLaunchAction(intent)
         registerScreenOffReceiver()
         if (!quickAccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -81,7 +77,10 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun onResume() {
         super.onResume()
         screenPrivacy.onResume()
-        stateExecutor.execute { runCatching { DailyReminderScheduler.schedule(applicationContext) } }
+        // The first Flutter frame schedules these after readState has completed.
+        if (loadedRevision != null) {
+            stateExecutor.execute { runCatching { DailyReminderScheduler.schedule(applicationContext) } }
+        }
     }
 
     override fun onPause() {
@@ -134,7 +133,7 @@ open class MainActivity : FlutterFragmentActivity() {
                 }
                 return@setMethodCallHandler
             }
-            if (call.method in setOf("readState", "readRateState", "stateChanged", "writeState", "writeSplitState", "configureSecurity", "verifyPin")) {
+            if (call.method in setOf("readState", "readRateState", "stateChanged", "writeState", "writeSplitState", "configureSecurity", "verifyPin", "scheduleDailyReminder", "scheduleRateUpdate")) {
                 stateExecutor.execute {
                     try {
                         val response: Any = when (call.method) {
@@ -147,6 +146,14 @@ open class MainActivity : FlutterFragmentActivity() {
                             "configureSecurity" -> PinSecurity.configure(this,
                                 requireNotNull(call.argument<String>("pin")), call.argument<Boolean>("biometrics") == true)
                             "verifyPin" -> PinSecurity.verify(this, call.argument<String>("pin") ?: "")
+                            "scheduleDailyReminder" -> {
+                                val enabled = call.argument<Boolean>("enabled") ?: true
+                                val hour = (call.argument<Number>("hour")?.toInt() ?: 19).coerceIn(0, 23)
+                                val minute = (call.argument<Number>("minute")?.toInt() ?: 0).coerceIn(0, 59)
+                                DailyReminderScheduler.schedule(this, enabled, hour, minute)
+                                true
+                            }
+                            "scheduleRateUpdate" -> RateUpdateScheduler.schedule(this)
                             else -> {
                                 val state = requireNotNull(call.argument<String>("state"))
                                 val revision = requireNotNull(loadedRevision) { "Read state before writing" }
@@ -207,16 +214,6 @@ open class MainActivity : FlutterFragmentActivity() {
                             result.error("PDF_UNAVAILABLE", "No se pudo abrir el selector de archivos", null)
                         }
                     }
-                }
-                "scheduleDailyReminder" -> {
-                    val enabled = call.argument<Boolean>("enabled") ?: true
-                    val hour = (call.argument<Number>("hour")?.toInt() ?: 19).coerceIn(0, 23)
-                    val minute = (call.argument<Number>("minute")?.toInt() ?: 0).coerceIn(0, 59)
-                    DailyReminderScheduler.schedule(this, enabled, hour, minute)
-                    result.success(true)
-                }
-                "scheduleRateUpdate" -> {
-                    result.success(RateUpdateScheduler.schedule(this))
                 }
                 "dailyReminderStatus" -> result.success(DailyReminderScheduler.status(this))
                 "openReminderSettings" -> {

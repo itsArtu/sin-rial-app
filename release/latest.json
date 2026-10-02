@@ -1,9 +1,9 @@
 {
-  "version": "3.1.1",
-  "build": 75,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.1.1%2B75/sin-rial-3.1.1-build75.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.1.1%2B75",
-  "sha256": "09A769DDF2E65F34BDCD72340A97E349184532B55953CD6496DD6A42411D0513",
-  "size": 65935607,
-  "notes": "Sin Rial 3.1.1: descarga de actualizaciones dentro de la app con verificacion de integridad y confirmacion de Android. Comisiones en cuentas en dolares; las transferencias nuevas descuentan la comision del monto enviado y permiten cobrarla aparte. Comision y tasa personalizada en ventanas emergentes. Historial con ingresos menos gastos igual al total, equivalente historico BCV y mejor separacion del resumen mensual. Ingresos y gastos del inicio corresponden al mes actual. Calculadora con miles y dos decimales; volver cierra primero el teclado. Actualiza sobre tu version actual: no desinstales ni borres datos."
+  "version": "3.1.2",
+  "build": 78,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.1.2%2B78/sin-rial-3.1.2-build78.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.1.2%2B78",
+  "sha256": "5E465FE45D7DD0372235D4B1DED3766051F33977364BB49C936BFDD59E8E2A3D",
+  "size": 66017531,
+  "notes": "Sin Rial 3.1.2: recordatorios de deudas pagadas corregidos; comisiones aparte en transferencias entre bancos en bolivares; botones de movimiento mas separados; balances compactos y pantallas que reflejan los cambios al guardar. Transiciones mas suaves y menos trabajo duplicado al iniciar. Aviso del actualizador y version en Ajustes centrados. Actualiza sobre tu version actual, incluidas las pruebas 76 y 77, sin desinstalar ni borrar datos."
 }

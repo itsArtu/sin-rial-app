@@ -177,17 +177,25 @@ class _AppUpdatePageState extends State<AppUpdatePage>
             if (message != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Text(message, style: TextStyle(color: t.red)),
+                child: Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: t.red),
+                ),
               ),
             if (needsPermission) ...[
               const SizedBox(height: 18),
               Text(
                 'Android necesita que permitas instalar actualizaciones desde Sin Rial.',
+                textAlign: TextAlign.center,
                 style: TextStyle(color: t.muted),
               ),
               CupertinoButton(
                 onPressed: busy ? null : () => invoke('allowApkUpdates'),
-                child: const Text('Abrir permiso de instalacion'),
+                child: const Text(
+                  'Abrir permiso de instalacion',
+                  textAlign: TextAlign.center,
+                ),
               ),
             ],
             const SizedBox(height: 24),
@@ -197,6 +205,7 @@ class _AppUpdatePageState extends State<AppUpdatePage>
                 onPressed: busy ? null : () => invoke('installApkUpdate'),
                 child: Text(
                   'Instalar actualizacion',
+                  textAlign: TextAlign.center,
                   style: TextStyle(color: t.bg),
                 ),
               ),

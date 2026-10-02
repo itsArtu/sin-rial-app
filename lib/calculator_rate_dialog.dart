@@ -34,8 +34,7 @@ Future<double?> showDecimalInputDialog(
   transitionDuration: MediaQuery.disableAnimationsOf(context)
       ? Duration.zero
       : const Duration(milliseconds: 220),
-  transitionBuilder: (context, animation, secondary, child) =>
-      FadeTransition(opacity: animation, child: child),
+  transitionBuilder: softDialogTransition,
   pageBuilder: (context, animation, secondary) => KeyboardDismissScope(
     child: _DecimalInputDialog(
       theme: theme,

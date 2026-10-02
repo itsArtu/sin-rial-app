@@ -33,14 +33,11 @@ object DailyReminderScheduler {
         )
         val prefs = NativeJsonStore.prefs(context)
         // Debt due-date notices share this daily wake-up, even with the movement reminder off.
-        val state = runCatching { NativeJsonStore.readState(context, setOf("debts")) }.getOrNull() ?: return
-        val debts = state.optJSONArray("debts")
-        val hasDebtNotices = (0 until (debts?.length() ?: 0)).any { index ->
-            val debt = debts?.optJSONObject(index)
-            debt != null && debt.optBoolean("hasDueDate", true) &&
-                debt.optBoolean("notifyDueDate", true) &&
-                debt.optString("dueDate").isNotBlank() &&
-                debt.optDouble("amount", 0.0) > debt.optDouble("paidAmount", 0.0)
+        val hasDebtNotices = synchronized(NativeJsonStore) {
+            val state = runCatching { NativeJsonStore.readState(context, setOf("debts")) }.getOrNull() ?: return
+            val debts = ReminderNotifications.debts(state)
+            ReminderNotifications.reconcile(context, debts, enabled)
+            debts.isNotEmpty()
         }
         if (!enabled && !hasDebtNotices) {
             existing?.let { alarm.cancel(it); it.cancel() }

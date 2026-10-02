@@ -38,7 +38,11 @@ void main() {
         tester.view.physicalSize = Size(width, 844);
         tester.platformDispatcher.textScaleFactorTestValue = scale;
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-        app.mutate(() => app.state['homeSections'] = ['accounts']);
+        app.mutate(() {
+          app.state['homeSections'] = ['accounts'];
+          app.accountById('a')['balance'] = 163.29;
+          app.accountById('b')['balance'] = 11901.38;
+        });
         await tester.pumpAndSettle();
         for (final currency in ['VES', 'USD']) {
           final heading = tester.getRect(
@@ -53,7 +57,11 @@ void main() {
           expect(amount.top - heading.bottom, closeTo(8, .1));
           expect(card.width, lessThanOrEqualTo(width - 32));
           expect(amount.right, lessThanOrEqualTo(card.right - 15));
-          if (scale == 1) expect(card.height, lessThan(150));
+          if (scale == 1) {
+            expect(card.height, lessThan(150));
+            expect(card.width, lessThanOrEqualTo(200));
+            expect(card.width / card.height, lessThan(1.5));
+          }
         }
         expect(tester.takeException(), isNull);
         if (const bool.fromEnvironment('FINANCE_GOLDENS')) {

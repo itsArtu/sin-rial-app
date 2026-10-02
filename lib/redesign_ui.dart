@@ -450,7 +450,8 @@ class ModernMenu extends StatelessWidget {
   final _RialAppState app;
   @override
   Widget build(BuildContext context) {
-    void open(Widget page) => app.pushPage(context, (_) => page);
+    // Build a fresh widget on each revision without replacing its State.
+    void open(WidgetBuilder builder) => app.pushPage(context, builder);
     return AppScroll(
       title: 'Men\u00fa',
       theme: app.theme,
@@ -462,27 +463,27 @@ class ModernMenu extends StatelessWidget {
             IconGridItem(
               'Cuentas',
               CupertinoIcons.creditcard,
-              () => open(AccountsPage(app: app)),
+              () => open((_) => AccountsPage(app: app)),
             ),
             IconGridItem(
               'Movimientos',
               CupertinoIcons.arrow_up_arrow_down,
-              () => open(MovementHistoryPage(app: app)),
+              () => open((_) => MovementHistoryPage(app: app)),
             ),
             IconGridItem(
               'Resumen mensual',
               CupertinoIcons.chart_pie,
-              () => open(MonthlySpendingPage(app: app)),
+              () => open((_) => MonthlySpendingPage(app: app)),
             ),
             IconGridItem(
               'Metas y ahorros',
               CupertinoIcons.flag,
-              () => open(SavingsPage(app: app)),
+              () => open((_) => SavingsPage(app: app)),
             ),
             IconGridItem(
               'Pagar / cobrar',
               CupertinoIcons.person_2,
-              () => open(DebtsPage(app: app)),
+              () => open((_) => DebtsPage(app: app)),
             ),
           ],
         ),
@@ -493,22 +494,22 @@ class ModernMenu extends StatelessWidget {
             IconGridItem(
               'Calculadora',
               CupertinoIcons.plus_slash_minus,
-              () => open(CalculatorPage(app: app)),
+              () => open((_) => CalculatorPage(app: app)),
             ),
             IconGridItem(
               'Tasas de cambio',
               CupertinoIcons.chart_bar,
-              () => open(ExchangeRatesPage(app: app)),
+              () => open((_) => ExchangeRatesPage(app: app)),
             ),
             IconGridItem(
               'Mi perfil',
               CupertinoIcons.person_crop_circle,
-              () => open(ProfilePage(app: app)),
+              () => open((_) => ProfilePage(app: app)),
             ),
             IconGridItem(
               'Ajustes',
               CupertinoIcons.gear_alt,
-              () => open(SettingsPage(app: app)),
+              () => open((_) => SettingsPage(app: app)),
             ),
           ],
         ),
@@ -519,27 +520,27 @@ class ModernMenu extends StatelessWidget {
             IconGridItem(
               'Colores',
               CupertinoIcons.paintbrush,
-              () => open(SettingsPage(app: app, section: 'Color del tema')),
+              () => open((_) => SettingsPage(app: app, section: 'Color del tema')),
             ),
             IconGridItem(
               'Apariencia',
               CupertinoIcons.moon,
-              () => open(SettingsPage(app: app, section: 'Apariencia')),
+              () => open((_) => SettingsPage(app: app, section: 'Apariencia')),
             ),
             IconGridItem(
               'Inicio',
               CupertinoIcons.slider_horizontal_3,
-              () => open(HomeCustomizePage(app: app)),
+              () => open((_) => HomeCustomizePage(app: app)),
             ),
             IconGridItem(
               'Balance',
               CupertinoIcons.chart_pie,
-              () => open(SettingsPage(app: app, section: 'Inicio')),
+              () => open((_) => SettingsPage(app: app, section: 'Inicio')),
             ),
             IconGridItem(
               'Widgets',
               CupertinoIcons.square_grid_2x2,
-              () => open(PhoneWidgetsPage(app: app)),
+              () => open((_) => PhoneWidgetsPage(app: app)),
             ),
           ],
         ),
@@ -584,10 +585,11 @@ List<Widget> settingsPresentation(
         message: 'Gracias a los testers Rams\u00e9s, Gabriel, Kender, Daniel\n\nHecha por Arturo el siuuuu',
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             'Sin Rial',
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: app.theme.ink,
               fontSize: 24,
@@ -598,6 +600,7 @@ List<Widget> settingsPresentation(
           Text(
             'Versi\u00f3n $_appVersionName',
             key: const ValueKey('app-version'),
+            textAlign: TextAlign.center,
             style: TextStyle(color: app.theme.muted, fontSize: 13),
           ),
         ],

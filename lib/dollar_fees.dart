@@ -1,5 +1,14 @@
 part of 'main.dart';
 
+bool transferFeeMustBeAdded(
+  Map<String, dynamic>? source,
+  Map<String, dynamic>? target,
+) =>
+    source?['currency'] == 'VES' &&
+    target?['currency'] == 'VES' &&
+    isNationalBankAccount(source) &&
+    isNationalBankAccount(target);
+
 bool transferFeeIsDeducted(Map<String, dynamic> movement) =>
     movement['type'] == 'transfer' && movement['feeTreatment'] == 'deducted';
 
