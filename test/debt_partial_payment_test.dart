@@ -83,7 +83,7 @@ void main() {
   }
 
   testWidgets(
-    'Partial payment preserves principal across accounts and rejects excess',
+    'Partial payment keeps the entered amount in the selected account currency and rejects excess',
     (tester) async {
       final dynamic app = await fixtures.fixture(tester);
       app.mutate(() {
@@ -98,7 +98,7 @@ void main() {
       await tester.pumpAndSettle();
       final dynamic editor = tester.state(find.byType(MovementEditor));
       expect(editor.accountId, 'b');
-      await tester.enterText(field('Monto'), '300');
+      await tester.enterText(field('Monto'), '20');
       final account = find.byWidgetPredicate(
         (w) => w is OptionField && w.label == 'Cuenta',
       );
@@ -113,7 +113,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(editor.accountId, 'a');
-      expect(parseAmount(editor.amount.text), 30);
+      expect(parseAmount(editor.amount.text), 20);
       await tester.ensureVisible(field('Monto'));
       await tester.enterText(field('Monto'), '110');
       final before = jsonEncode(app.maps('accounts'));

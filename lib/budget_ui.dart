@@ -308,6 +308,7 @@ class _BudgetPageState extends State<BudgetPage>
       plan['period'].toString(),
       plan['periodType'].toString(),
       selectedCategories: limits.keys.toSet(),
+      items: items,
     );
     final planned = limits.values.fold<double>(0, moneyAdd);
     final remaining = moneySubtract(planned, spending.total);
@@ -410,7 +411,7 @@ class _BudgetPageState extends State<BudgetPage>
       ),
       if (items.isEmpty)
         EmptyCard(theme: t, text: 'No hay categor\u00edas en el plan'),
-      for (final category in ranked)
+      for (final category in ranked) ...[
         BudgetCategoryTile(
           app: app,
           category: category,
@@ -418,6 +419,33 @@ class _BudgetPageState extends State<BudgetPage>
           spent: spending.categories[category] ?? 0,
           onTap: () => editPlan(plan: plan, step: 2),
         ),
+        for (final item in items.where((item) => item['category'] == category))
+          if (item['currency'] != 'USD' ||
+              (item['name']?.toString().isNotEmpty ?? false))
+            Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: BudgetCategoryTile(
+                app: app,
+                category: category,
+                title: budgetItemName(item),
+                currency: item['currency']?.toString() ?? 'USD',
+                limit: numberValue(item['limit']),
+                spent: spending.itemCurrencies[item['id']] ?? 0,
+                onTap: () => editPlan(plan: plan, step: 2),
+              ),
+            ),
+        if ((spending.unassigned[category] ?? 0) > 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+            child: DebtDetailRow(
+              theme: t,
+              label: 'Sin partida',
+              value: app.secureMoney(spending.unassigned[category]!, 'USD'),
+              fitValue: true,
+              bottom: false,
+            ),
+          ),
+      ],
       const SizedBox(height: 18),
       BudgetDisclosure(
         theme: t,
@@ -600,9 +628,13 @@ class BudgetCategoryTile extends StatelessWidget {
     required this.limit,
     required this.spent,
     required this.onTap,
+    this.title,
+    this.currency = 'USD',
   });
   final _RialAppState app;
   final String category;
+  final String? title;
+  final String currency;
   final double limit, spent;
   final VoidCallback onTap;
   @override
@@ -643,7 +675,7 @@ class BudgetCategoryTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    category,
+                    title ?? category,
                     style: TextStyle(
                       color: t.ink,
                       fontSize: 14,
@@ -652,13 +684,16 @@ class BudgetCategoryTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'de ' + app.secureMoney(limit, 'USD'),
+                    'de ' + app.secureMoney(limit, currency),
                     style: TextStyle(color: t.muted, fontSize: 12),
                   ),
                   if (spent > limit)
                     Text(
                       'Excedido: ' +
-                          app.secureMoney(moneySubtract(spent, limit), 'USD'),
+                          app.secureMoney(
+                            moneySubtract(spent, limit),
+                            currency,
+                          ),
                       style: TextStyle(color: t.red, fontSize: 11),
                     ),
                 ],
@@ -670,7 +705,7 @@ class BudgetCategoryTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    app.secureMoney(spent, 'USD'),
+                    app.secureMoney(spent, currency),
                     textAlign: TextAlign.right,
                     style: TextStyle(
                       color: spent > limit ? t.red : t.ink,
@@ -813,17 +848,11 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
               'amount': numberValue(source['amount']),
             });
         }
-        final grouped = <String, double>{};
         for (final item in budgetPlanItems(app, plan['id'].toString())) {
-          final category = item['category'].toString();
-          grouped[category] = moneyAdd(
-            grouped[category] ?? 0,
-            budgetItemUsd(app, item),
-          );
+          final copy = Map<String, dynamic>.from(item);
+          if (widget.copy) copy.remove('id');
+          items.add(copy);
         }
-        items.addAll(
-          grouped.entries.map((e) => {'category': e.key, 'limit': e.value}),
-        );
       } on FormatException catch (error) {
         loadError = error.message;
       }
@@ -943,10 +972,10 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
       (_) => BudgetCategoryEditorPage(
         app: widget.app,
         item: index == null ? null : items[index],
-        excluded: {
+        siblings: [
           for (var i = 0; i < items.length; i++)
-            if (i != index) items[i]['category'].toString(),
-        },
+            if (i != index) items[i],
+        ],
       ),
     );
     if (!mounted || result == null) return;
@@ -970,10 +999,31 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
         onDone: () => Navigator.pop(context, budgetPlanId(period, type)),
       );
     }
-    final planned = items.fold<double>(
-      0,
-      (sum, item) => moneyAdd(sum, numberValue(item['limit'])),
-    );
+    double planned;
+    try {
+      planned = items.fold<double>(
+        0,
+        (sum, item) => moneyAdd(sum, budgetItemUsd(app, item)),
+      );
+    } on FormatException catch (error) {
+      return BudgetFormScaffold(
+        app: app,
+        title: 'Presupuesto',
+        children: [EmptyCard(theme: t, text: error.message)],
+        action: PrimaryActionButton(
+          theme: t,
+          label: 'Actualizar tasas',
+          onPressed: () async {
+            await app.refreshRate(
+              manual: true,
+              force: true,
+              checkForUpdates: false,
+            );
+            if (mounted) setState(() {});
+          },
+        ),
+      );
+    }
     final free = moneySubtract(
       moneySubtract(salary, parseAmount(savings.text)),
       planned,
@@ -985,6 +1035,7 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
             type,
             usdRate: app.rate,
             eurRate: app.eurRate,
+            items: items,
             selectedCategories: items
                 .map((i) => i['category'].toString())
                 .toSet(),
@@ -1181,13 +1232,16 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
                 for (final item in items)
                   RatioPart(
                     color: budgetCategoryColor(item['category'].toString(), t),
-                    value: numberValue(item['limit']),
+                    value: budgetItemUsd(app, item),
                   ),
               ],
-              labels: [for (final item in items) item['category'].toString()],
+              labels: [for (final item in items) budgetItemName(item)],
               values: [
                 for (final item in items)
-                  app.secureMoney(numberValue(item['limit']), 'USD'),
+                  app.secureMoney(
+                    numberValue(item['limit']),
+                    item['currency']?.toString() ?? 'USD',
+                  ),
               ],
               total: app.secureMoney(planned, 'USD'),
               label: 'Gastos planeados',
@@ -1204,15 +1258,17 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
                   child: BudgetCategoryTile(
                     app: app,
                     category: items[i]['category'].toString(),
+                    title: budgetItemLabel(items[i]),
+                    currency: items[i]['currency']?.toString() ?? 'USD',
                     limit: numberValue(items[i]['limit']),
-                    spent: spending?.categories[items[i]['category']] ?? 0,
+                    spent: spending?.itemCurrencies[items[i]['id']] ?? 0,
                     onTap: () => editCategory(i),
                   ),
                 ),
                 CircleTool(
                   theme: t,
                   icon: CupertinoIcons.xmark,
-                  label: 'Quitar categor\u00eda',
+                  label: 'Quitar partida',
                   onTap: () => setState(() => items.removeAt(i)),
                 ),
               ],
@@ -1220,9 +1276,7 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
           const SizedBox(height: 18),
           SecondaryActionButton(
             theme: t,
-            label: items.isEmpty
-                ? 'Seleccionar egresos'
-                : 'Agregar categor\u00eda',
+            label: items.isEmpty ? 'Seleccionar egresos' : 'Agregar partida',
             onPressed: () => editCategory(),
           ),
         ],
@@ -1252,12 +1306,15 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      item['category'].toString(),
+                      budgetItemLabel(item),
                       style: TextStyle(color: t.ink, fontSize: 14),
                     ),
                   ),
                   Text(
-                    app.secureMoney(numberValue(item['limit']), 'USD'),
+                    app.secureMoney(
+                      numberValue(item['limit']),
+                      item['currency']?.toString() ?? 'USD',
+                    ),
                     style: TextStyle(
                       color: t.ink,
                       fontSize: 14,
@@ -1461,11 +1518,11 @@ class BudgetCategoryEditorPage extends StatefulWidget {
   const BudgetCategoryEditorPage({
     super.key,
     required this.app,
-    required this.excluded,
+    this.siblings = const [],
     this.item,
   });
   final _RialAppState app;
-  final Set<String> excluded;
+  final List<Map<String, dynamic>> siblings;
   final Map<String, dynamic>? item;
   @override
   State<BudgetCategoryEditorPage> createState() =>
@@ -1474,17 +1531,15 @@ class BudgetCategoryEditorPage extends StatefulWidget {
 
 class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
   final amount = MoneyEditingController();
+  final name = TextEditingController();
   late String category;
+  late String currency;
   @override
   void initState() {
     super.initState();
     category = widget.item?['category']?.toString() ?? 'Otro';
-    if (widget.excluded.contains(category))
-      category =
-          budgetCategories
-              .where((c) => !widget.excluded.contains(c))
-              .firstOrNull ??
-          '';
+    currency = widget.item?['currency']?.toString() ?? 'USD';
+    name.text = widget.item?['name']?.toString() ?? '';
     if (widget.item != null)
       amount.text = plain(numberValue(widget.item!['limit']));
   }
@@ -1492,13 +1547,14 @@ class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
   @override
   void dispose() {
     amount.dispose();
+    name.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => BudgetFormScaffold(
     app: widget.app,
-    title: 'Categor\u00eda del plan',
+    title: 'Partida del plan',
     children: [
       OptionField(
         theme: widget.app.theme,
@@ -1509,9 +1565,7 @@ class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
           context,
           title: 'Categor\u00eda',
           actions: [
-            for (final value in budgetCategories.where(
-              (c) => !widget.excluded.contains(c),
-            ))
+            for (final value in budgetCategories)
               ModernSheetAction(
                 icon: categoryIcon(value),
                 title: value,
@@ -1523,31 +1577,99 @@ class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
       ),
       RField(
         theme: widget.app.theme,
-        controller: amount,
-        placeholder: 'L\u00edmite del periodo en USD',
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        controller: name,
+        placeholder: 'Nombre de la partida',
       ),
+      OptionField(
+        theme: widget.app.theme,
+        label: 'Moneda',
+        value: displayCurrency(currency),
+        icon: CupertinoIcons.money_dollar_circle,
+        onTap: () => showModernActionSheet(
+          context,
+          title: 'Moneda',
+          actions: [
+            for (final code in const ['USD', 'VES', 'EUR', 'USDT'])
+              ModernSheetAction(
+                title: displayCurrency(code),
+                icon: CupertinoIcons.money_dollar_circle,
+                selected: code == currency,
+                onPressed: () => setState(() => currency = code),
+              ),
+          ],
+        ),
+      ),
+      RField(
+        theme: widget.app.theme,
+        controller: amount,
+        placeholder: 'L\u00edmite del periodo en $currency',
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        onChanged: (_) => setState(() {}),
+      ),
+      if (currency != 'USD' && parseAmount(amount.text) > 0)
+        Builder(
+          builder: (context) {
+            try {
+              return DebtDetailRow(
+                theme: widget.app.theme,
+                label: 'Equivalente BCV',
+                value: widget.app.secureMoney(
+                  budgetUsd(
+                    parseAmount(amount.text),
+                    currency,
+                    widget.app.rate,
+                    widget.app.eurRate,
+                  ),
+                  'USD',
+                ),
+                fitValue: true,
+              );
+            } on FormatException {
+              return Text(
+                'Tasa no disponible',
+                style: TextStyle(color: widget.app.theme.amber),
+              );
+            }
+          },
+        ),
     ],
     action: PrimaryActionButton(
       theme: widget.app.theme,
-      label: 'Guardar categor\u00eda',
+      label: 'Guardar partida',
       onPressed: () {
         final value = parseAmount(amount.text);
         if (category.isEmpty ||
-            widget.excluded.contains(category) ||
+            widget.siblings.any(
+              (item) =>
+                  item['category'] == category &&
+                  (item['name']?.toString().trim().toLowerCase() ?? '') ==
+                      name.text.trim().toLowerCase(),
+            ) ||
             !value.isFinite ||
             value <= 0 ||
             value > 999999999999) {
           showModernNotice(
             context,
             title: 'Revisa la categor\u00eda',
-            message:
-                'Selecciona una categoria disponible y un monto mayor a cero.',
+            message: 'Usa un nombre distinto dentro de la categoria y un monto mayor a cero.',
+          );
+          return;
+        }
+        try {
+          budgetUsd(value, currency, widget.app.rate, widget.app.eurRate);
+        } on FormatException catch (error) {
+          showModernNotice(
+            context,
+            title: 'Tasa no disponible',
+            message: error.message,
           );
           return;
         }
         Navigator.pop(context, <String, dynamic>{
+          'id': widget.item?['id'] ?? widget.app.id(),
+          'name': name.text.trim(),
           'category': category,
+          'currency': currency,
           'limit': moneyRound(value),
         });
       },

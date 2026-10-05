@@ -48,11 +48,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.1.2',
+  defaultValue: '3.1.3',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 78,
+  defaultValue: 79,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -407,7 +407,11 @@ class NativeStateStore {
     }
     // Large histories must not block the loading animation's UI isolate.
     final state = raw.length >= 256 * 1024
-        ? await compute(decodeStoredState, raw, debugLabel: 'load-finance-state')
+        ? await compute(
+            decodeStoredState,
+            raw,
+            debugLabel: 'load-finance-state',
+          )
         : decodeStoredState(raw);
     _rememberMainStateOnly(state);
     persistenceError.value = null;
@@ -1162,9 +1166,9 @@ bool isWalletProvider(String provider) {
 
 class RialApp extends StatefulWidget {
   const RialApp({super.key, required this.initialState, this.quickAction})
-      : _normalized = false;
+    : _normalized = false;
   const RialApp._loaded({required this.initialState, this.quickAction})
-      : _normalized = true;
+    : _normalized = true;
 
   final Map<String, dynamic> initialState;
   final String? quickAction;
@@ -2154,7 +2158,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         ? numberValue(movement['rate'])
         : rate;
     final savedQuote = numberValue(movement['debtExchangeRate']);
-    final converted = savedQuote > 0
+    final converted = movementCurrency == debtCurrency
+        ? moneyRound(numberValue(movement['amount']))
+        : savedQuote > 0
         ? moneyConvert(numberValue(movement['amount']), 1, savedQuote)
         : moneyRound(
             convert(
@@ -2186,6 +2192,21 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     debt['paidAt'] = paid + .0001 >= total
         ? formatDateTime(DateTime.now())
         : '';
+  }
+
+  void confirmDebtPaid(BuildContext context, String id) {
+    final debt = debtById(id);
+    if (debt == null) return;
+    showModernConfirm(
+      context,
+      title: 'Liquidar toda la deuda',
+      message:
+          'Se marcar\u00e1 como pagado todo el saldo pendiente: '
+          '${secureMoney(debtRemainingAmount(debt), debt['currency']?.toString() ?? 'USD')}. '
+          'No se descontar\u00e1 dinero de una cuenta.',
+      destructiveText: 'Marcar todo pagado',
+      onConfirm: () => markDebtPaid(id),
+    );
   }
 
   void markDebtPaid(String id) {
@@ -2298,6 +2319,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     }
     if (editingId != null && previous == null)
       throw const FormatException('El movimiento ya no existe');
+    validateMovementBudgetLink(this, movement, previous);
     if (accountById(movement['accountId']?.toString() ?? '') == null)
       throw const FormatException('La cuenta ya no existe');
     if (movement['type'] == 'transfer' &&
@@ -8793,6 +8815,7 @@ class MovementDetailPage extends StatelessWidget {
     final feeMode = movement['feeMode']?.toString() ?? '';
     final scope = movement['bankTransferScope']?.toString() ?? '';
     final category = movement['category']?.toString().trim() ?? '';
+    final budgetName = movement['budgetItemName']?.toString().trim() ?? '';
     final color = income
         ? t.green
         : transfer
@@ -8856,6 +8879,7 @@ class MovementDetailPage extends StatelessWidget {
                   : 'No disponible para esta fecha',
             ),
           ),
+        if (budgetName.isNotEmpty) row('Partida del presupuesto', budgetName),
         const SizedBox(height: 20),
         Row(
           children: [
@@ -9607,15 +9631,33 @@ class AccountRow extends StatelessWidget {
                 ],
               ),
             ),
-            Text(
-              app.secureMoney(
-                numberValue(account['balance']),
-                account['currency']?.toString() ?? 'USD',
-              ),
-              style: TextStyle(
-                color: t.ink,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    app.secureMoney(
+                      numberValue(account['balance']),
+                      account['currency']?.toString() ?? 'USD',
+                    ),
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: t.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (account['currency'] == 'VES') ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      app.rate > 0
+                          ? '${app.secureMoney(moneyConvert(numberValue(account['balance']), 1, app.rate), 'USD')} BCV'
+                          : 'BCV no disponible',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(color: t.muted, fontSize: 12),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -9711,6 +9753,16 @@ class AccountDetailPage extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
+                        if (currency == 'VES') ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            app.rate > 0
+                                ? '${app.secureMoney(moneyConvert(numberValue(current['balance']), 1, app.rate), 'USD')} BCV'
+                                : 'BCV no disponible',
+                            key: const ValueKey('account-detail-bcv'),
+                            style: TextStyle(color: t.muted, fontSize: 13),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -9768,7 +9820,8 @@ class AccountDetailPage extends StatelessWidget {
               EmptyCard(theme: t, text: 'Aún no hay movimientos en esta cuenta')
             else
               ...movements.map(
-                (movement) => MovementTile(app: app, movement: movement),
+                (movement) =>
+                    MovementTile(app: app, movement: movement, showBcv: true),
               ),
           ],
         ),
@@ -11089,7 +11142,8 @@ class DebtDetailPage extends StatelessWidget {
                     : 'Registrar pago',
                 onPressed: () => app.openDebtMovement(context, debt),
               ),
-            if (!completed && !hasInstallments)
+            if (!completed) const SizedBox(height: 12),
+            if (!completed)
               SecondaryActionButton(
                 key: const ValueKey('debt-partial-payment'),
                 theme: t,
@@ -11097,6 +11151,7 @@ class DebtDetailPage extends StatelessWidget {
                 onPressed: () =>
                     app.openDebtMovement(context, debt, partial: true),
               ),
+            if (!completed) const SizedBox(height: 12),
             SecondaryActionButton(
               theme: t,
               label: 'Editar registro',
@@ -11107,7 +11162,7 @@ class DebtDetailPage extends StatelessWidget {
               SecondaryActionButton(
                 theme: t,
                 label: 'Marcar como pagado',
-                onPressed: () => app.markDebtPaid(debtId),
+                onPressed: () => app.confirmDebtPaid(context, debtId),
               ),
             const SizedBox(height: 12),
             GestureDetector(
@@ -11930,10 +11985,17 @@ class DebtTile extends StatelessWidget {
           onPressed: () => app.openDebtMovement(context, debt),
         ),
         ModernSheetAction(
+          icon: CupertinoIcons.minus_circle,
+          title: 'Registrar abono',
+          subtitle: 'Pagar solo una parte',
+          onPressed: () => app.openDebtMovement(context, debt, partial: true),
+        ),
+        ModernSheetAction(
           icon: CupertinoIcons.check_mark_circled_solid,
           title: 'Marcar como pagado',
           subtitle: 'No cambia el saldo de una cuenta',
-          onPressed: () => app.markDebtPaid(debt['id']?.toString() ?? ''),
+          onPressed: () =>
+              app.confirmDebtPaid(context, debt['id']?.toString() ?? ''),
         ),
         ModernSheetAction(
           icon: CupertinoIcons.trash_fill,
@@ -12809,6 +12871,8 @@ class _MovementEditorState extends State<MovementEditor> {
   final debtExchangeRate = TextEditingController();
   String paymentMethod = 'payment_mobile_p2p';
   String debtId = '';
+  String budgetItemId = '';
+  bool amountEdited = false;
   String feeMode = 'auto';
   String bankTransferScope = 'other_bank';
   bool categoryTouched = false;
@@ -12840,7 +12904,9 @@ class _MovementEditorState extends State<MovementEditor> {
     categoryTouched = m != null || widget.defaultCategory != null;
     date = m?['date']?.toString() ?? formatDateTime(DateTime.now());
     debtId = m?['debtId']?.toString() ?? widget.defaultDebtId ?? '';
+    budgetItemId = m?['budgetItemId']?.toString() ?? '';
     if (m != null) {
+      amountEdited = true;
       final debt = widget.app.debtById(debtId);
       if (debt != null) {
         final stored = numberValue(m['debtExchangeRate']);
@@ -12859,7 +12925,9 @@ class _MovementEditorState extends State<MovementEditor> {
           historical = 1 / oldRate;
         }
         debtExchangeRate.text =
-            (stored > 0
+            (m['currency'] == debt['currency']
+                    ? 1.0
+                    : stored > 0
                     ? stored
                     : historical > 0
                     ? historical
@@ -12931,6 +12999,59 @@ class _MovementEditorState extends State<MovementEditor> {
       // Legacy USD movements must retain their original fee when edited.
       feeMode = numberValue(existing['feeAmount']) > 0 ? 'manual' : 'none';
     }
+  }
+
+  Map<String, dynamic> budgetLinkFields() {
+    if (type != 'expense' || budgetItemId.isEmpty) return {};
+    final item = movementBudgetItems(
+      widget.app,
+      category,
+      date,
+    ).where((item) => item['id'] == budgetItemId).firstOrNull;
+    if (item != null)
+      return {
+        'budgetItemId': budgetItemId,
+        'budgetPlanId': item['planId'],
+        'budgetItemName': budgetItemName(item),
+      };
+    final previous = widget.movement;
+    if (previous?['budgetItemId'] == budgetItemId &&
+        previous?['category'] == category &&
+        previous?['date'] == date) {
+      return {
+        for (final key in ['budgetItemId', 'budgetPlanId', 'budgetItemName'])
+          key: previous?[key],
+      };
+    }
+    return {};
+  }
+
+  void pickBudgetItem() {
+    final items = movementBudgetItems(widget.app, category, date);
+    showModernActionSheet(
+      context,
+      title: 'Partida del presupuesto',
+      actions: [
+        ModernSheetAction(
+          title: 'Sin partida',
+          icon: CupertinoIcons.circle,
+          selected: budgetItemId.isEmpty,
+          onPressed: () => setState(() => budgetItemId = ''),
+        ),
+        for (final item in items)
+          ModernSheetAction(
+            title: budgetItemName(item),
+            subtitle: widget.app.secureMoney(
+              numberValue(item['limit']),
+              item['currency']?.toString() ?? 'USD',
+            ),
+            icon: categoryIcon(category),
+            selected: item['id'] == budgetItemId,
+            onPressed: () =>
+                setState(() => budgetItemId = item['id'].toString()),
+          ),
+      ],
+    );
   }
 
   double dollarFeeForSave() => dollarOperationFee(
@@ -13034,6 +13155,31 @@ class _MovementEditorState extends State<MovementEditor> {
     final source = quotes[from] ?? 0;
     final target = quotes[to] ?? 0;
     return source > 0 && target > 0 ? source / target : 0;
+  }
+
+  double previousDebtPayment(Map<String, dynamic> debt) {
+    final previous = widget.movement;
+    if (previous == null || previous['debtId'] != debt['id']) return 0;
+    if (previous.containsKey('debtAppliedAmount')) {
+      return numberValue(previous['debtAppliedAmount']);
+    }
+    final sourceCurrency = previous['currency']?.toString() ?? 'USD';
+    final debtCurrency = debt['currency']?.toString() ?? 'USD';
+    final savedQuote = numberValue(previous['debtExchangeRate']);
+    final amount = numberValue(previous['amount']);
+    final applied = sourceCurrency == debtCurrency
+        ? amount
+        : savedQuote > 0
+        ? moneyConvert(amount, 1, savedQuote)
+        : convert(
+            amount,
+            sourceCurrency,
+            debtCurrency,
+            numberValue(previous['rate']) > 0
+                ? numberValue(previous['rate'])
+                : widget.app.rate,
+          );
+    return math.min(numberValue(debt['paidAmount']), moneyRound(applied));
   }
 
   double defaultDebtPayment(Map<String, dynamic> debt) {
@@ -13216,6 +13362,7 @@ class _MovementEditorState extends State<MovementEditor> {
                   }
                   setState(() {
                     type = v;
+                    budgetItemId = '';
                     if (type == 'income') {
                       fee.clear();
                       feeMode = 'auto';
@@ -13263,7 +13410,15 @@ class _MovementEditorState extends State<MovementEditor> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (_) => setState(() => amountEdited = true),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Text(
+                      'Monto en ${displayCurrency(sourceCurrency)} ($sourceCurrency)',
+                      key: const ValueKey('movement-amount-currency'),
+                      style: TextStyle(color: t.muted, fontSize: 12),
+                    ),
                   ),
                   RField(
                     theme: t,
@@ -13303,9 +13458,22 @@ class _MovementEditorState extends State<MovementEditor> {
                         category,
                         (v) => setState(() {
                           category = v;
+                          budgetItemId = '';
                           categoryTouched = true;
                         }),
                       ),
+                    ),
+                  if (type == 'expense' &&
+                      (movementBudgetItems(app, category, date).isNotEmpty ||
+                          budgetItemId.isNotEmpty))
+                    OptionField(
+                      theme: t,
+                      label: 'Partida del presupuesto',
+                      value:
+                          budgetLinkFields()['budgetItemName']?.toString() ??
+                          'Sin partida',
+                      icon: CupertinoIcons.tag,
+                      onTap: pickBudgetItem,
                     ),
                   widget.lockAccount
                       ? LockedAccountField(
@@ -13326,16 +13494,6 @@ class _MovementEditorState extends State<MovementEditor> {
                             context,
                             selected: accountId,
                             onSelect: (id) => setState(() {
-                              final oldQuote = parseAmount(
-                                debtExchangeRate.text,
-                              );
-                              final partialAmount = oldQuote > 0
-                                  ? moneyConvert(
-                                      parseAmount(amount.text),
-                                      1,
-                                      oldQuote,
-                                    )
-                                  : 0.0;
                               accountId = id;
                               resetDollarFee();
                               if (targetId == accountId) {
@@ -13344,22 +13502,8 @@ class _MovementEditorState extends State<MovementEditor> {
                               if (debtId.isNotEmpty) {
                                 applyDebtDefaults(
                                   debtId,
-                                  overwriteAmount: true,
+                                  overwriteAmount: !amountEdited,
                                 );
-                                if (widget.partialDebtPayment) {
-                                  final nextQuote = parseAmount(
-                                    debtExchangeRate.text,
-                                  );
-                                  amount.text =
-                                      partialAmount > 0 && nextQuote > 0
-                                      ? plain(
-                                          moneyConvert(
-                                            partialAmount,
-                                            nextQuote,
-                                          ),
-                                        )
-                                      : '';
-                                }
                               }
                             }),
                           ),
@@ -13402,7 +13546,7 @@ class _MovementEditorState extends State<MovementEditor> {
                       onChanged: (_) => setState(() {
                         final quote = parseAmount(debtExchangeRate.text);
                         final due = defaultDebtPayment(selectedDebt);
-                        if (quote > 0 && due > 0)
+                        if (!amountEdited && quote > 0 && due > 0)
                           amount.text = plain(moneyConvert(due, quote));
                       }),
                     ),
@@ -13668,6 +13812,23 @@ class _MovementEditorState extends State<MovementEditor> {
                               sourceCurrency,
                             ),
                           ),
+                          if (sourceCurrency == 'VES')
+                            DebtDetailRow(
+                              key: const ValueKey('movement-preview-bcv'),
+                              theme: t,
+                              label: 'Equivalente BCV',
+                              value: numberValue(bcvQuote?['USD']) > 0
+                                  ? app.secureMoney(
+                                      moneyConvert(
+                                        previewAmount,
+                                        1,
+                                        numberValue(bcvQuote?['USD']),
+                                      ),
+                                      'USD',
+                                    )
+                                  : 'Tasa no disponible',
+                              fitValue: true,
+                            ),
                           if (type != 'income' &&
                               (type != 'expense' ||
                                   !isBankCommissionCategory(category)))
@@ -13701,7 +13862,7 @@ class _MovementEditorState extends State<MovementEditor> {
                             ),
                           if (selectedDebt != null &&
                               type != 'transfer' &&
-                              parseAmount(debtExchangeRate.text) > 0)
+                              parseAmount(debtExchangeRate.text) > 0) ...[
                             DebtDetailRow(
                               theme: t,
                               label: 'Abono a ${displayCurrency(debtCurrency)}',
@@ -13714,6 +13875,29 @@ class _MovementEditorState extends State<MovementEditor> {
                                 debtCurrency,
                               ),
                             ),
+                            DebtDetailRow(
+                              theme: t,
+                              label: 'Saldo tras el abono',
+                              fitValue: true,
+                              value: app.secureMoney(
+                                math.max(
+                                  0,
+                                  moneySubtract(
+                                    moneyAdd(
+                                      debtRemainingAmount(selectedDebt),
+                                      previousDebtPayment(selectedDebt),
+                                    ),
+                                    moneyConvert(
+                                      previewAmount,
+                                      1,
+                                      parseAmount(debtExchangeRate.text),
+                                    ),
+                                  ),
+                                ),
+                                debtCurrency,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -13746,7 +13930,10 @@ class _MovementEditorState extends State<MovementEditor> {
     if (type != 'expense' || categoryTouched) return;
     final inferred = categoryFromDescription(value) ?? 'Otro';
     if (inferred != category) {
-      setState(() => category = inferred);
+      setState(() {
+        category = inferred;
+        budgetItemId = '';
+      });
     }
   }
 
@@ -13771,6 +13958,12 @@ class _MovementEditorState extends State<MovementEditor> {
           ? moneyConvert(parseAmount(amount.text), 1, previousQuote)
           : 0.0;
       date = formatDateTime(value);
+      if (movementBudgetItems(
+        widget.app,
+        category,
+        date,
+      ).every((item) => item['id'] != budgetItemId))
+        budgetItemId = '';
       if (debt != null && debt['currency'] != 'USDT') {
         final quote = debtQuote(debt);
         debtExchangeRate.text = quote > 0 ? quote.toString() : '';
@@ -13849,7 +14042,7 @@ class _MovementEditorState extends State<MovementEditor> {
             selected: id == debtId,
             onPressed: () => setState(() {
               debtId = id;
-              applyDebtDefaults(id, overwriteAmount: true);
+              applyDebtDefaults(id, overwriteAmount: !amountEdited);
             }),
           );
         }),
@@ -13958,13 +14151,15 @@ class _MovementEditorState extends State<MovementEditor> {
       return;
     }
     var targetCurrency = source['currency']?.toString() ?? 'USD';
-    if (widget.partialDebtPayment && debt != null && type != 'transfer') {
+    if (debt != null && type != 'transfer') {
       final applied = moneyConvert(
         parseAmount(amount.text),
         1,
         parseAmount(debtExchangeRate.text),
       );
-      if (moneyCents(applied) > moneyCents(debtRemainingAmount(debt))) {
+      final previousApplied = previousDebtPayment(debt);
+      if (moneyCents(applied) >
+          moneyCents(moneyAdd(debtRemainingAmount(debt), previousApplied))) {
         showModernNotice(
           context,
           title: 'Abono mayor al saldo pendiente',
@@ -14028,6 +14223,7 @@ class _MovementEditorState extends State<MovementEditor> {
         );
       }
       await widget.onSave({
+        ...budgetLinkFields(),
         'id': widget.movement?['id'] ?? _quickMovementId,
         'type': type,
         if (type == 'transfer') 'feeTreatment': effectiveTransferTreatment,
@@ -14308,7 +14504,8 @@ Widget softEntrance(
       // A page route already animates its content as a single layer.
       if (MediaQuery.disableAnimationsOf(context) ||
           ModalRoute.of(context) is FluidPageRoute ||
-          context.findAncestorWidgetOfExactType<RialMotionTransition>() != null) {
+          context.findAncestorWidgetOfExactType<RialMotionTransition>() !=
+              null) {
         return child;
       }
       return TweenAnimationBuilder<double>(

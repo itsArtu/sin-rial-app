@@ -96,11 +96,115 @@ double budgetItemUsd(_RialAppState app, Map<String, dynamic> item) => budgetUsd(
   app.eurRate,
 );
 
+String budgetItemName(Map<String, dynamic> item) {
+  final name = item['name']?.toString().trim() ?? '';
+  return name.isEmpty ? item['category']?.toString() ?? 'Otro' : name;
+}
+
+String budgetItemLabel(Map<String, dynamic> item) =>
+    budgetItemName(item) == item['category']
+    ? budgetItemName(item)
+    : '${item['category']} / ${budgetItemName(item)}';
+
+bool budgetItemMatchesDate(Map<String, dynamic> item, DateTime date) {
+  final period = item['period']?.toString() ?? '';
+  final type = item['periodType']?.toString() ?? 'monthly';
+  if (!validBudgetPeriod(period, type)) return false;
+  final range = budgetPeriodDateRange(period, type);
+  return !date.isBefore(range.first) &&
+      date.isBefore(range.last.add(const Duration(days: 1)));
+}
+
+List<Map<String, dynamic>> movementBudgetItems(
+  _RialAppState app,
+  String category,
+  String date,
+) => app
+    .maps('budgets')
+    .where(
+      (item) =>
+          item['category'] == category &&
+          budgetItemMatchesDate(item, parseMovementDate(date)),
+    )
+    .toList();
+
+void validateMovementBudgetLink(
+  _RialAppState app,
+  Map<String, dynamic> movement,
+  Map<String, dynamic>? previous,
+) {
+  final id = movement['budgetItemId']?.toString() ?? '';
+  if (id.isEmpty) {
+    movement.remove('budgetPlanId');
+    movement.remove('budgetItemName');
+    return;
+  }
+  final item =
+      movementBudgetItems(
+            app,
+            movement['category']?.toString() ?? '',
+            movement['date']?.toString() ?? '',
+          )
+          .where(
+            (item) =>
+                item['id'] == id && item['planId'] == movement['budgetPlanId'],
+          )
+          .firstOrNull;
+  if (!isExpenseType(movement['type']?.toString()) || item == null) {
+    final unchanged =
+        isExpenseType(movement['type']?.toString()) &&
+        previous?['budgetItemId'] == id &&
+        previous?['budgetPlanId'] == movement['budgetPlanId'] &&
+        previous?['date'] == movement['date'] &&
+        previous?['category'] == movement['category'];
+    if (!unchanged)
+      throw const FormatException(
+        'La partida no pertenece a esta categoria o fecha.',
+      );
+    movement['budgetItemName'] = previous?['budgetItemName'] ?? '';
+    return;
+  }
+  movement['budgetItemName'] = budgetItemName(item);
+}
+
+double movementBudgetCurrency(
+  Map<String, dynamic> movement,
+  double amount,
+  String currency,
+  double usdRate,
+  double eurRate,
+) {
+  if (movement['currency'] == currency) return moneyRound(amount);
+  if (currency == 'USD' || currency == 'USDT') {
+    return movementBudgetUsd(movement, amount, usdRate, eurRate);
+  }
+  final quote = recordedBcvQuote(movement);
+  final rates = {
+    'VES': 1.0,
+    'USD': quote == null ? usdRate : numberValue(quote['USD']),
+    'EUR': quote == null ? eurRate : numberValue(quote['EUR']),
+  };
+  final source = movement['currency']?.toString() ?? 'USD';
+  final from = rates[source == 'USDT' ? 'USD' : source] ?? 0;
+  final to = rates[currency] ?? 0;
+  if (from <= 0 || to <= 0)
+    throw const FormatException('Falta la tasa del movimiento.');
+  return moneyConvert(amount, from, to);
+}
+
 class BudgetSpending {
-  const BudgetSpending(this.categories, this.total, this.missingRates);
+  const BudgetSpending(
+    this.categories,
+    this.total,
+    this.missingRates, {
+    this.items = const {},
+    this.itemCurrencies = const {},
+    this.unassigned = const {},
+  });
   final Map<String, double> categories;
   final double total;
   final int missingRates;
+  final Map<String, double> items, itemCurrencies, unassigned;
   List<MapEntry<String, double>> get ranked =>
       categories.entries.toList()..sort((a, b) {
         final amount = b.value.compareTo(a.value);
@@ -115,10 +219,21 @@ BudgetSpending summarizeBudgetSpending(
   required double usdRate,
   required double eurRate,
   Set<String>? selectedCategories,
+  List<Map<String, dynamic>> items = const [],
 }) {
   final range = budgetPeriodDateRange(period, type);
   final end = range.last.add(const Duration(days: 1));
   final cents = <String, int>{};
+  final byId = {for (final item in items) item['id']?.toString() ?? '': item};
+  final legacy = <String, List<Map<String, dynamic>>>{};
+  for (final item in items) {
+    if ((item['name']?.toString().trim() ?? '').isEmpty) {
+      legacy.putIfAbsent(item['category'].toString(), () => []).add(item);
+    }
+  }
+  final itemCents = <String, int>{},
+      nativeCents = <String, int>{},
+      unassigned = <String, int>{};
   var missing = 0;
   // Parse each date and convert each expense once, irrespective of category count.
   for (final movement in movements) {
@@ -140,7 +255,36 @@ BudgetSpending summarizeBudgetSpending(
           : moneyCents(
               movementBudgetUsd(movement, sourceCents / 100, usdRate, eurRate),
             );
+      final linkedId = movement['budgetItemId']?.toString() ?? '';
+      final candidates = legacy[key] ?? const <Map<String, dynamic>>[];
+      final item = linkedId.isNotEmpty
+          ? byId[linkedId]
+          : candidates.length == 1
+          ? candidates.single
+          : null;
+      final matched =
+          item != null &&
+          item['category'] == key &&
+          (linkedId.isEmpty || movement['budgetPlanId'] == item['planId']);
+      final native = matched
+          ? moneyCents(
+              movementBudgetCurrency(
+                movement,
+                sourceCents / 100,
+                item['currency']?.toString() ?? 'USD',
+                usdRate,
+                eurRate,
+              ),
+            )
+          : 0;
       cents[key] = (cents[key] ?? 0) + valueCents;
+      if (matched) {
+        final id = item['id'].toString();
+        itemCents[id] = (itemCents[id] ?? 0) + valueCents;
+        nativeCents[id] = (nativeCents[id] ?? 0) + native;
+      } else {
+        unassigned[key] = (unassigned[key] ?? 0) + valueCents;
+      }
     } on FormatException {
       missing++;
     }
@@ -149,6 +293,15 @@ BudgetSpending summarizeBudgetSpending(
     {for (final entry in cents.entries) entry.key: entry.value / 100},
     cents.values.fold<int>(0, (a, b) => a + b) / 100,
     missing,
+    items: {
+      for (final entry in itemCents.entries) entry.key: entry.value / 100,
+    },
+    itemCurrencies: {
+      for (final entry in nativeCents.entries) entry.key: entry.value / 100,
+    },
+    unassigned: {
+      for (final entry in unassigned.entries) entry.key: entry.value / 100,
+    },
   );
 }
 
@@ -161,10 +314,13 @@ class BudgetSpendingCache {
     String period,
     String type, {
     Set<String>? selectedCategories,
+    List<Map<String, dynamic>> items = const [],
   }) {
-    final selection = selectedCategories == null
-        ? '*'
-        : jsonEncode(selectedCategories.toList()..sort());
+    final selection =
+        (selectedCategories == null
+            ? '*'
+            : jsonEncode(selectedCategories.toList()..sort())) +
+        jsonEncode(items);
     if (_value == null ||
         _revision != app.revision.value ||
         _period != period ||
@@ -177,6 +333,7 @@ class BudgetSpendingCache {
         usdRate: app.rate,
         eurRate: app.eurRate,
         selectedCategories: selectedCategories,
+        items: items,
       );
       _revision = app.revision.value;
       _period = period;
@@ -344,34 +501,43 @@ void saveBudgetPlan(
   if (incomeMode == 'fixed' && sources.isEmpty) {
     sources.add({'name': 'Salario', 'amount': moneyRound(salary)});
   }
-  final seen = <String>{};
+  final oldItems = budgetPlanItems(app, id);
+  final oldIds = oldItems.map((item) => item['id'].toString()).toSet();
+  final seen = <String>{}, seenIds = <String>{};
   final savedItems = <Map<String, dynamic>>[];
   for (final item in items) {
     final category = item['category']?.toString().trim() ?? '';
+    final name = item['name']?.toString().trim() ?? '';
+    final currency = item['currency']?.toString() ?? 'USD';
     final limit = numberValue(item['limit']);
     if (category.isEmpty ||
-        !seen.add(category) ||
+        !seen.add(jsonEncode([category, name.toLowerCase()])) ||
+        !const ['USD', 'VES', 'EUR', 'USDT'].contains(currency) ||
         !limit.isFinite ||
         limit <= 0 ||
         limit > 999999999999) {
       throw const FormatException(
-        'Cada categoria debe tener un monto mayor a cero y no repetirse.',
+        'Cada partida necesita un nombre distinto dentro de su categoria y un monto mayor a cero.',
       );
     }
     if (moneyCents(limit) <= 0)
       throw const FormatException('El limite debe ser al menos 0,01.');
+    budgetItemUsd(app, item);
+    final existingId = item['id']?.toString() ?? '';
+    final itemId = oldIds.contains(existingId) ? existingId : app.id();
+    if (!seenIds.add(itemId)) throw const FormatException('Partida repetida.');
     savedItems.add({
-      'id': app.id(),
+      'id': itemId,
       'planId': id,
       'period': period,
       'periodType': type,
       'month': period.substring(0, 7),
       'category': category,
+      'name': name,
       'limit': moneyRound(limit),
-      'currency': 'USD',
+      'currency': currency,
     });
   }
-  final oldItems = budgetPlanItems(app, id);
   app.undoableMutation(
     'Plan guardado',
     {

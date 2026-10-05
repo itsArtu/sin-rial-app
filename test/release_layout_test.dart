@@ -54,7 +54,7 @@ void main() {
           expect(tester.widget<Text>(text).textAlign, TextAlign.center);
           expect(tester.getCenter(text).dx, closeTo(width / 2, .5));
         }
-        expect(tester.widget<Text>(version).data, 'Versi\u00f3n 3.1.2');
+        expect(tester.widget<Text>(version).data, 'Versi\u00f3n 3.1.3');
         if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
           await expectLater(
             find.byType(RialApp),
@@ -72,8 +72,8 @@ void main() {
           tester.element(find.byType(SettingsPage)),
           (_) => AppUpdatePage(
             update: UpdateInfo(
-              version: '3.1.2',
-              build: 78,
+              version: '3.1.3',
+              build: 79,
               apkUrl: 'app.apk',
               sha256: 'a' * 64,
               size: 1000,

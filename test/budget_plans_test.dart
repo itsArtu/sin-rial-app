@@ -136,13 +136,15 @@ void main() {
         });
     await NativeStateStore.save(state);
     expect(
-      (jsonDecode(writes.last['state'] as String) as Map)
-          .containsKey('budgetPlans'),
+      (jsonDecode(writes.last['state'] as String) as Map).containsKey(
+        'budgetPlans',
+      ),
       isFalse,
     );
     expect(
-      (jsonDecode(writes.last['parts']['budgetPlans'] as String) as List)
-          .single['salary'],
+      (jsonDecode(
+        writes.last['parts']['budgetPlans'] as String,
+      ) as List).single['salary'],
       100,
     );
     expect(
@@ -354,7 +356,7 @@ void main() {
       await tester.tap(find.text('Seleccionar egresos'));
       await tester.pumpAndSettle();
       await tester.enterText(field('L\u00edmite del periodo en USD'), '150');
-      await tester.tap(find.text('Guardar categor\u00eda'));
+      await tester.tap(find.text('Guardar partida'));
       await tester.pumpAndSettle();
       expect(app.maps('budgetPlans'), isEmpty);
       await tester.tap(find.text('Continuar'));

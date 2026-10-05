@@ -1,9 +1,9 @@
 {
-  "version": "3.1.2",
-  "build": 78,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.1.2%2B78/sin-rial-3.1.2-build78.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.1.2%2B78",
-  "sha256": "5E465FE45D7DD0372235D4B1DED3766051F33977364BB49C936BFDD59E8E2A3D",
-  "size": 66017531,
-  "notes": "Sin Rial 3.1.2: recordatorios de deudas pagadas corregidos; comisiones aparte en transferencias entre bancos en bolivares; botones de movimiento mas separados; balances compactos y pantallas que reflejan los cambios al guardar. Transiciones mas suaves y menos trabajo duplicado al iniciar. Aviso del actualizador y version en Ajustes centrados. Actualiza sobre tu version actual, incluidas las pruebas 76 y 77, sin desinstalar ni borrar datos."
+  "version": "3.1.3",
+  "build": 79,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.1.3%2B79/sin-rial-3.1.3-build79.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.1.3%2B79",
+  "sha256": "ACA070AB07FB1EF75974BD7ABC1933283EC5966BDCEAE2BD31D890FB48E69E05",
+  "size": 66132219,
+  "notes": "Sin Rial 3.1.3: abonos de deudas corregidos al cambiar de cuenta, con moneda y saldo restante visibles; botones mas separados y confirmacion al marcar una deuda pagada. Partidas con nombre y limites en distintas monedas dentro del presupuesto, seleccion al registrar gastos y desglose en el PDF. Equivalentes BCV en cuentas en bolivares y sus movimientos. Actualiza sin desinstalar ni borrar datos. Los abonos anteriores no se modifican automaticamente; revisa las deudas marcadas como pagadas por error."
 }
