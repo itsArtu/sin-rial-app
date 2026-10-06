@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rial_flutter/main.dart';
@@ -11,6 +12,38 @@ void main() {
           const MethodChannel('rial/native_state'),
           (call) async => call.method == 'scheduleRateUpdate' ? true : null,
         );
+  });
+
+  testWidgets('Covered routes defer work and refresh before returning', (
+    tester,
+  ) async {
+    final dynamic app = await fixtures.fixture(tester);
+    var builds = 0;
+    app.pushPage(tester.element(find.byType(HomePage)), (_) {
+      builds++;
+      return CupertinoPageScaffold(
+        child: Text('Balance ${app.accountById('a')['balance']}'),
+      );
+    });
+    await tester.pumpAndSettle();
+    app.pushPage(
+      tester.element(find.text('Balance 100.0')),
+      (_) => const CupertinoPageScaffold(child: Text('Cubierta')),
+    );
+    await tester.pumpAndSettle();
+    final coveredBuilds = builds;
+    app.saveMovement(fixtures.movement('income')..['feeAmount'] = 0.0);
+    await tester.pumpAndSettle();
+    expect(builds, coveredBuilds);
+    app.rootNavigatorKey.currentState.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('Balance 120.0'), findsOneWidget);
+    app.undoLastOperation();
+    await tester.pumpAndSettle();
+    expect(find.text('Balance 100.0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
   });
 
   testWidgets(

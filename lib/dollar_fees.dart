@@ -53,6 +53,17 @@ double transferDestinationAmount({
 bool supportsDollarFees(Map<String, dynamic>? account) =>
     account != null && account['currency'] == 'USD' && !isCashAccount(account);
 
+bool isCestaticketFood(Map<String, dynamic>? account) =>
+    account?['provider'] == 'CESTATICKET' &&
+    account?['benefitType'] != 'integral';
+
+bool isCestaticketIntegral(Map<String, dynamic>? account) =>
+    account?['provider'] == 'CESTATICKET' &&
+    account?['benefitType'] == 'integral';
+
+bool supportsTransferFees(Map<String, dynamic>? account) =>
+    supportsDollarFees(account) || isCestaticketIntegral(account);
+
 String dollarFeePreferenceKey(String type, String method) =>
     type == 'expense' && method == 'debit_card'
     ? 'cardFeePercent'
@@ -74,15 +85,6 @@ double? dollarFeePercentForAccount(
     _ => null,
   };
 }
-
-String dollarCardLabel(Map<String, dynamic> account) =>
-    switch (account['provider']) {
-      'OKX' => 'OKX Visa',
-      'BINANCE' => 'Binance Card Mastercard',
-      'WALLY' => 'WallyTech Mastercard',
-      'ZINLI' => 'Zinli Visa',
-      _ => 'Tarjeta',
-    };
 
 double dollarOperationFee({
   required double amount,

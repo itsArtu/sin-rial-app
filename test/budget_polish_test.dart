@@ -204,7 +204,7 @@ void main() {
       expect(find.byType(UndoNotice), findsNothing);
       expect(app.maps('movements').length, 1);
       expect(app.maps('movements').single['id'], 'm');
-      expect(app.maps('accounts').first['balance'], 79.7);
+      expect(app.maps('accounts').first['balance'], 80.0);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
     },

@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -63,7 +64,8 @@ open class MainActivity : FlutterFragmentActivity() {
         screenPrivacy.onResume()
         storeLaunchAction(intent)
         registerScreenOffReceiver()
-        if (!quickAccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (!quickAccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1907)
         }
     }
@@ -133,18 +135,22 @@ open class MainActivity : FlutterFragmentActivity() {
                 }
                 return@setMethodCallHandler
             }
-            if (call.method in setOf("readState", "readRateState", "stateChanged", "writeState", "writeSplitState", "configureSecurity", "verifyPin", "scheduleDailyReminder", "scheduleRateUpdate")) {
+            if (call.method in setOf("readState", "readRateState", "stateChanged", "writeState", "writeSplitState", "configureSecurity", "disableSecurity", "verifyPin", "scheduleDailyReminder", "scheduleRateUpdate")) {
                 stateExecutor.execute {
                     try {
                         val response: Any = when (call.method) {
-                            "readState" -> NativeJsonStore.readUiState(this).let { (state, revision) ->
-                                loadedRevision = revision
-                                state
+                            "readState" -> {
+                                BankMaintenance.apply(this)
+                                NativeJsonStore.readUiState(this).let { (state, revision) ->
+                                    loadedRevision = revision
+                                    state
+                                }
                             }
-                            "stateChanged" -> loadedRevision != NativeJsonStore.uiRevision(this)
+                            "stateChanged" -> { BankMaintenance.apply(this); loadedRevision != NativeJsonStore.uiRevision(this) }
                             "readRateState" -> NativeJsonStore.readMain(this).toString()
                             "configureSecurity" -> PinSecurity.configure(this,
                                 requireNotNull(call.argument<String>("pin")), call.argument<Boolean>("biometrics") == true)
+                            "disableSecurity" -> PinSecurity.disable(this, call.argument<String>("pin") ?: "")
                             "verifyPin" -> PinSecurity.verify(this, call.argument<String>("pin") ?: "")
                             "scheduleDailyReminder" -> {
                                 val enabled = call.argument<Boolean>("enabled") ?: true

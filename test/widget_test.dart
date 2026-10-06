@@ -6,7 +6,7 @@ void main() {
   testWidgets('Sin rial V2 loads', (tester) async {
     await tester.pumpWidget(RialApp(initialState: defaultState()));
 
-    expect(find.text('Sin Rial'), findsWidgets);
+    expect(find.byType(SinRialLogo), findsOneWidget);
     expect(find.text('¿Cómo te llamas?'), findsOneWidget);
   });
 }

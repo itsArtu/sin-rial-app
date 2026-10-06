@@ -19,6 +19,7 @@ class WidgetAppearance(state: JSONObject) {
             "indigo", "navy", "sky" -> "2463D4" to "5B9AFF"
             "cyan" -> "237C9A" to "62C4E2"
             "graphite" -> "4D5663" to "8D99A8"
+            "lavender" -> "7560A8" to "B8A5E0"
             "lime" -> "708D2B" to "A7C957"
             "violet", "magenta" -> "853DC4" to "B676E8"
             "coral", "orange" -> "C35C3E" to "F28A68"

@@ -64,7 +64,7 @@ void main() {
     () {
       expect(
         canConfigureBankFee(wallet, type: 'expense', method: 'debit_card'),
-        true,
+        false,
       );
       expect(
         canConfigureBankFee(wallet, type: 'transfer', target: wallet),
@@ -115,7 +115,7 @@ void main() {
     },
   );
 
-  for (final type in ['expense', 'transfer']) {
+  for (final type in ['transfer']) {
     testWidgets('$type USD fee survives editing deletion and undo', (
       tester,
     ) async {
@@ -200,7 +200,7 @@ void main() {
       tester,
     ) async {
       final dynamic app = await fixture(tester);
-      app.saveMovement({
+      final legacy = <String, dynamic>{
         'id': 'legacy',
         'type': 'expense',
         'accountId': 'usd',
@@ -211,6 +211,10 @@ void main() {
         'paymentMethod': 'debit_card',
         'feeMode': 'auto',
         'feeAmount': legacyFee,
+      };
+      app.mutate(() {
+        app.rawList('movements').add(legacy);
+        app.accountById('usd')['balance'] = 900 - legacyFee;
       });
       app.openMovementEditor(
         tester.element(find.byType(HomePage)),
@@ -330,7 +334,9 @@ void main() {
     await close(tester);
   });
 
-  testWidgets('USD expense percentage UI validates and saves', (tester) async {
+  testWidgets('USD expense has payment options without commission controls', (
+    tester,
+  ) async {
     final dynamic app = await fixture(tester);
     app.openMovementEditor(
       tester.element(find.byType(HomePage)),
@@ -338,24 +344,13 @@ void main() {
       defaultAmount: 100.0,
     );
     await tester.pumpAndSettle();
-    await payment.choose(tester, 'Comisión', 'Manual');
-    final field = find.byKey(const ValueKey('commission-value'));
-    await tester.ensureVisible(field);
-    await tester.tap(field);
-    await tester.pumpAndSettle();
-    final percent = find.byKey(const ValueKey('commission-input'));
-    await tester.enterText(percent, '200');
-    await tester.tap(find.text('Aplicar'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(percent, findsOneWidget);
-    await tester.enterText(percent, '2.5');
-    await tester.tap(find.text('Aplicar'));
-    await tester.pumpAndSettle();
+    await payment.choose(tester, 'Forma de pago', 'Pago');
+    expect(payment.option('Comisión'), findsNothing);
     await tester.tap(find.text('Guardar movimiento'));
     await tester.pumpAndSettle();
-    expect(app.maps('movements').single['feeAmount'], 2.5);
-    expect(app.accountById('usd')['balance'], 897.5);
+    expect(app.maps('movements').single['feeAmount'], 0);
+    expect(app.maps('movements').single['paymentMethod'], 'wallet_payment');
+    expect(app.accountById('usd')['balance'], 900);
     await close(tester);
   });
 

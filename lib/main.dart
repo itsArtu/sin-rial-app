@@ -21,7 +21,9 @@ part 'finance_logic.dart';
 part 'balance_trend.dart';
 part 'movement_filters.dart';
 part 'category_rules.dart';
+part 'custom_categories.dart';
 part 'reminder_settings.dart';
+part 'recurring_movements.dart';
 part 'rate_policy.dart';
 part 'shared_savings.dart';
 part 'budget_logic.dart';
@@ -36,6 +38,8 @@ part 'app_update.dart';
 part 'dollar_fees.dart';
 part 'keyboard_dismiss.dart';
 part 'motion.dart';
+part 'onboarding.dart';
+part 'release_experience.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,11 +52,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.1.3',
+  defaultValue: '3.2',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 79,
+  defaultValue: 84,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -102,6 +106,10 @@ const List<List<String>> wallets = [
   ['OTHER', 'Otra billetera'],
 ];
 
+const List<List<String>> benefits = [
+  ['CESTATICKET', 'Cestaticket'],
+];
+
 const List<String> budgetCategories = [
   'Casa',
   'Comida',
@@ -117,7 +125,7 @@ const List<String> budgetCategories = [
   'Deuda',
   'Comisiones bancarias',
   'Pago TDC',
-  'La mamalona',
+  'Hobbys',
   'Ahorro',
   'Otro',
 ];
@@ -162,6 +170,7 @@ const List<ThemeColorOption> themeColorOptions = [
   ThemeColorOption('indigo', 'Azul', Color(0xFF2463D4), Color(0xFF5B9AFF)),
   ThemeColorOption('cyan', 'Cian', Color(0xFF237C9A), Color(0xFF62C4E2)),
   ThemeColorOption('graphite', 'Grafito', Color(0xFF4D5663), Color(0xFF8D99A8)),
+  ThemeColorOption('lavender', 'Lavanda', Color(0xFF7560A8), Color(0xFFB8A5E0)),
   ThemeColorOption('lime', 'Lima', Color(0xFF708D2B), Color(0xFFA7C957)),
   ThemeColorOption('violet', 'Morado', Color(0xFF853DC4), Color(0xFFB676E8)),
   ThemeColorOption('coral', 'Naranja', Color(0xFFC35C3E), Color(0xFFF28A68)),
@@ -192,7 +201,13 @@ TextScaler appTextScaler(MediaQueryData media) {
   return TextScaler.linear(effectiveFactor.toDouble());
 }
 
-IconData categoryIcon(String category) {
+IconData categoryIcon(String category, {BuildContext? context}) {
+  if (context != null) {
+    for (final item in RThemeScope.categoriesOf(context)) {
+      if (item['name'] == category)
+        return customCategoryIcons[item['icon']] ?? CupertinoIcons.tag;
+    }
+  }
   switch (normalizeText(category)) {
     case 'casa':
       return CupertinoIcons.house_fill;
@@ -226,8 +241,8 @@ IconData categoryIcon(String category) {
       return CupertinoIcons.percent;
     case 'pago tdc':
       return CupertinoIcons.creditcard_fill;
-    case 'la mamalona':
-      return material.Icons.two_wheeler;
+    case 'hobbys':
+      return material.Icons.sports_esports;
     case 'ahorro':
       return CupertinoIcons.money_dollar_circle_fill;
     default:
@@ -623,6 +638,9 @@ Map<String, dynamic> defaultState() {
     'userName': '',
     'userLastName': '',
     'userBirthDate': '',
+    'askExpenseReference': false,
+    'seenFeatureTour': '3.2',
+    'pendingAppTour': false,
     'darkMode': true,
     'themeColor': 'emerald',
     'hideAmounts': false,
@@ -659,6 +677,8 @@ Map<String, dynamic> defaultState() {
     'debts': <dynamic>[],
     'budgets': <dynamic>[],
     'budgetPlans': <dynamic>[],
+    'customCategories': <dynamic>[],
+    'recurringMovements': <dynamic>[],
     'budgetPlansMigrated': true,
     'goals': <dynamic>[],
     'cards': <dynamic>[],
@@ -677,6 +697,10 @@ Map<String, dynamic> defaultState() {
 Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
   final state = defaultState();
   state.addAll(source);
+  if (source['onboardingComplete'] == true &&
+      !source.containsKey('seenFeatureTour')) {
+    state['seenFeatureTour'] = '';
+  }
   for (final key in [
     'accounts',
     'movements',
@@ -691,6 +715,8 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
     'sharedSavings',
     'savingsCircles',
     'budgetPlans',
+    'customCategories',
+    'recurringMovements',
   ]) {
     state[key] = state[key] is List
         ? List<dynamic>.from(state[key])
@@ -2020,6 +2046,31 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     }
   }
 
+  Future<bool> disableSecurity({String pin = ''}) async {
+    if (securityBusy) return false;
+    securityBusy = true;
+    try {
+      await NativeStateStore.flush();
+      final security = await _storeChannel.invokeMapMethod<String, dynamic>(
+        'disableSecurity',
+        {'pin': pin},
+      );
+      if (security == null) throw StateError('Sin respuesta');
+      if (!mounted) return false;
+      setState(() {
+        state.addAll(security);
+        locked = false;
+      });
+      revision.value++;
+      return true;
+    } catch (_) {
+      pinError = 'No se pudo desactivar el PIN. Revisa tu PIN actual e intenta nuevamente.';
+      return false;
+    } finally {
+      securityBusy = false;
+    }
+  }
+
   Future<bool> verifyPin(String pin) async {
     if (securityBusy) return false;
     securityBusy = true;
@@ -2320,6 +2371,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (editingId != null && previous == null)
       throw const FormatException('El movimiento ya no existe');
     validateMovementBudgetLink(this, movement, previous);
+    validateRecurringMovement(this, movement, previous);
     if (accountById(movement['accountId']?.toString() ?? '') == null)
       throw const FormatException('La cuenta ya no existe');
     if (movement['type'] == 'transfer' &&
@@ -2330,27 +2382,66 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       throw const FormatException('Destino o monto de transferencia no válido');
     }
     final feeSource = accountById(movement['accountId'].toString());
-    if (supportsDollarFees(feeSource) &&
-        (movement['type'] == 'transfer' || movement['type'] == 'expense') &&
+    if (movement['type'] == 'transfer' && isCestaticketFood(feeSource)) {
+      throw const FormatException(
+        'Cestaticket Alimentación solo permite pagos con tarjeta.',
+      );
+    }
+    if (movement['type'] == 'transfer' &&
+        isCestaticketIntegral(feeSource) &&
+        movement['feeMode'] != 'none' &&
+        movement['feeUnit'] == null) {
+      throw const FormatException(
+        'Confirma la comisión de Cestaticket Integral o selecciona Sin comisión.',
+      );
+    }
+    if (movement['type'] == 'expense' &&
+        feeSource?['provider'] == 'CESTATICKET') {
+      movement['paymentMethod'] =
+          isCestaticketIntegral(feeSource) &&
+              movement['paymentMethod'] == 'bank_transfer'
+          ? 'bank_transfer'
+          : 'debit_card';
+      movement['feeAmount'] = 0.0;
+      movement['feeMode'] = 'none';
+    }
+    if (movement['type'] == 'expense' && feeSource?['currency'] == 'USD') {
+      // Keep historical charges when editing; new dollar expenses have no fee.
+      movement['feeAmount'] =
+          !isBankCommissionCategory(movement['category']?.toString() ?? '') &&
+              previous?['accountId'] == movement['accountId']
+          ? numberValue(previous?['feeAmount'])
+          : 0.0;
+      movement['feeMode'] = numberValue(movement['feeAmount']) > 0
+          ? 'manual'
+          : 'none';
+      movement.remove('feeUnit');
+      movement.remove('feePercent');
+    }
+    if (movement['type'] == 'expense' &&
+        feeSource?['currency'] == 'VES' &&
+        movement['paymentMethod'] == 'bank_transfer' &&
+        movement['bankTransferScope'] == 'same_bank') {
+      movement['feeAmount'] = 0.0;
+      movement['feeMode'] = 'none';
+    }
+    if (supportsTransferFees(feeSource) &&
+        movement['type'] == 'transfer' &&
         movement['feeUnit'] != null) {
       if (movement['feeMode'] == 'auto' && movement['feePercent'] == null) {
         throw const FormatException('Confirma el porcentaje de comision');
       }
-      movement['feeAmount'] =
-          movement['type'] == 'expense' &&
-              isBankCommissionCategory(movement['category']?.toString() ?? '')
-          ? 0
-          : dollarOperationFee(
-              amount: numberValue(movement['amount']),
-              mode: movement['feeMode']?.toString() ?? 'none',
-              unit: movement['feeUnit'].toString(),
-              value: movement['feeUnit'] == 'percent'
-                  ? numberValue(movement['feePercent'])
-                  : numberValue(movement['feeAmount']),
-            );
+      movement['feeAmount'] = dollarOperationFee(
+        amount: numberValue(movement['amount']),
+        mode: movement['feeMode']?.toString() ?? 'none',
+        unit: movement['feeUnit'].toString(),
+        value: movement['feeUnit'] == 'percent'
+            ? numberValue(movement['feePercent'])
+            : numberValue(movement['feeAmount']),
+      );
     }
     if (movement['type'] == 'transfer' &&
-        (!supportsDollarFees(feeSource) || movement['feeUnit'] == null)) {
+        (!supportsTransferFees(feeSource) || movement['feeUnit'] == null)) {
       final source = accountById(movement['accountId'].toString());
       final target = accountById(movement['targetAccountId'].toString());
       movement['feeAmount'] = bankTransferFee(
@@ -2406,10 +2497,10 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       () {
         final list = rawList('movements');
         final type = movement['type']?.toString() ?? '';
-        if (supportsDollarFees(feeSource) &&
+        if (supportsTransferFees(feeSource) &&
             movement['feeMode'] == 'auto' &&
             movement['feePercent'] != null &&
-            (type == 'expense' || type == 'transfer')) {
+            type == 'transfer') {
           feeSource![dollarFeePreferenceKey(
                 type,
                 movement['paymentMethod']?.toString() ?? '',
@@ -2486,7 +2577,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                 'amount': delta,
                 'date': DateTime.now().toIso8601String(),
               });
-            list[i] = account;
+            list[i] = {...item, ...account};
             assignAccountColors(maps('accounts'));
             return;
           }
@@ -2513,10 +2604,19 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     String provider,
     String currency, {
     String ignoreId = '',
+    String bankAccountType = '',
+    String benefitType = 'food',
   }) {
     for (final account in maps('accounts')) {
       if (ignoreId.isNotEmpty && account['id'] == ignoreId) continue;
       if (account['provider'] == provider && account['currency'] == currency) {
+        if (provider == 'CESTATICKET' &&
+            (account['benefitType'] ?? 'food') != benefitType)
+          continue;
+        if (bankAccountType.isNotEmpty &&
+            (account['bankAccountType']?.toString().isNotEmpty ?? false) &&
+            account['bankAccountType'] != bankAccountType)
+          continue;
         return true;
       }
     }
@@ -2554,6 +2654,8 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     mutate(() {
       state['userName'] = name.trim();
       state['onboardingComplete'] = true;
+      state['pendingAppTour'] = true;
+      state['seenFeatureTour'] = '3.2';
     });
   }
 
@@ -2581,6 +2683,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: RThemeScope(
+        categories: maps('customCategories'),
         theme: t,
         child: CupertinoApp(
           navigatorKey: rootNavigatorKey,
@@ -2787,6 +2890,19 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                     ),
                   );
                 }
+                if (!locked && state['pendingAppTour'] == true) {
+                  return ReleaseTour(
+                    key: const ValueKey('app-introduction'),
+                    app: this,
+                    introduction: true,
+                  );
+                }
+                if (!locked && state['seenFeatureTour'] != '3.2') {
+                  return ReleaseTour(
+                    key: const ValueKey('release-news'),
+                    app: this,
+                  );
+                }
                 if (!locked && openAccountAfterOnboarding) {
                   openAccountAfterOnboarding = false;
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2884,6 +3000,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     String? defaultDebtId,
     String? defaultDescription,
     double? defaultAmount,
+    String? defaultDate,
+    String? recurringId,
+    String? recurringDate,
     bool partialDebtPayment = false,
     bool lockAccount = false,
   }) {
@@ -2901,10 +3020,15 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           defaultDebtId: defaultDebtId,
           defaultDescription: defaultDescription,
           defaultAmount: defaultAmount,
+          defaultDate: defaultDate,
           partialDebtPayment: partialDebtPayment,
           lockAccount: lockAccount,
           onSave: (next) {
             try {
+              if (recurringId != null) {
+                next['recurringId'] = recurringId;
+                next['recurringDate'] = recurringDate;
+              }
               saveMovement(next, editingId: movement?['id']?.toString());
               Navigator.pop(routeContext);
             } on FormatException catch (error) {
@@ -3008,450 +3132,6 @@ class _AppEntrance extends StatelessWidget {
     offsetY: 6,
     duration: const Duration(milliseconds: 220),
   );
-}
-
-class _OnboardingPage extends StatefulWidget {
-  const _OnboardingPage({required this.app});
-
-  final _RialAppState app;
-
-  @override
-  State<_OnboardingPage> createState() => _OnboardingPageState();
-}
-
-class _OnboardingPageState extends State<_OnboardingPage> {
-  final name = TextEditingController();
-  final pin = TextEditingController();
-  final pinConfirm = TextEditingController();
-  int step = 0;
-  bool useBiometrics = false;
-  bool biometricsAvailable = false;
-  static const totalSteps = 5;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadBiometrics());
-  }
-
-  @override
-  void dispose() {
-    name.dispose();
-    pin.dispose();
-    pinConfirm.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadBiometrics() async {
-    final available = await widget.app.canUseBiometrics();
-    if (!mounted) return;
-    setState(() {
-      biometricsAvailable = available;
-      useBiometrics = available;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final app = widget.app;
-    final t = app.theme;
-    return CupertinoPageScaffold(
-      backgroundColor: t.bg,
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(22, 44, 22, 28),
-          children: [
-            Text(
-              'Sin Rial',
-              style: TextStyle(
-                color: t.ink,
-                fontSize: 42,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Vamos a dejar la app lista para usarla sin inventos raros.',
-              style: TextStyle(
-                color: t.muted,
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 34),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(.025, 0),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                );
-              },
-              child: _currentStep(context, t),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: List.generate(totalSteps, (index) {
-                return Padding(
-                  padding: EdgeInsets.only(
-                    right: index == totalSteps - 1 ? 0 : 7,
-                  ),
-                  child: _StepDot(theme: t, active: step == index),
-                );
-              }),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _currentStep(BuildContext context, RTheme t) {
-    if (step == 0) return _nameStep(context, t);
-    if (step == 1) return _appearanceStep(t);
-    if (step == 2) return _colorStep(t);
-    if (step == 3) return _securityStep(context, t);
-    return _accountsStep(t);
-  }
-
-  Widget _nameStep(BuildContext context, RTheme t) {
-    return RCard(
-      key: const ValueKey('name-step'),
-      theme: t,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '¿Cómo te llamas?',
-            style: TextStyle(
-              color: t.ink,
-              fontSize: 27,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Lo uso solo dentro de la app para personalizar un poco la experiencia.',
-            style: TextStyle(
-              color: t.muted,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 18),
-          RField(theme: t, controller: name, placeholder: 'Tu nombre'),
-          PrimaryActionButton(
-            theme: t,
-            label: 'Continuar',
-            onPressed: () {
-              if (name.text.trim().isEmpty) {
-                showModernNotice(
-                  context,
-                  title: 'Falta tu nombre',
-                  message: 'Escribe cómo quieres que te salude la app.',
-                );
-                return;
-              }
-              setState(() => step = 1);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _appearanceStep(RTheme t) {
-    final app = widget.app;
-    return RCard(
-      key: const ValueKey('appearance-step'),
-      theme: t,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '¿Quieres seleccionar modo claro u oscuro?',
-            style: TextStyle(
-              color: t.ink,
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Esto solo cambia la apariencia dentro de Sin Rial.',
-            style: TextStyle(
-              color: t.muted,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 18),
-          KindSelector(
-            theme: t,
-            value: app.dark ? 'dark' : 'light',
-            items: const [
-              KindSelectorItem(
-                value: 'light',
-                label: 'Claro',
-                icon: CupertinoIcons.sun_max_fill,
-              ),
-              KindSelectorItem(
-                value: 'dark',
-                label: 'Oscuro',
-                icon: CupertinoIcons.moon_stars_fill,
-              ),
-            ],
-            onChanged: (value) {
-              app.mutate(() => app.state['darkMode'] = value == 'dark');
-              setState(() {});
-            },
-          ),
-          PrimaryActionButton(
-            theme: t,
-            label: 'Continuar',
-            onPressed: () => setState(() => step = 2),
-          ),
-          _BackTextButton(
-            theme: t,
-            label: 'Volver al nombre',
-            onTap: () => setState(() => step = 0),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _colorStep(RTheme t) {
-    final app = widget.app;
-    return RCard(
-      key: const ValueKey('color-step'),
-      theme: t,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '¿Y el color del tema?',
-            style: TextStyle(
-              color: t.ink,
-              fontSize: 27,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Elige el color principal para botones, navegación y detalles.',
-            style: TextStyle(
-              color: t.muted,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 18),
-          ThemeColorSelector(
-            theme: t,
-            value: app.themeColorKey,
-            onChanged: (value) {
-              app.mutate(() => app.state['themeColor'] = value);
-              setState(() {});
-            },
-          ),
-          const SizedBox(height: 6),
-          PrimaryActionButton(
-            theme: t,
-            label: 'Continuar',
-            onPressed: () => setState(() => step = 3),
-          ),
-          _BackTextButton(
-            theme: t,
-            label: 'Volver al modo',
-            onTap: () => setState(() => step = 1),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _securityStep(BuildContext context, RTheme t) {
-    return RCard(
-      key: const ValueKey('security-step'),
-      theme: t,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Protege tu app',
-            style: TextStyle(
-              color: t.ink,
-              fontSize: 27,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Crea un PIN. Si tu teléfono lo permite, también podrás entrar con biometría.',
-            style: TextStyle(
-              color: t.muted,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 18),
-          RField(
-            theme: t,
-            controller: pin,
-            placeholder: 'PIN de 4 a 6 dígitos',
-            keyboardType: TextInputType.number,
-            obscureText: true,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(6),
-            ],
-          ),
-          RField(
-            theme: t,
-            controller: pinConfirm,
-            placeholder: 'Repetir PIN',
-            keyboardType: TextInputType.number,
-            obscureText: true,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(6),
-            ],
-          ),
-          SecurityRecoveryNote(theme: t),
-          const SizedBox(height: 12),
-          if (biometricsAvailable)
-            SettingsSwitchTile(
-              theme: t,
-              icon: CupertinoIcons.lock_shield_fill,
-              title: 'Usar biometría',
-              subtitle: 'Desbloquea con huella o rostro cuando esté disponible',
-              value: useBiometrics,
-              framed: false,
-              onTap: () => setState(() => useBiometrics = !useBiometrics),
-            ),
-          PrimaryActionButton(
-            theme: t,
-            label: 'Continuar',
-            onPressed: () async {
-              if (widget.app.securityBusy ||
-                  !validatePin(context, pin.text, pinConfirm.text))
-                return;
-              final saved = await widget.app.configureSecurity(
-                pin: pin.text,
-                useBiometrics: biometricsAvailable && useBiometrics,
-              );
-              if (!mounted) return;
-              if (!saved) {
-                showModernNotice(
-                  context,
-                  title: 'Seguridad',
-                  message: widget.app.pinError,
-                );
-                return;
-              }
-              setState(() => step = 4);
-            },
-          ),
-          _BackTextButton(
-            theme: t,
-            label: 'Volver al color',
-            onTap: () => setState(() => step = 2),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _accountsStep(RTheme t) {
-    return RCard(
-      key: const ValueKey('accounts-step'),
-      theme: t,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '¿Quieres agregar una o varias cuentas?',
-            style: TextStyle(
-              color: t.ink,
-              fontSize: 27,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Puedes empezar con una cuenta y luego agregar bancos, billeteras o efectivo desde Cuentas.',
-            style: TextStyle(
-              color: t.muted,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 18),
-          PrimaryActionButton(
-            theme: t,
-            label: 'Agregar cuenta ahora',
-            onPressed: () =>
-                widget.app.completeOnboarding(name.text, addAccount: true),
-          ),
-          const SizedBox(height: 10),
-          SecondaryActionButton(
-            theme: t,
-            label: 'Empezar sin cuentas',
-            onPressed: () =>
-                widget.app.completeOnboarding(name.text, addAccount: false),
-          ),
-          const SizedBox(height: 10),
-          _BackTextButton(
-            theme: t,
-            label: 'Volver a seguridad',
-            onTap: () => setState(() => step = 3),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BackTextButton extends StatelessWidget {
-  const _BackTextButton({
-    required this.theme,
-    required this.label,
-    required this.onTap,
-  });
-
-  final RTheme theme;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: theme.accent,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class SecurityRecoveryNote extends StatelessWidget {
@@ -3769,7 +3449,7 @@ class _SecuritySetupPageState extends State<SecuritySetupPage> {
             const SizedBox(height: 8),
             Text(
               widget.requiredSetup
-                  ? 'Antes de entrar, configura un PIN para mantener tus datos privados.'
+                  ? 'Puedes proteger tus datos con un PIN o continuar sin bloqueo.'
                   : 'Cambia tu PIN y decide si quieres desbloquear con biometría.',
               style: TextStyle(
                 color: t.muted,
@@ -3826,6 +3506,24 @@ class _SecuritySetupPageState extends State<SecuritySetupPage> {
                         : 'Guardar seguridad',
                     onPressed: () => unawaited(save()),
                   ),
+                  if (!app.securityEnabled) ...[
+                    const SizedBox(height: 16),
+                    SecondaryActionButton(
+                      theme: t,
+                      label: 'Continuar sin PIN',
+                      onPressed: () async {
+                        if (!await app.disableSecurity() || !mounted) return;
+                        widget.onDone?.call();
+                        if (!widget.requiredSetup) Navigator.of(context).pop();
+                      },
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 16),
+                    CupertinoButton(
+                      onPressed: () => showDisablePinDialog(context, app),
+                      child: const Text('Desactivar bloqueo'),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -3895,6 +3593,7 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
   bool checkingBiometric = false;
   bool showPin = false;
   bool autoUnlocking = false;
+  Timer? scrollTimer;
 
   @override
   void initState() {
@@ -3928,13 +3627,11 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
   }
 
   void _scrollToPin() {
-    for (final delay in const [
-      Duration(milliseconds: 80),
-      Duration(milliseconds: 260),
-      Duration(milliseconds: 560),
-    ]) {
-      Future<void>.delayed(delay, _ensureEnterButtonVisible);
-    }
+    scrollTimer?.cancel();
+    scrollTimer = Timer(
+      const Duration(milliseconds: 100),
+      _ensureEnterButtonVisible,
+    );
   }
 
   void _ensureEnterButtonVisible() {
@@ -3972,6 +3669,7 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    scrollTimer?.cancel();
     pin.dispose();
     pinFocus.dispose();
     scroll.dispose();
@@ -3993,30 +3691,24 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
             child: ListView(
               controller: scroll,
               shrinkWrap: true,
-              padding: EdgeInsets.fromLTRB(28, keyboard > 0 ? 16 : 32, 28, 24),
+              padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
               children: [
-                Center(
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: t.accent.withOpacity(.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      CupertinoIcons.lock_shield,
-                      color: t.accent,
-                      size: 30,
-                    ),
-                  ),
+                AnimatedContainer(
+                  key: const ValueKey('lock-logo-size'),
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  height: keyboard > 0 ? 40 : 64,
+                  child: SinRialLogo(theme: t, color: t.accent, height: 64),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 28),
                 Text(
-                  'Sin Rial',
+                  'Acceso protegido',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: t.ink,
-                    fontSize: 26,
+                    fontSize: 22,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -4049,7 +3741,9 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
                     decoration: BoxDecoration(
                       color: t.field,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: t.border),
+                      border: Border.all(
+                        color: pinFocus.hasFocus ? t.accent : t.border,
+                      ),
                     ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -4092,7 +3786,7 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
                   ),
                 ),
                 if (app.biometricEnabled) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 12),
                   SecondaryActionButton(
                     theme: t,
                     label: checkingBiometric
@@ -4148,26 +3842,6 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
   }
 }
 
-class _StepDot extends StatelessWidget {
-  const _StepDot({required this.theme, required this.active});
-
-  final RTheme theme;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      width: active ? 28 : 9,
-      height: 9,
-      decoration: BoxDecoration(
-        color: active ? theme.accent : theme.border,
-        borderRadius: BorderRadius.circular(99),
-      ),
-    );
-  }
-}
-
 class FluidPageRoute<T> extends PageRouteBuilder<T> {
   FluidPageRoute({required WidgetBuilder builder})
     : super(
@@ -4194,6 +3868,16 @@ class ReactiveRoutePage extends StatefulWidget {
 }
 
 class _ReactiveRoutePageState extends State<ReactiveRoutePage> {
+  bool _active = true;
+  Widget? _lastPage;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Covered routes rebuild with current data when their ticker mode resumes.
+    _active = TickerMode.of(context);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -4216,11 +3900,14 @@ class _ReactiveRoutePageState extends State<ReactiveRoutePage> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    if (mounted && _active) setState(() {});
   }
 
   @override
-  Widget build(BuildContext context) => widget.builder(context);
+  Widget build(BuildContext context) {
+    if (!_active && _lastPage != null) return _lastPage!;
+    return _lastPage = widget.builder(context);
+  }
 }
 
 class ModernSheetAction {
@@ -4244,9 +3931,18 @@ class ModernSheetAction {
 }
 
 class RThemeScope extends InheritedWidget {
-  const RThemeScope({super.key, required this.theme, required super.child});
+  const RThemeScope({
+    super.key,
+    required this.theme,
+    required super.child,
+    this.categories = const [],
+  });
 
   final RTheme theme;
+  final List<Map<String, dynamic>> categories;
+  static List<Map<String, dynamic>> categoriesOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<RThemeScope>()?.categories ??
+      const [];
 
   static RTheme? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<RThemeScope>()?.theme;
@@ -4255,7 +3951,8 @@ class RThemeScope extends InheritedWidget {
   @override
   bool updateShouldNotify(covariant RThemeScope oldWidget) {
     return oldWidget.theme.dark != theme.dark ||
-        oldWidget.theme.colorKey != theme.colorKey;
+        oldWidget.theme.colorKey != theme.colorKey ||
+        oldWidget.categories != categories;
   }
 }
 
@@ -5367,21 +5064,6 @@ Future<DateTime?> pickModernTime({
             child: SingleChildScrollView(
               child: StatefulBuilder(
                 builder: (context, setDialogState) {
-                  void setHour(int delta) {
-                    setDialogState(() {
-                      hour = ((hour - 1 + delta) % 12 + 12) % 12 + 1;
-                      validHour = true;
-                    });
-                  }
-
-                  void setMinute(int delta) {
-                    setDialogState(() {
-                      minute = (minute + delta) % 60;
-                      if (minute < 0) minute += 60;
-                      validMinute = true;
-                    });
-                  }
-
                   return Container(
                     margin: const EdgeInsets.all(12),
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
@@ -5417,8 +5099,8 @@ Future<DateTime?> pickModernTime({
                             'Seleccionar hora',
                             style: TextStyle(
                               color: theme.ink,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -5426,7 +5108,7 @@ Future<DateTime?> pickModernTime({
                         Row(
                           children: [
                             Expanded(
-                              child: TimeAdjuster(
+                              child: TimeNumberField(
                                 theme: theme,
                                 label: 'Hora',
                                 value: hour,
@@ -5436,13 +5118,11 @@ Future<DateTime?> pickModernTime({
                                   validHour = value != null;
                                   if (value != null) hour = value;
                                 }),
-                                onDecrease: () => setHour(-1),
-                                onIncrease: () => setHour(1),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: TimeAdjuster(
+                              child: TimeNumberField(
                                 theme: theme,
                                 label: 'Minutos',
                                 value: minute,
@@ -5452,8 +5132,6 @@ Future<DateTime?> pickModernTime({
                                   validMinute = value != null;
                                   if (value != null) minute = value;
                                 }),
-                                onDecrease: () => setMinute(-1),
-                                onIncrease: () => setMinute(1),
                               ),
                             ),
                           ],
@@ -5556,8 +5234,8 @@ Future<DateTime?> pickModernTime({
   );
 }
 
-class TimeAdjuster extends StatefulWidget {
-  const TimeAdjuster({
+class TimeNumberField extends StatefulWidget {
+  const TimeNumberField({
     super.key,
     required this.theme,
     required this.label,
@@ -5565,8 +5243,6 @@ class TimeAdjuster extends StatefulWidget {
     required this.minimum,
     required this.maximum,
     required this.onChanged,
-    required this.onDecrease,
-    required this.onIncrease,
   });
 
   final RTheme theme;
@@ -5575,20 +5251,18 @@ class TimeAdjuster extends StatefulWidget {
   final int minimum;
   final int maximum;
   final ValueChanged<int?> onChanged;
-  final VoidCallback onDecrease;
-  final VoidCallback onIncrease;
 
   @override
-  State<TimeAdjuster> createState() => _TimeAdjusterState();
+  State<TimeNumberField> createState() => _TimeNumberFieldState();
 }
 
-class _TimeAdjusterState extends State<TimeAdjuster> {
+class _TimeNumberFieldState extends State<TimeNumberField> {
   late final controller = TextEditingController(
     text: widget.value.toString().padLeft(2, '0'),
   );
 
   @override
-  void didUpdateWidget(TimeAdjuster oldWidget) {
+  void didUpdateWidget(TimeNumberField oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.value != widget.value &&
         int.tryParse(controller.text) != widget.value) {
@@ -5633,6 +5307,7 @@ class _TimeAdjusterState extends State<TimeAdjuster> {
                 'time-input-${widget.minimum == 1 ? 'hour' : 'minute'}',
               ),
               controller: controller,
+              autofocus: widget.minimum == 1,
               placeholder:
                   '${widget.minimum.toString().padLeft(2, '0')}-${widget.maximum}',
               keyboardType: TextInputType.number,
@@ -5669,22 +5344,13 @@ class _TimeAdjusterState extends State<TimeAdjuster> {
               },
             ),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                minSize: 42,
-                onPressed: widget.onDecrease,
-                child: Icon(CupertinoIcons.minus, color: theme.accent),
-              ),
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                minSize: 42,
-                onPressed: widget.onIncrease,
-                child: Icon(CupertinoIcons.plus, color: theme.accent),
-              ),
-            ],
+          const SizedBox(height: 4),
+          Text(
+            '${widget.minimum.toString().padLeft(2, '0')} - ${widget.maximum}',
+            style: TextStyle(
+              color: invalid ? theme.red : theme.muted,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
@@ -6132,6 +5798,7 @@ class HomePage extends StatelessWidget {
               ),
               for (final child in [
                 HomeShortcutRow(app: app),
+                RecurringPendingSection(app: app),
                 ...sections,
                 if (sanitizeHomeSections(app.state['homeSections']).length <
                     homeSectionOptions.length)
@@ -8671,7 +8338,10 @@ class MovementTile extends StatelessWidget {
                     ? CupertinoIcons.arrow_right_arrow_left
                     : type == 'income'
                     ? CupertinoIcons.arrow_down_circle
-                    : categoryIcon(movement['category']?.toString() ?? ''),
+                    : categoryIcon(
+                        movement['category']?.toString() ?? '',
+                        context: context,
+                      ),
                 color: color,
                 size: 22,
               ),
@@ -8964,8 +8634,11 @@ class MovementDetailPage extends StatelessWidget {
           source == null ? 'Cuenta no disponible' : accountPrimaryName(source),
         ),
         row('Moneda', displayCurrency(currency)),
+        if (movement['reference']?.toString().isNotEmpty == true)
+          row('Referencia', movement['reference'].toString()),
         row('Categoría', category.isEmpty ? 'Otro' : category),
-        if (method.isNotEmpty) row('Método', paymentMethodLabel(method)),
+        if (method.isNotEmpty)
+          row('Método', paymentMethodLabel(method, currency: currency)),
         if (scope.isNotEmpty)
           row('Transferencia bancaria', bankTransferScopeLabel(scope)),
         if (!income) ...[
@@ -10833,14 +10506,25 @@ class SavingsHistoryTile extends StatelessWidget {
   }
 }
 
-class DebtsPage extends StatelessWidget {
+class DebtsPage extends StatefulWidget {
   const DebtsPage({super.key, required this.app});
   final _RialAppState app;
 
   @override
+  State<DebtsPage> createState() => _DebtsPageState();
+}
+
+class _DebtsPageState extends State<DebtsPage> {
+  bool paid = false;
+
+  @override
   Widget build(BuildContext context) {
+    final app = widget.app;
     final t = app.theme;
-    final debts = app.maps('debts');
+    final debts = app
+        .maps('debts')
+        .where((debt) => debtIsPaid(debt) == paid)
+        .toList();
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
@@ -10850,34 +10534,70 @@ class DebtsPage extends StatelessWidget {
         middle: const Text('Por cobrar / pagar'),
       ),
       child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+        child: Column(
           children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () => app.openDebtEditor(context),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  color: t.accent,
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: const Center(
-                  child: Text(
-                    'Nuevo registro',
-                    style: TextStyle(
-                      color: CupertinoColors.white,
-                      fontWeight: FontWeight.w800,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+              child: Column(
+                children: [
+                  KindSelector(
+                    theme: t,
+                    value: paid ? 'paid' : 'unpaid',
+                    items: const [
+                      KindSelectorItem(
+                        value: 'unpaid',
+                        label: 'No pagados',
+                        icon: CupertinoIcons.clock,
+                      ),
+                      KindSelectorItem(
+                        value: 'paid',
+                        label: 'Pagados',
+                        icon: CupertinoIcons.check_mark_circled,
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => paid = value == 'paid'),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: CupertinoButton(
+                      onPressed: () => app.openDebtEditor(context),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(CupertinoIcons.add, size: 19),
+                          SizedBox(width: 8),
+                          Text('Nuevo registro'),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
-            const SizedBox(height: 18),
-            if (debts.isEmpty)
-              EmptyCard(theme: t, text: 'Tus pagos y cobros aparecerán aquí'),
-            ...debts.map((d) => DebtTile(app: app, debt: d)),
+            Expanded(
+              child: debts.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: EmptyCard(
+                        theme: t,
+                        text: paid
+                            ? 'Aún no hay pagos o cobros completados'
+                            : 'No tienes pagos ni cobros pendientes',
+                      ),
+                    )
+                  : ListView.builder(
+                      key: ValueKey(paid),
+                      padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
+                      itemCount: debts.length,
+                      itemBuilder: (_, index) => DebtTile(
+                        key: ValueKey(debts[index]['id']),
+                        app: app,
+                        debt: debts[index],
+                      ),
+                    ),
+            ),
           ],
         ),
       ),
@@ -12045,17 +11765,19 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Sin Rial - versión $_appVersionName',
-                    style: TextStyle(
-                      color: t.ink,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w600,
+                  Center(
+                    child: SinRialLogo(theme: t, height: 72, color: t.accent),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Text(
+                      'Versión $_appVersionName',
+                      style: TextStyle(color: t.muted),
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'App en progreso - Hecha por Arturo el mejor xd',
+                    'Hecha por Arturo el siuuuu',
                     style: TextStyle(
                       color: t.muted,
                       fontSize: 14,
@@ -12447,6 +12169,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               ),
             ),
+            SectionHeader(theme: t, title: 'Movimientos'),
+            SettingsSwitchTile(
+              theme: t,
+              icon: CupertinoIcons.doc_text,
+              title: 'Referencia bancaria',
+              subtitle: 'Preguntar al registrar un gasto',
+              value: app.state['askExpenseReference'] == true,
+              onTap: () {
+                app.mutate(
+                  () => app.state['askExpenseReference'] =
+                      app.state['askExpenseReference'] != true,
+                );
+                setState(() {});
+              },
+            ),
             SectionHeader(theme: t, title: 'Seguridad'),
             SettingsSwitchTile(
               theme: t,
@@ -12513,7 +12250,9 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            app.biometricEnabled
+                            !app.securityEnabled
+                                ? 'Sin PIN'
+                                : app.biometricEnabled
                                 ? 'PIN activo · biometría activa'
                                 : 'PIN activo',
                             style: TextStyle(
@@ -12534,44 +12273,45 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             ),
-            GestureDetector(
-              onTap: () {
-                Navigator.of(
-                  context,
-                  rootNavigator: true,
-                ).popUntil((route) => route.isFirst);
-                WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => app.lockApp(),
-                );
-              },
-              child: RCard(
-                theme: t,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: t.accent.withOpacity(.14),
-                        borderRadius: BorderRadius.circular(16),
+            if (app.securityEnabled)
+              GestureDetector(
+                onTap: () {
+                  Navigator.of(
+                    context,
+                    rootNavigator: true,
+                  ).popUntil((route) => route.isFirst);
+                  WidgetsBinding.instance.addPostFrameCallback(
+                    (_) => app.lockApp(),
+                  );
+                },
+                child: RCard(
+                  theme: t,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: t.accent.withOpacity(.14),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(CupertinoIcons.lock_fill, color: t.accent),
                       ),
-                      child: Icon(CupertinoIcons.lock_fill, color: t.accent),
-                    ),
-                    const SizedBox(width: 13),
-                    Expanded(
-                      child: Text(
-                        'Bloquear ahora',
-                        style: TextStyle(
-                          color: t.ink,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(width: 13),
+                      Expanded(
+                        child: Text(
+                          'Bloquear ahora',
+                          style: TextStyle(
+                            color: t.ink,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
             SectionHeader(theme: t, title: 'Datos'),
             GestureDetector(
               onTap: () => confirmReset(context),
@@ -12831,6 +12571,7 @@ class MovementEditor extends StatefulWidget {
     this.defaultDebtId,
     this.defaultDescription,
     this.defaultAmount,
+    this.defaultDate,
     this.partialDebtPayment = false,
     this.lockAccount = false,
     this.quick = false,
@@ -12843,6 +12584,7 @@ class MovementEditor extends StatefulWidget {
   final String? defaultDebtId;
   final String? defaultDescription;
   final double? defaultAmount;
+  final String? defaultDate;
   final bool partialDebtPayment;
   final bool lockAccount;
   final bool quick;
@@ -12863,6 +12605,7 @@ class _MovementEditorState extends State<MovementEditor> {
   late String date;
   final amount = MoneyEditingController();
   final desc = TextEditingController();
+  final operationReference = TextEditingController();
   final fee = MoneyEditingController();
   final feePercent = TextEditingController();
   String feeUnit = 'percent';
@@ -12890,6 +12633,7 @@ class _MovementEditorState extends State<MovementEditor> {
   void initState() {
     super.initState();
     final m = widget.movement;
+    operationReference.text = m?['reference']?.toString() ?? '';
     if (widget.quick) _quickMovementId = widget.app.id();
     type = m?['type']?.toString() ?? widget.defaultType;
     accountId =
@@ -12902,7 +12646,10 @@ class _MovementEditorState extends State<MovementEditor> {
         ? m!['category'].toString()
         : widget.defaultCategory ?? 'Otro';
     categoryTouched = m != null || widget.defaultCategory != null;
-    date = m?['date']?.toString() ?? formatDateTime(DateTime.now());
+    date =
+        m?['date']?.toString() ??
+        widget.defaultDate ??
+        formatDateTime(DateTime.now());
     debtId = m?['debtId']?.toString() ?? widget.defaultDebtId ?? '';
     budgetItemId = m?['budgetItemId']?.toString() ?? '';
     if (m != null) {
@@ -12966,7 +12713,12 @@ class _MovementEditorState extends State<MovementEditor> {
         applyDebtDefaults(debtId, overwriteAmount: amount.text.isEmpty);
       }
       if (type == 'expense' && !categoryTouched) {
-        category = categoryFromDescription(desc.text) ?? 'Otro';
+        category =
+            categoryFromDescription(
+              desc.text,
+              custom: widget.app.maps('customCategories'),
+            ) ??
+            'Otro';
       }
     }
     widget.app.revision.addListener(syncMissingDebtQuote);
@@ -12976,16 +12728,31 @@ class _MovementEditorState extends State<MovementEditor> {
 
   void resetDollarFee({Map<String, dynamic>? existing}) {
     final source = widget.app.accountById(accountId);
-    if (!supportsDollarFees(source)) {
+    if (type == 'expense' && source?['currency'] == 'USD') {
+      if (existing == null ||
+          ![
+            'debit_card',
+            'wallet_payment',
+            'binance_pay',
+          ].contains(paymentMethod)) {
+        paymentMethod = 'debit_card';
+      }
+      feeMode = 'none';
+      fee.clear();
+      feePercent.clear();
+      return;
+    }
+    if (!supportsTransferFees(source) || type != 'transfer') {
       if (existing == null) {
         feeMode = 'auto';
         fee.clear();
         feePercent.clear();
-        paymentMethod = 'payment_mobile_p2p';
+        paymentMethod = source?['provider'] == 'CESTATICKET'
+            ? 'debit_card'
+            : 'payment_mobile_p2p';
       }
       return;
     }
-    if (existing == null && type == 'expense') paymentMethod = 'debit_card';
     final saved = dollarFeePercentForAccount(source, type, paymentMethod);
     feeUnit =
         existing?['feeUnit']?.toString() ??
@@ -12993,7 +12760,9 @@ class _MovementEditorState extends State<MovementEditor> {
     final percent = existing?['feePercent'] ?? saved;
     feePercent.text = percent == null ? '' : percent.toString();
     if (existing == null) {
-      feeMode = saved == null ? 'none' : 'auto';
+      feeMode = saved == null
+          ? (isCestaticketIntegral(source) ? 'manual' : 'none')
+          : 'auto';
       fee.clear();
     } else if (existing['feeUnit'] == null) {
       // Legacy USD movements must retain their original fee when edited.
@@ -13045,7 +12814,7 @@ class _MovementEditorState extends State<MovementEditor> {
               numberValue(item['limit']),
               item['currency']?.toString() ?? 'USD',
             ),
-            icon: categoryIcon(category),
+            icon: categoryIcon(category, context: context),
             selected: item['id'] == budgetItemId,
             onPressed: () =>
                 setState(() => budgetItemId = item['id'].toString()),
@@ -13108,6 +12877,7 @@ class _MovementEditorState extends State<MovementEditor> {
     widget.app.revision.removeListener(syncMissingDebtQuote);
     amount.dispose();
     desc.dispose();
+    operationReference.dispose();
     fee.dispose();
     feePercent.dispose();
     rate.dispose();
@@ -13207,7 +12977,12 @@ class _MovementEditorState extends State<MovementEditor> {
       desc.text = debtTitle;
     }
     if (type == 'expense' && !categoryTouched) {
-      category = categoryFromDescription(debtTitle) ?? category;
+      category =
+          categoryFromDescription(
+            debtTitle,
+            custom: widget.app.maps('customCategories'),
+          ) ??
+          category;
     }
   }
 
@@ -13224,10 +12999,7 @@ class _MovementEditorState extends State<MovementEditor> {
         source['currency'] != target['currency'];
     final sourceCurrency = source?['currency']?.toString() ?? 'USD';
     final targetCurrency = target?['currency']?.toString() ?? sourceCurrency;
-    final dollarFees =
-        supportsDollarFees(source) &&
-        type != 'income' &&
-        (type != 'expense' || !isBankCommissionCategory(category));
+    final dollarFees = supportsTransferFees(source) && type == 'transfer';
     final enteredRate = parseAmount(rate.text);
     final canOperationFee =
         type == 'expense' &&
@@ -13236,6 +13008,7 @@ class _MovementEditorState extends State<MovementEditor> {
           type: type,
           category: type == 'expense' ? category : '',
           method: type == 'expense' ? paymentMethod : 'bank_transfer',
+          bankTransferScope: bankTransferScope,
         );
     final effectiveFeeMode = canOperationFee ? feeMode : 'none';
     final canTransferFee =
@@ -13287,6 +13060,8 @@ class _MovementEditorState extends State<MovementEditor> {
         ? dollarFeePreview
         : type == 'transfer'
         ? autoTransferFee
+        : source != null && sourceCurrency == 'USD' && type == 'expense'
+        ? operationFeeForSave(source)
         : effectiveFeeMode == 'manual'
         ? moneyRound(parseAmount(fee.text))
         : autoOperationFee;
@@ -13375,7 +13150,12 @@ class _MovementEditorState extends State<MovementEditor> {
                     targetId = firstAccountId(except: accountId);
                     resetDollarFee();
                     if (type == 'expense' && !categoryTouched) {
-                      category = categoryFromDescription(desc.text) ?? 'Otro';
+                      category =
+                          categoryFromDescription(
+                            desc.text,
+                            custom: app.maps('customCategories'),
+                          ) ??
+                          'Otro';
                     }
                     if (type != 'expense' && type != 'income') {
                       debtId = '';
@@ -13426,6 +13206,13 @@ class _MovementEditorState extends State<MovementEditor> {
                     placeholder: 'Descripción',
                     onChanged: inferCategory,
                   ),
+                  if (widget.movement != null && type == 'expense')
+                    RField(
+                      theme: t,
+                      controller: operationReference,
+                      placeholder: 'Referencia (opcional)',
+                      inputFormatters: [LengthLimitingTextInputFormatter(64)],
+                    ),
                   if (showDebtSelector)
                     OptionField(
                       theme: t,
@@ -13452,7 +13239,7 @@ class _MovementEditorState extends State<MovementEditor> {
                       theme: t,
                       label: 'Categoría',
                       value: category,
-                      icon: categoryIcon(category),
+                      icon: categoryIcon(category, context: context),
                       onTap: () => pickCategory(
                         context,
                         category,
@@ -13586,37 +13373,63 @@ class _MovementEditorState extends State<MovementEditor> {
                       !isBankCommissionCategory(category) &&
                       ((isNationalBankAccount(source) &&
                               sourceCurrency == 'VES') ||
+                          source?['provider'] == 'CESTATICKET' ||
                           supportsDollarFees(source)))
                     OptionField(
                       theme: t,
                       label: 'Forma de pago',
-                      value: paymentMethodLabel(paymentMethod),
+                      value: paymentMethodLabel(
+                        paymentMethod,
+                        currency: source?['provider'] == 'CESTATICKET'
+                            ? null
+                            : sourceCurrency,
+                      ),
                       icon: CupertinoIcons.creditcard_fill,
                       onTap: () => pickValue(
                         context,
-                        sourceCurrency == 'USD'
-                            ? const ['Tarjeta', 'Transferencia bancaria']
-                            : const [
-                                'Pago móvil',
-                                'Pago móvil C2P',
-                                'Transferencia bancaria',
-                                'Tarjeta',
-                              ],
-                        paymentMethodLabel(paymentMethod),
+                        expensePaymentMethods(source),
+                        paymentMethodLabel(
+                          paymentMethod,
+                          currency: source?['provider'] == 'CESTATICKET'
+                              ? null
+                              : sourceCurrency,
+                        ),
                         (value) => setState(() {
                           paymentMethod = paymentMethodFromLabel(value);
                           if (sourceCurrency == 'USD') {
-                            final saved = dollarFeePercentForAccount(
-                              source,
-                              type,
-                              paymentMethod,
-                            );
-                            feePercent.text = saved?.toString() ?? '';
-                            feeMode = saved == null ? 'none' : 'auto';
-                          } else if (isFeeExemptPaymentMethod(paymentMethod)) {
+                            feePercent.clear();
                             fee.clear();
-                            feeMode = 'auto';
+                            feeMode = 'none';
+                          } else {
+                            fee.clear();
+                            feeMode =
+                                paymentMethod == 'bank_transfer' &&
+                                    bankTransferScope == 'same_bank'
+                                ? 'none'
+                                : 'auto';
                           }
+                        }),
+                      ),
+                    ),
+                  if (type == 'expense' &&
+                      sourceCurrency == 'VES' &&
+                      isNationalBankAccount(source) &&
+                      paymentMethod == 'bank_transfer')
+                    OptionField(
+                      theme: t,
+                      label: 'Transferencia bancaria',
+                      value: bankTransferScopeLabel(bankTransferScope),
+                      icon: CupertinoIcons.building_2_fill,
+                      onTap: () => pickValue(
+                        context,
+                        const ['Otro banco', 'Mismo banco'],
+                        bankTransferScopeLabel(bankTransferScope),
+                        (value) => setState(() {
+                          bankTransferScope = bankTransferScopeFromLabel(value);
+                          feeMode = bankTransferScope == 'same_bank'
+                              ? 'none'
+                              : 'auto';
+                          fee.clear();
                         }),
                       ),
                     ),
@@ -13638,25 +13451,6 @@ class _MovementEditorState extends State<MovementEditor> {
                         }),
                       ),
                     ),
-                  if (type == 'expense' &&
-                      canOperationFee &&
-                      !dollarFees &&
-                      effectiveFeeMode != 'none' &&
-                      paymentMethod == 'bank_transfer')
-                    OptionField(
-                      theme: t,
-                      label: 'Transferencia bancaria',
-                      value: bankTransferScopeLabel(bankTransferScope),
-                      icon: CupertinoIcons.building_2_fill,
-                      onTap: () => pickValue(
-                        context,
-                        const ['Otro banco', 'Mismo banco'],
-                        bankTransferScopeLabel(bankTransferScope),
-                        (value) => setState(() {
-                          bankTransferScope = bankTransferScopeFromLabel(value);
-                        }),
-                      ),
-                    ),
                   if (canTransferFee && !dollarFees)
                     DebtDetailRow(
                       theme: t,
@@ -13666,12 +13460,6 @@ class _MovementEditorState extends State<MovementEditor> {
                       ),
                     ),
                   if (dollarFees && feeMode != 'none') ...[
-                    if (type == 'expense' && paymentMethod == 'debit_card')
-                      DebtDetailRow(
-                        theme: t,
-                        label: 'Tarjeta',
-                        value: dollarCardLabel(source!),
-                      ),
                     if (feeMode == 'manual')
                       OptionField(
                         theme: t,
@@ -13928,7 +13716,12 @@ class _MovementEditorState extends State<MovementEditor> {
 
   void inferCategory(String value) {
     if (type != 'expense' || categoryTouched) return;
-    final inferred = categoryFromDescription(value) ?? 'Otro';
+    final inferred =
+        categoryFromDescription(
+          value,
+          custom: widget.app.maps('customCategories'),
+        ) ??
+        'Otro';
     if (inferred != category) {
       setState(() {
         category = inferred;
@@ -14051,11 +13844,18 @@ class _MovementEditorState extends State<MovementEditor> {
   }
 
   double operationFeeForSave(Map<String, dynamic> source) {
+    if (type == 'expense' && source['currency'] == 'USD') {
+      if (isBankCommissionCategory(category)) return 0;
+      return widget.movement?['accountId'] == accountId
+          ? numberValue(widget.movement?['feeAmount'])
+          : 0;
+    }
     if (!canConfigureBankFee(
       source,
       type: type,
       category: type == 'expense' ? category : '',
       method: type == 'expense' ? paymentMethod : 'bank_transfer',
+      bankTransferScope: bankTransferScope,
     )) {
       return 0;
     }
@@ -14072,7 +13872,7 @@ class _MovementEditorState extends State<MovementEditor> {
   }
 
   double estimatedTransferFeeForSave(Map<String, dynamic> source) {
-    if (supportsDollarFees(source)) return dollarFeeForSave();
+    if (supportsTransferFees(source)) return dollarFeeForSave();
     final target = widget.app.accountById(targetId);
     return bankTransferFee(
       source,
@@ -14195,10 +13995,7 @@ class _MovementEditorState extends State<MovementEditor> {
       }
     }
     try {
-      final dollarFees =
-          supportsDollarFees(source) &&
-          type != 'income' &&
-          (type != 'expense' || !isBankCommissionCategory(category));
+      final dollarFees = supportsTransferFees(source) && type == 'transfer';
       if (dollarFees && feeMode != 'none') {
         if ((feeMode == 'auto' || feeUnit == 'percent') &&
             feePercent.text.trim().isEmpty) {
@@ -14222,7 +14019,18 @@ class _MovementEditorState extends State<MovementEditor> {
           rate: parseAmount(rate.text),
         );
       }
+      final reference =
+          type == 'expense' &&
+              widget.movement == null &&
+              app.state['askExpenseReference'] == true
+          ? await promptExpenseReference(context, app.theme) ?? ''
+          : operationReference.text.trim();
+      if (!mounted) return;
       await widget.onSave({
+        for (final key in ['maintenanceAccountId', 'maintenanceMonth'])
+          if (widget.movement?.containsKey(key) == true)
+            key: widget.movement![key],
+        'reference': reference,
         ...budgetLinkFields(),
         'id': widget.movement?['id'] ?? _quickMovementId,
         'type': type,
@@ -14242,6 +14050,7 @@ class _MovementEditorState extends State<MovementEditor> {
                     type: type,
                     category: type == 'expense' ? category : '',
                     method: type == 'expense' ? paymentMethod : 'bank_transfer',
+                    bankTransferScope: bankTransferScope,
                   )
                   ? feeMode
                   : 'none'
@@ -14317,11 +14126,21 @@ class _AccountEditorState extends State<AccountEditor> {
   late String currency;
   final label = TextEditingController();
   final balance = MoneyEditingController();
+  String bankAccountType = '';
+  String benefitType = 'food';
+
+  bool get automaticMaintenance =>
+      kind == 'national' &&
+      RegExp(r'^\d{4}$').hasMatch(provider) &&
+      bankAccountType == 'current' &&
+      currency == 'VES';
 
   @override
   void initState() {
     super.initState();
     final a = widget.account;
+    bankAccountType = a?['bankAccountType']?.toString() ?? '';
+    benefitType = a?['benefitType']?.toString() ?? 'food';
     kind = a?['kind']?.toString() ?? 'national';
     provider = a?['provider']?.toString() ?? '0102';
     currency = a?['currency']?.toString() ?? 'VES';
@@ -14334,9 +14153,20 @@ class _AccountEditorState extends State<AccountEditor> {
   }
 
   @override
+  void dispose() {
+    label.dispose();
+    balance.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final t = widget.app.theme;
-    final providers = kind == 'wallet' ? wallets : banks;
+    final providers = kind == 'wallet'
+        ? wallets
+        : kind == 'benefit'
+        ? benefits
+        : banks;
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
@@ -14352,6 +14182,7 @@ class _AccountEditorState extends State<AccountEditor> {
             KindSelector(
               theme: t,
               value: kind,
+              separated: true,
               items: const [
                 KindSelectorItem(
                   value: 'national',
@@ -14368,17 +14199,24 @@ class _AccountEditorState extends State<AccountEditor> {
                   label: 'Efectivo',
                   icon: CupertinoIcons.money_dollar_circle_fill,
                 ),
+                KindSelectorItem(
+                  value: 'benefit',
+                  label: 'Beneficios',
+                  icon: CupertinoIcons.ticket,
+                ),
               ],
               onChanged: (v) => setState(() {
                 kind = v;
                 provider = kind == 'wallet'
                     ? 'OKX'
+                    : kind == 'benefit'
+                    ? 'CESTATICKET'
                     : kind == 'cash'
                     ? 'CASH'
                     : '0102';
                 currency = kind == 'wallet'
                     ? 'USD'
-                    : kind == 'national'
+                    : kind == 'national' || kind == 'benefit'
                     ? 'VES'
                     : currency;
               }),
@@ -14390,6 +14228,42 @@ class _AccountEditorState extends State<AccountEditor> {
                 value: providerName(provider),
                 logoProvider: provider,
                 onTap: () => pickProvider(context, providers),
+              ),
+            if (kind == 'benefit')
+              OptionField(
+                theme: t,
+                label: 'Tipo de Cestaticket',
+                value: benefitType == 'integral' ? 'Integral' : 'Alimentación',
+                icon: CupertinoIcons.ticket,
+                onTap: () => pickValue(
+                  context,
+                  const ['Alimentación', 'Integral'],
+                  benefitType == 'integral' ? 'Integral' : 'Alimentación',
+                  (value) => setState(
+                    () =>
+                        benefitType = value == 'Integral' ? 'integral' : 'food',
+                  ),
+                ),
+              ),
+            if (kind == 'national')
+              OptionField(
+                theme: t,
+                label: 'Tipo de cuenta',
+                value: switch (bankAccountType) {
+                  'current' => 'Corriente',
+                  'savings' => 'Ahorro',
+                  _ => 'Seleccionar',
+                },
+                icon: CupertinoIcons.building_2_fill,
+                onTap: () => pickValue(
+                  context,
+                  const ['Corriente', 'Ahorro'],
+                  bankAccountType == 'savings' ? 'Ahorro' : 'Corriente',
+                  (value) => setState(() {
+                    final next = value == 'Ahorro' ? 'savings' : 'current';
+                    bankAccountType = next;
+                  }),
+                ),
               ),
             RField(
               theme: t,
@@ -14404,7 +14278,9 @@ class _AccountEditorState extends State<AccountEditor> {
                 decimal: true,
               ),
             ),
-            if (kind == 'wallet')
+            if (kind == 'benefit')
+              StaticField(theme: t, label: 'Moneda', value: 'Bolívares')
+            else if (kind == 'wallet')
               StaticField(theme: t, label: 'Moneda', value: 'Dólares')
             else
               OptionField(
@@ -14415,11 +14291,31 @@ class _AccountEditorState extends State<AccountEditor> {
                   context,
                   const ['Bolívares', 'Dólares'],
                   displayCurrency(currency),
-                  (v) => setState(
-                    () => currency = v.startsWith('Bol') ? 'VES' : 'USD',
-                  ),
+                  (v) => setState(() {
+                    final next = v.startsWith('Bol') ? 'VES' : 'USD';
+                    currency = next;
+                  }),
                 ),
               ),
+            if (automaticMaintenance) ...[
+              const SizedBox(height: 16),
+              DebtDetailRow(
+                theme: t,
+                label: 'Mantenimiento mensual',
+                value: 'Bs. 684,00',
+              ),
+              Text(
+                'Registro automático desde el próximo mes, el día 1. Importe basado en el máximo publicado para personas naturales; el cobro real puede variar por banco. Puedes editar o eliminar el movimiento.',
+                style: TextStyle(color: t.muted, fontSize: 13, height: 1.5),
+              ),
+              CupertinoButton(
+                onPressed: () => NativeStateStore.openUrl(
+                  'https://www.banesco.com/tasas-cargos-y-tarifas/',
+                ),
+                child: const Text('Consultar tarifa de referencia'),
+              ),
+              const SizedBox(height: 20),
+            ],
             PrimaryActionButton(
               theme: t,
               label: widget.account == null
@@ -14458,11 +14354,23 @@ class _AccountEditorState extends State<AccountEditor> {
 
   void save() {
     final providerCode = kind == 'cash' ? 'CASH' : provider;
+    if (kind == 'national' && bankAccountType.isEmpty) {
+      showModernNotice(
+        context,
+        title: 'Tipo de cuenta',
+        message: 'Selecciona Corriente o Ahorro.',
+      );
+      return;
+    }
+    final enableMaintenance = automaticMaintenance;
     if (kind == 'wallet') currency = 'USD';
+    if (kind == 'benefit') currency = 'VES';
     if (widget.app.hasDuplicateAccount(
       providerCode,
       currency,
       ignoreId: widget.account?['id']?.toString() ?? '',
+      bankAccountType: kind == 'national' ? bankAccountType : '',
+      benefitType: benefitType,
     )) {
       showModernNotice(
         context,
@@ -14474,6 +14382,7 @@ class _AccountEditorState extends State<AccountEditor> {
     }
     final name = automaticAccountName(providerCode, label.text);
     widget.onSave({
+      ...?widget.account,
       'id': widget.account?['id'],
       'kind': kind,
       'provider': providerCode,
@@ -14482,6 +14391,18 @@ class _AccountEditorState extends State<AccountEditor> {
       'label': label.text.trim(),
       'initialCurrency': currency,
       'currency': currency,
+      'bankAccountType': kind == 'national' ? bankAccountType : '',
+      'benefitType': kind == 'benefit' ? benefitType : '',
+      'maintenanceEnabled': enableMaintenance,
+      'maintenanceAmount': enableMaintenance ? bankMaintenanceAmount : 0,
+      'maintenancePolicy': enableMaintenance ? bankMaintenancePolicy : '',
+      'maintenanceNextMonth':
+          enableMaintenance &&
+              widget.account?['maintenancePolicy'] == bankMaintenancePolicy &&
+              widget.account?['currency'] == currency &&
+              widget.account?['provider'] == providerCode
+          ? (widget.account?['maintenanceNextMonth'] ?? nextMaintenanceMonth())
+          : nextMaintenanceMonth(),
     });
   }
 }
@@ -15751,10 +15672,10 @@ void pickCategory(
   showModernActionSheet(
     context,
     title: 'Categoría',
-    actions: budgetCategories
+    actions: categoryChoices(context, selected: selected)
         .map(
           (category) => ModernSheetAction(
-            icon: categoryIcon(category),
+            icon: categoryIcon(category, context: context),
             title: category,
             selected: category == selected,
             onPressed: () => onSelect(category),
@@ -15822,7 +15743,18 @@ String accountSecondaryName(Map<String, dynamic> account) {
   final provider = providerName(account['provider']?.toString() ?? '');
   final currency = displayCurrency(account['currency']?.toString() ?? 'USD');
   final label = account['label']?.toString().trim() ?? '';
-  return label.isEmpty ? currency : '$provider · $currency';
+  final detail = account['provider'] == 'CESTATICKET'
+      ? (isCestaticketIntegral(account) ? 'Integral' : 'Alimentación')
+      : switch (account['bankAccountType']) {
+          'current' => 'Corriente',
+          'savings' => 'Ahorro',
+          _ => '',
+        };
+  return [
+    if (label.isNotEmpty) provider,
+    currency,
+    if (detail.isNotEmpty) detail,
+  ].join(' · ');
 }
 
 String automaticAccountName(String provider, String label) {
@@ -15879,6 +15811,7 @@ String currencyCodeFromLabel(String label) {
 
 String providerName(String code) {
   if (code == 'CASH') return 'Efectivo';
+  if (code == 'CESTATICKET') return 'Cestaticket';
   for (final b in banks) {
     if (b.first == code) return b.last;
   }
@@ -15935,6 +15868,7 @@ String? logoAsset(String code) {
     'CASHEA': 'logo_cashea',
     'KRECE': 'logo_krece',
     'WEPPA': 'logo_weppa',
+    'CESTATICKET': 'logo_cestaticket',
   };
   final name = assets[code];
   return name == null ? null : 'assets/logos/$name.png';
@@ -16541,13 +16475,13 @@ String selectedDebtLabel(Map<String, dynamic>? debt) {
   return debt['kind']?.toString() == 'receivable' ? 'Por cobrar' : 'Por pagar';
 }
 
+bool debtIsPaid(Map<String, dynamic> debt) => debtRemainingAmount(debt) <= 0;
+
 List<Map<String, dynamic>> upcomingDebtItems(List<Map<String, dynamic>> debts) {
   final list = debts
       .map((debt) {
-        final amount = numberValue(debt['amount']);
-        final paid = numberValue(debt['paidAmount']);
         final dueDate = debtUpcomingDate(debt);
-        if (amount <= 0 || paid >= amount) return null;
+        if (debtIsPaid(debt)) return null;
         return Map<String, dynamic>.from(debt)..['nextDueDate'] = dueDate;
       })
       .whereType<Map<String, dynamic>>()
@@ -16682,7 +16616,10 @@ bool isCashAccount(Map<String, dynamic>? account) =>
 bool isFeeExemptPaymentMethod(String method) =>
     method == 'payment_mobile_c2p' ||
     method == 'payment_mobile_p2c' ||
-    method == 'debit_card';
+    method == 'debit_card' ||
+    method == 'biopayment' ||
+    method == 'wallet_payment' ||
+    method == 'binance_pay';
 
 bool canConfigureBankFee(
   Map<String, dynamic>? account, {
@@ -16690,12 +16627,16 @@ bool canConfigureBankFee(
   Map<String, dynamic>? target,
   String category = '',
   String method = 'bank_transfer',
+  String bankTransferScope = 'other_bank',
 }) {
   if (type == 'income') return false;
   if (supportsDollarFees(account)) {
-    return (type == 'transfer' && target != null) ||
-        (type == 'expense' && !isBankCommissionCategory(category));
+    return type == 'transfer' && target != null;
   }
+  if (type == 'expense' &&
+      method == 'bank_transfer' &&
+      bankTransferScope == 'same_bank')
+    return false;
   if (isFeeExemptCategory(category)) return false;
   if (isFeeExemptPaymentMethod(method)) return false;
   if (!isNationalBankAccount(account)) return false;
@@ -16761,26 +16702,58 @@ double estimatedBankFee({
   }
 }
 
-String paymentMethodLabel(String method) {
+List<String> expensePaymentMethods(Map<String, dynamic>? account) {
+  if (account?['currency'] == 'USD') {
+    return [
+      'Tarjeta',
+      account?['provider'] == 'BINANCE' ? 'Binance Pay' : 'Pago',
+    ];
+  }
+  if (account?['provider'] == 'CESTATICKET') {
+    return [
+      'Tarjeta',
+      if (isCestaticketIntegral(account)) 'Transferencia bancaria',
+    ];
+  }
+  return [
+    'Pago móvil',
+    'Pago C2P - Jurídico',
+    'Transferencia bancaria',
+    'Tarjeta - Biopago',
+  ];
+}
+
+String paymentMethodLabel(String method, {String? currency}) {
   switch (method) {
     case 'payment_mobile_c2p':
     case 'payment_mobile_p2c':
-      return 'Pago móvil C2P';
+      return 'Pago C2P - Jurídico';
     case 'bank_transfer':
       return 'Transferencia bancaria';
     case 'debit_card':
-      return 'Tarjeta';
+      return currency == 'VES' ? 'Tarjeta - Biopago' : 'Tarjeta';
+    case 'biopayment':
+      return 'Tarjeta - Biopago';
+    case 'wallet_payment':
+      return 'Pago';
+    case 'binance_pay':
+      return 'Binance Pay';
     default:
       return 'Pago móvil';
   }
 }
 
 String paymentMethodFromLabel(String label) {
-  if (label == 'Pago móvil C2P' || label == 'Pago móvil comercio') {
+  if (label == 'Pago C2P - Jurídico' ||
+      label == 'Pago móvil C2P' ||
+      label == 'Pago móvil comercio') {
     return 'payment_mobile_c2p';
   }
   if (label == 'Transferencia bancaria') return 'bank_transfer';
   if (label == 'Tarjeta') return 'debit_card';
+  if (label == 'Tarjeta - Biopago') return 'debit_card';
+  if (label == 'Pago') return 'wallet_payment';
+  if (label == 'Binance Pay') return 'binance_pay';
   return 'payment_mobile_p2p';
 }
 

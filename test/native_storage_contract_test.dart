@@ -64,6 +64,22 @@ void main() {
         ]
         ..['savingsCircles'] = [
           {'id': 'san', 'quota': 10.0},
+        ]
+        ..['customCategories'] = [
+          {
+            'id': 'custom',
+            'name': 'Jardin',
+            'icon': 'Naturaleza',
+            'keywords': ['plantas'],
+          },
+        ]
+        ..['recurringMovements'] = [
+          {
+            'id': 'recurring',
+            'type': 'income',
+            'startDate': '2026-10-06',
+            'frequency': 'weekly',
+          },
         ];
       final writes = <Map<dynamic, dynamic>>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -80,6 +96,10 @@ void main() {
       await NativeStateStore.flush();
       final main = jsonDecode(writes.single['state'] as String) as Map;
       final parts = writes.single['parts'] as Map;
+      expect(main['customCategories'], state['customCategories']);
+      expect(main['recurringMovements'], state['recurringMovements']);
+      expect(parts.containsKey('recurringMovements'), isFalse);
+      expect(parts.containsKey('customCategories'), isFalse);
       for (final key in ['budgetPlans', 'sharedSavings', 'savingsCircles']) {
         expect(main.containsKey(key), isFalse);
         expect(jsonDecode(parts[key] as String), state[key]);

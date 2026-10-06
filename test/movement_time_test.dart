@@ -42,11 +42,6 @@ Future<void> openPicker(
   await tester.pumpAndSettle();
 }
 
-Finder adjusterButton(String label, IconData icon) => find.descendant(
-  of: find.byWidgetPredicate((w) => w is TimeAdjuster && w.label == label),
-  matching: find.byIcon(icon),
-);
-
 void main() {
   for (final period in ['AM', 'PM']) {
     testWidgets(
@@ -101,34 +96,17 @@ void main() {
   });
 
   testWidgets(
-    'Plus and minus stay in sync after manual entry and wrap correctly',
+    'Time entry opens the keyboard directly without stepper buttons',
     (tester) async {
       DateTime? selected;
       await openPicker(tester, onSelected: (value) => selected = value);
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(find.byIcon(CupertinoIcons.plus), findsNothing);
+      expect(find.byIcon(CupertinoIcons.minus), findsNothing);
       await tester.enterText(hourInput, '12');
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pump();
       await tester.enterText(minuteInput, '59');
-      await tester.tap(adjusterButton('Hora', CupertinoIcons.plus));
-      await tester.tap(adjusterButton('Minutos', CupertinoIcons.plus));
-      await tester.pumpAndSettle();
-      expect(
-        tester.widget<CupertinoTextField>(hourInput).controller!.text,
-        '01',
-      );
-      expect(
-        tester.widget<CupertinoTextField>(minuteInput).controller!.text,
-        '00',
-      );
-      await tester.tap(adjusterButton('Hora', CupertinoIcons.minus));
-      await tester.tap(adjusterButton('Minutos', CupertinoIcons.minus));
-      await tester.pumpAndSettle();
-      expect(
-        tester.widget<CupertinoTextField>(hourInput).controller!.text,
-        '12',
-      );
-      expect(
-        tester.widget<CupertinoTextField>(minuteInput).controller!.text,
-        '59',
-      );
       await tester.tap(find.text('Guardar'));
       await tester.pumpAndSettle();
       expect(selected?.hour, 12);

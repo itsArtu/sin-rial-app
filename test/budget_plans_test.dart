@@ -563,7 +563,7 @@ void main() {
       final nextDay = cache.read(app, now: now.add(const Duration(minutes: 1)));
       expect(nextDay.trend.first.date, DateTime(2026, 10, 1));
       app.saveMovement(fixtures.movement('expense', amount: 10));
-      expect(cache.read(app, now: now).expenses, 10.3);
+      expect(cache.read(app, now: now).expenses, 10.0);
       app.undoLastOperation();
       expect(cache.read(app, now: now).expenses, 0);
       app.mutate(() {

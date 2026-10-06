@@ -48,13 +48,30 @@ void main() {
           (_) => SettingsPage(app: app),
         );
         await tester.pumpAndSettle();
-        final title = find.text('Sin Rial');
+        final title = find.byType(SinRialLogo);
         final version = find.byKey(const ValueKey('app-version'));
         for (final text in [title, version]) {
-          expect(tester.widget<Text>(text).textAlign, TextAlign.center);
           expect(tester.getCenter(text).dx, closeTo(width / 2, .5));
         }
-        expect(tester.widget<Text>(version).data, 'Versi\u00f3n 3.1.3');
+        expect(tester.widget<Text>(version).textAlign, TextAlign.center);
+        const expectedVersion = String.fromEnvironment(
+          'FLUTTER_BUILD_NAME',
+          defaultValue: '3.2',
+        );
+        expect(
+          tester.widget<Text>(version).data,
+          'Versi\u00f3n $expectedVersion',
+        );
+        expect(find.text('Acerca de Sin Rial'), findsNothing);
+        for (final color in ['cyan', 'violet', 'emerald']) {
+          app.mutate(() => app.state['themeColor'] = color);
+          await tester.pumpAndSettle();
+          final image = tester.widget<Image>(
+            find.descendant(of: title, matching: find.byType(Image)),
+          );
+          expect(image.color, app.theme.accent);
+          expect((image.image as ResizeImage).height, 72);
+        }
         if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
           await expectLater(
             find.byType(RialApp),
@@ -66,6 +83,12 @@ void main() {
         await tester.tap(version);
         await tester.pumpAndSettle();
         expect(find.textContaining('Gracias a los testers'), findsOneWidget);
+        app.rootNavigatorKey.currentState.pop();
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('settings-about-logo')));
+        await tester.pumpAndSettle();
+        expect(find.text('Acerca de'), findsOneWidget);
+        expect(find.text('Hecha por Arturo el siuuuu'), findsOneWidget);
         app.rootNavigatorKey.currentState.pop();
         await tester.pumpAndSettle();
         app.pushPage(

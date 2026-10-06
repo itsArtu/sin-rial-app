@@ -159,14 +159,9 @@ class _AppUpdatePageState extends State<AppUpdatePage>
               textAlign: TextAlign.center,
               style: TextStyle(color: t.ink, fontWeight: FontWeight.w600),
             ),
-            if (active) ...[
+            if (active || (status == 'starting' && error == null)) ...[
               const SizedBox(height: 18),
-              material.LinearProgressIndicator(
-                value: progress,
-                color: t.accent,
-                backgroundColor: t.field,
-                minHeight: 6,
-              ),
+              SmoothDownloadProgress(theme: t, value: progress),
               const SizedBox(height: 12),
               Text(
                 '${formatNumber(received / 1048576)} / ${formatNumber(total / 1048576)} MB',

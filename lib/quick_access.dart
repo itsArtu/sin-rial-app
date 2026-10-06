@@ -251,8 +251,9 @@ extension _QuickMovementForm on _MovementEditorState {
     final hasPaymentMethod =
         type == 'expense' &&
         !isBankCommissionCategory(category) &&
-        isNationalBankAccount(source) &&
-        currency == 'VES';
+        ((isNationalBankAccount(source) && currency == 'VES') ||
+            supportsDollarFees(source) ||
+            source?['provider'] == 'CESTATICKET');
     Widget choice(
       String label,
       String value,
@@ -383,7 +384,7 @@ extension _QuickMovementForm on _MovementEditorState {
                         choice(
                           'Categor\u00eda',
                           category,
-                          categoryIcon(category),
+                          categoryIcon(category, context: context),
                           () => pickCategory(
                             context,
                             category,
@@ -396,19 +397,24 @@ extension _QuickMovementForm on _MovementEditorState {
                       if (hasPaymentMethod)
                         choice(
                           'Forma de pago',
-                          paymentMethodLabel(paymentMethod),
+                          paymentMethodLabel(paymentMethod, currency: currency),
                           CupertinoIcons.money_dollar_circle,
                           () => pickValue(
                             context,
-                            const [
-                              'Pago m\u00f3vil',
-                              'Pago m\u00f3vil C2P',
-                              'Transferencia bancaria',
-                              'Tarjeta',
-                            ],
-                            paymentMethodLabel(paymentMethod),
+                            expensePaymentMethods(source),
+                            paymentMethodLabel(
+                              paymentMethod,
+                              currency: currency,
+                            ),
                             (value) => _setViewState(() {
                               paymentMethod = paymentMethodFromLabel(value);
+                              fee.clear();
+                              feeMode =
+                                  currency == 'USD' ||
+                                      (paymentMethod == 'bank_transfer' &&
+                                          bankTransferScope == 'same_bank')
+                                  ? 'none'
+                                  : 'auto';
                             }),
                           ),
                         ),
@@ -421,39 +427,17 @@ extension _QuickMovementForm on _MovementEditorState {
                             context,
                             const ['Otro banco', 'Mismo banco'],
                             bankTransferScopeLabel(bankTransferScope),
-                            (value) => _setViewState(
-                              () => bankTransferScope =
-                                  bankTransferScopeFromLabel(value),
-                            ),
-                          ),
-                        ),
-                      if (type == 'expense' &&
-                          supportsDollarFees(source) &&
-                          !isBankCommissionCategory(category)) ...[
-                        choice(
-                          'Comisión',
-                          feeModeLabel(feeMode),
-                          CupertinoIcons.percent,
-                          () => pickValue(
-                            context,
-                            const ['Automática', 'Manual', 'Sin comisión'],
-                            feeModeLabel(feeMode),
                             (value) => _setViewState(() {
-                              feeMode = feeModeFromLabel(value);
-                              feeUnit = 'percent';
+                              bankTransferScope = bankTransferScopeFromLabel(
+                                value,
+                              );
+                              feeMode = bankTransferScope == 'same_bank'
+                                  ? 'none'
+                                  : 'auto';
+                              fee.clear();
                             }),
                           ),
                         ),
-                        if (feeMode != 'none')
-                          choice(
-                            'Comisión (%)',
-                            feePercent.text.isEmpty
-                                ? 'Sin definir'
-                                : '${compactDecimal(parseAmount(feePercent.text))}%',
-                            CupertinoIcons.percent,
-                            () => editCommission(percent: true),
-                          ),
-                      ],
                       if (appliedFee > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 12),

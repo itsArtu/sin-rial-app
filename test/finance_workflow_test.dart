@@ -151,7 +151,7 @@ void main() {
             ? 120.0
             : type == 'transfer'
             ? 80.0
-            : 79.7,
+            : 80.0,
       );
       if (type == 'transfer') expect(app.accountById('b')['balance'], 300);
       app.saveMovement(movement(type, amount: 30), editingId: 'm');

@@ -344,7 +344,7 @@ class _MonthlySpendingPageState extends State<MonthlySpendingPage> {
                           children: [
                             Icon(
                               grouping == 'category'
-                                  ? categoryIcon(entry.key)
+                                  ? categoryIcon(entry.key, context: context)
                                   : CupertinoIcons.creditcard,
                               color: color,
                               size: 21,

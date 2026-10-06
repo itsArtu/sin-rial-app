@@ -17,6 +17,19 @@ internal object PinSecurity {
         "pinRetryElapsed", "pinRetryBoot")
     private val validPin = Regex("[0-9]{4,6}")
 
+    fun disable(context: Context, pin: String): Map<String, Any> = synchronized(NativeJsonStore) {
+        val current = NativeJsonStore.readMain(context)
+        if (current.optBoolean("pinEnabled") || current.optBoolean("biometricEnabled")) {
+            require(verify(context, pin)["accepted"] == true) { "PIN incorrecto o temporalmente bloqueado" }
+        }
+        summary(NativeJsonStore.updateMain(context) { state ->
+            fields.forEach { state.remove(it) }
+            state.put("nativeSecurityV1", true).put("securitySetupComplete", true)
+                .put("pinEnabled", false).put("biometricEnabled", false)
+                .put("pinHash", "").put("pinSalt", "").put("pinLength", 0)
+        })
+    }
+
     fun configure(context: Context, pin: String, biometrics: Boolean): Map<String, Any> {
         require(validPin.matches(pin)) { "Invalid PIN" }
         return summary(NativeJsonStore.updateMain(context) { state ->

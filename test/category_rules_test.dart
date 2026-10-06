@@ -85,9 +85,9 @@ void main() {
       'Abono TDC Banesco': 'Pago TDC',
       'Tarjeta de crédito': 'Pago TDC',
       'Cuota TDC': 'Pago TDC',
-      'La mamalona': 'La mamalona',
-      'Mantenimiento de la moto': 'La mamalona',
-      'Gasolina para la moto': 'La mamalona',
+      'Arbitraje de fútbol': 'Hobbys',
+      'Mantenimiento de la moto': 'Transporte',
+      'Gasolina para la moto': 'Transporte',
       'Gasolina': 'Transporte',
       'Recarga saldo Movistar': 'Recarga saldo',
       'Comisión bancaria': 'Comisiones bancarias',
@@ -116,7 +116,7 @@ void main() {
     ]) {
       expect(categoryFromDescription(text), isNull, reason: text);
     }
-    expect(categoryIcon('La mamalona'), material.Icons.two_wheeler);
+    expect(categoryIcon('Hobbys'), material.Icons.sports_esports);
     expect(categoryIcon('Pago TDC'), CupertinoIcons.creditcard_fill);
   });
 
@@ -159,7 +159,7 @@ void main() {
         'Pasaje': 'Transporte',
         'Wifi': 'Servicios',
         'Pago TDC': 'Pago TDC',
-        'La mamalona': 'La mamalona',
+        'Arbitraje': 'Hobbys',
         'Texto sin coincidencias': 'Otro',
         '': 'Otro',
       }.entries) {
@@ -224,20 +224,16 @@ void main() {
       app.saveMovement(input, editingId: 'm');
       expect(app.accountById('a')['balance'], 80.0);
       expect(app.undoLastOperation(), isTrue);
-      expect(app.accountById('a')['balance'], 79.7);
+      expect(app.accountById('a')['balance'], 80.0);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
-  testWidgets('New categories are selectable and the motorcycle icon renders', (
+  testWidgets('New categories are selectable and the hobby icon renders', (
     tester,
   ) async {
     await payments.openExpense(tester);
-    for (final category in [
-      'Pago TDC',
-      'La mamalona',
-      'Comisiones bancarias',
-    ]) {
+    for (final category in ['Pago TDC', 'Hobbys', 'Comisiones bancarias']) {
       await tester.ensureVisible(payments.option('Categoría'));
       await tester.tap(payments.option('Categoría'));
       await tester.pumpAndSettle();
@@ -258,11 +254,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(selectedCategory(tester), category);
-      if (category == 'La mamalona') {
+      if (category == 'Hobbys') {
         expect(
           find.descendant(
             of: payments.option('Categoría'),
-            matching: find.byIcon(material.Icons.two_wheeler),
+            matching: find.byIcon(material.Icons.sports_esports),
           ),
           findsOneWidget,
         );

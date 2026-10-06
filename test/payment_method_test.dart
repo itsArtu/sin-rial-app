@@ -141,10 +141,10 @@ void main() {
       ),
       0,
     );
-    expect(paymentMethodLabel('payment_mobile_p2c'), 'Pago m\u00f3vil C2P');
+    expect(paymentMethodLabel('payment_mobile_p2c'), 'Pago C2P - Jurídico');
   });
 
-  for (final method in ['Pago m\u00f3vil C2P', 'Tarjeta']) {
+  for (final method in ['Pago C2P - Jurídico', 'Tarjeta - Biopago']) {
     testWidgets('$method clears a previous manual fee on save', (tester) async {
       final dynamic app = await openExpense(tester);
       await tester.ensureVisible(option('Comisi\u00f3n'));
@@ -181,7 +181,7 @@ void main() {
     final dynamic app = await openExpense(tester);
     await choose(tester, 'Comisi\u00f3n', 'Sin comisi\u00f3n');
     expect(option('Forma de pago'), findsOneWidget);
-    await choose(tester, 'Forma de pago', 'Tarjeta');
+    await choose(tester, 'Forma de pago', 'Tarjeta - Biopago');
     await choose(tester, 'Forma de pago', 'Pago m\u00f3vil');
     expect(option('Comisi\u00f3n'), findsOneWidget);
     final save = find.text('Guardar movimiento');

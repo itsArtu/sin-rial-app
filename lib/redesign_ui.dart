@@ -485,12 +485,22 @@ class ModernMenu extends StatelessWidget {
               CupertinoIcons.person_2,
               () => open((_) => DebtsPage(app: app)),
             ),
+            IconGridItem(
+              'Recurrentes',
+              CupertinoIcons.repeat,
+              () => open((_) => RecurringMovementsPage(app: app)),
+            ),
           ],
         ),
         SectionHeader(theme: app.theme, title: 'Herramientas'),
         IconGrid(
           theme: app.theme,
           items: [
+            IconGridItem(
+              'Categorías',
+              CupertinoIcons.tag,
+              () => open((_) => CategoriesPage(app: app)),
+            ),
             IconGridItem(
               'Calculadora',
               CupertinoIcons.plus_slash_minus,
@@ -520,7 +530,9 @@ class ModernMenu extends StatelessWidget {
             IconGridItem(
               'Colores',
               CupertinoIcons.paintbrush,
-              () => open((_) => SettingsPage(app: app, section: 'Color del tema')),
+              () => open(
+                (_) => SettingsPage(app: app, section: 'Color del tema'),
+              ),
             ),
             IconGridItem(
               'Apariencia',
@@ -558,6 +570,7 @@ IconData settingsSectionIcon(String section) => switch (section) {
   'Color del tema' => CupertinoIcons.paintbrush,
   'Seguridad' => CupertinoIcons.lock_shield,
   'Datos' => CupertinoIcons.archivebox,
+  'Movimientos' => CupertinoIcons.doc_text,
   _ => CupertinoIcons.gear_alt,
 };
 List<Widget> settingsPresentation(
@@ -578,32 +591,34 @@ List<Widget> settingsPresentation(
   if (selected != null) return groups[selected] ?? [];
   return [
     CupertinoButton(
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      key: const ValueKey('settings-about-logo'),
+      padding: const EdgeInsets.only(top: 14, bottom: 5),
+      onPressed: () => app.pushPage(
+        context,
+        (_) => SettingsPage(app: app, section: 'Acerca de'),
+      ),
+      child: Semantics(
+        label: 'Acerca de Sin Rial',
+        excludeSemantics: true,
+        child: SinRialLogo(
+          theme: app.theme,
+          height: 72,
+          color: app.theme.accent,
+        ),
+      ),
+    ),
+    CupertinoButton(
+      padding: const EdgeInsets.only(bottom: 14),
       onPressed: () => showModernNotice(
         context,
         title: 'Gracias',
         message: 'Gracias a los testers Rams\u00e9s, Gabriel, Kender, Daniel\n\nHecha por Arturo el siuuuu',
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Sin Rial',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: app.theme.ink,
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            'Versi\u00f3n $_appVersionName',
-            key: const ValueKey('app-version'),
-            textAlign: TextAlign.center,
-            style: TextStyle(color: app.theme.muted, fontSize: 13),
-          ),
-        ],
+      child: Text(
+        'Versi\u00f3n $_appVersionName',
+        key: const ValueKey('app-version'),
+        textAlign: TextAlign.center,
+        style: TextStyle(color: app.theme.muted, fontSize: 13),
       ),
     ),
     SectionHeader(theme: app.theme, title: 'Preferencias'),
@@ -611,7 +626,12 @@ List<Widget> settingsPresentation(
       theme: app.theme,
       items: [
         for (final key in groups.keys.where(
-          (k) => const {'Recordatorios', 'Seguridad', 'Datos'}.contains(k),
+          (k) => const {
+            'Recordatorios',
+            'Movimientos',
+            'Seguridad',
+            'Datos',
+          }.contains(k),
         ))
           IconGridItem(
             key == 'Recordatorios' ? 'Avisos' : key,

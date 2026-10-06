@@ -1,9 +1,9 @@
 {
-  "version": "3.1.3",
-  "build": 79,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.1.3%2B79/sin-rial-3.1.3-build79.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.1.3%2B79",
-  "sha256": "ACA070AB07FB1EF75974BD7ABC1933283EC5966BDCEAE2BD31D890FB48E69E05",
-  "size": 66132219,
-  "notes": "Sin Rial 3.1.3: abonos de deudas corregidos al cambiar de cuenta, con moneda y saldo restante visibles; botones mas separados y confirmacion al marcar una deuda pagada. Partidas con nombre y limites en distintas monedas dentro del presupuesto, seleccion al registrar gastos y desglose en el PDF. Equivalentes BCV en cuentas en bolivares y sus movimientos. Actualiza sin desinstalar ni borrar datos. Los abonos anteriores no se modifican automaticamente; revisa las deudas marcadas como pagadas por error."
+  "version": "3.2",
+  "build": 84,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.2%2B84/sin-rial-3.2-build84.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.2%2B84",
+  "sha256": "181D16FA2A0293B7C5B1EDE64DE6321376830D086028D94D95356A1E11D39190",
+  "size": 65862858,
+  "notes": "Sin Rial 3.2: nueva identidad y configuracion inicial. Recorrido opcional para usuarios nuevos y novedades para quienes actualizan. PIN opcional, categorias personalizadas, hora por teclado, referencias bancarias y movimientos recurrentes por confirmar. Deudas pendientes y pagadas separadas, Cestaticket Alimentacion/Integral y formas de pago revisadas. Mantenimiento local de Bs. 684 solo en cuentas bancarias corrientes en bolivares, desde el proximo mes; importe basado en el limite publicado, editable y eliminable, sin conexion ni debito al banco. Actualiza sin desinstalar ni borrar datos."
 }

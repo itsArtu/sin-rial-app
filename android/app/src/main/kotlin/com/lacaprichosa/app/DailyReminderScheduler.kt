@@ -34,10 +34,16 @@ object DailyReminderScheduler {
         val prefs = NativeJsonStore.prefs(context)
         // Debt due-date notices share this daily wake-up, even with the movement reminder off.
         val hasDebtNotices = synchronized(NativeJsonStore) {
-            val state = runCatching { NativeJsonStore.readState(context, setOf("debts")) }.getOrNull() ?: return
+            val state = runCatching { ReminderNotifications.readState(context) }.getOrNull() ?: return
             val debts = ReminderNotifications.debts(state)
             ReminderNotifications.reconcile(context, debts, enabled)
-            debts.isNotEmpty()
+            val recurring = RecurringReminder.fromState(state)
+            ReminderNotifications.reconcileRecurring(context, recurring)
+            if (BirthdayReminder.dueYear(state) == null) {
+                (context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.cancel(BirthdayReminder.ID)
+            }
+            debts.isNotEmpty() || recurring.isNotEmpty() || BirthdayReminder.enabled(state) ||
+                BankMaintenance.hasEnabled(NativeJsonStore.readState(context, setOf("accounts")))
         }
         if (!enabled && !hasDebtNotices) {
             existing?.let { alarm.cancel(it); it.cancel() }
@@ -96,10 +102,10 @@ object DailyReminderScheduler {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Recordatorio diario",
+            "Recordatorios",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "Recordatorio para registrar movimientos"
+            description = "Movimientos, deudas y recurrentes pendientes"
         }
         manager.createNotificationChannel(channel)
     }

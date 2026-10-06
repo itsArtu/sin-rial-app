@@ -69,9 +69,7 @@ const Map<String, List<String>> categoryKeywords = {
     'apartado',
     'meta de ahorro',
   ],
-  'La mamalona': [
-    'la mamalona',
-    'mamalona',
+  'Transporte': [
     'moto',
     'motos',
     'motocicleta',
@@ -88,8 +86,6 @@ const Map<String, List<String>> categoryKeywords = {
     'taller moto',
     'mecanico moto',
     'casco moto',
-  ],
-  'Transporte': [
     'transporte',
     'pasaje',
     'pasajes',
@@ -122,6 +118,47 @@ const Map<String, List<String>> categoryKeywords = {
     'gasolina',
     'combustible',
     'diesel',
+  ],
+  'Hobbys': [
+    'hobby',
+    'hobbies',
+    'hobbys',
+    'arbitraje',
+    'arbitro',
+    'arbitros',
+    'deporte',
+    'deportes',
+    'futbol',
+    'futbolito',
+    'beisbol',
+    'basket',
+    'baloncesto',
+    'voleibol',
+    'tenis',
+    'padel',
+    'natacion',
+    'cancha',
+    'pelota',
+    'balon',
+    'torneo',
+    'entrenamiento',
+    'videojuego',
+    'videojuegos',
+    'juego de mesa',
+    'juegos de mesa',
+    'concierto',
+    'conciertos',
+    'cine',
+    'teatro',
+    'paseo',
+    'excursion',
+    'camping',
+    'diversion',
+    'recreacion',
+    'gimnasio',
+    'gym',
+    'instrumento musical',
+    'coleccionismo',
   ],
   'Salud': [
     'salud',
@@ -247,8 +284,6 @@ const Map<String, List<String>> categoryKeywords = {
     'canva pro',
     'adobe',
     'chatgpt',
-    'gimnasio',
-    'gym',
   ],
   'Barbería': [
     'barberia',
@@ -478,13 +513,14 @@ String canonicalCategory(String value) => switch (_categorySearchText(value)) {
   'wifi' || 'wi fi' => 'Servicios',
   'pasaje' => 'Transporte',
   'cuotas' => 'Deuda',
+  'la mamalona' => 'Transporte',
   _ => value.trim(),
 };
 
 void migrateCategoryNames(Map<String, dynamic> state) {
-  for (final collection in ['movements', 'budgets']) {
+  for (final collection in ['movements', 'budgets', 'recurringMovements']) {
     state[collection] = [
-      for (final item in state[collection] as List)
+      for (final item in state[collection] as List? ?? [])
         if (item is Map &&
             item['category'] is String &&
             canonicalCategory(item['category'] as String) != item['category'])
@@ -507,13 +543,35 @@ String _categoryAlternatives(List<String> words) {
   return phrases.map(RegExp.escape).join('|');
 }
 
-String? categoryFromDescription(String value) {
+String? categoryFromDescription(
+  String value, {
+  Iterable<Map<String, dynamic>> custom = const [],
+}) {
   final text = _categorySearchText(value);
   if (text.isEmpty) return null;
   if (text == 'tdc' || text == 'tarjeta de credito') return 'Pago TDC';
   if (text == 'corte') return 'Barbería';
   String? category;
   var specificity = 0;
+  for (final item in custom) {
+    if (item['archived'] == true || item['keywords'] is! List) continue;
+    final phrases = (item['keywords'] as List)
+        .whereType<String>()
+        .map(_categorySearchText)
+        .where((v) => v.isNotEmpty)
+        .toList();
+    if (phrases.isEmpty) continue;
+    final pattern = RegExp(
+      '(?:^| )(${_categoryAlternatives(phrases)})(?= |\$)',
+    );
+    for (final match in pattern.allMatches(text)) {
+      final words = match.group(1)!.split(' ').length;
+      if (words > specificity) {
+        category = item['name']?.toString();
+        specificity = words;
+      }
+    }
+  }
   for (final entry in _categoryPatterns.entries) {
     for (final match in entry.value.allMatches(text)) {
       final words = match.group(1)!.split(' ').length;

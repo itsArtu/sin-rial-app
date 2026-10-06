@@ -665,7 +665,11 @@ class BudgetCategoryTile extends StatelessWidget {
                       backgroundColor: t.field,
                     ),
                   ),
-                  Icon(categoryIcon(category), size: 19, color: color),
+                  Icon(
+                    categoryIcon(category, context: context),
+                    size: 19,
+                    color: color,
+                  ),
                 ],
               ),
             ),
@@ -1299,7 +1303,7 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
               child: Row(
                 children: [
                   Icon(
-                    categoryIcon(item['category'].toString()),
+                    categoryIcon(item['category'].toString(), context: context),
                     color: budgetCategoryColor(item['category'].toString(), t),
                     size: 20,
                   ),
@@ -1560,14 +1564,14 @@ class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
         theme: widget.app.theme,
         label: 'Categor\u00eda',
         value: category.isEmpty ? 'Sin categor\u00edas disponibles' : category,
-        icon: categoryIcon(category),
+        icon: categoryIcon(category, context: context),
         onTap: () => showModernActionSheet(
           context,
           title: 'Categor\u00eda',
           actions: [
-            for (final value in budgetCategories)
+            for (final value in categoryChoices(context, selected: category))
               ModernSheetAction(
-                icon: categoryIcon(value),
+                icon: categoryIcon(value, context: context),
                 title: value,
                 selected: value == category,
                 onPressed: () => setState(() => category = value),
