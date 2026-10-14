@@ -32,7 +32,7 @@ void main() {
 
   for (final width in [320.0, 390.0]) {
     for (final dark in [false, true]) {
-      testWidgets('Named VES item, budget and debt spacing $width $dark', (
+      testWidgets('VES category limit, budget and debt spacing $width $dark', (
         tester,
       ) async {
         final dynamic app = await fixtures.fixture(tester);
@@ -45,7 +45,7 @@ void main() {
               (_) => BudgetCategoryEditorPage(
                 app: app,
                 siblings: const [
-                  {'category': 'Deuda', 'name': 'Gabriel', 'limit': 50.0},
+                  {'category': 'Servicios', 'limit': 50.0},
                 ],
               ),
             )
@@ -62,7 +62,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await tester.enterText(field('Nombre de la partida'), 'Arturo');
+        expect(field('Nombre de la partida'), findsNothing);
         await tester.tap(find.text('Moneda'));
         await tester.pumpAndSettle();
         await tester.tap(find.text(displayCurrency('VES')));
@@ -78,12 +78,12 @@ void main() {
             matchesGoldenFile('../build/feedback-qa/item-$width-$dark.png'),
           );
         }
-        await tester.tap(find.text('Guardar partida'));
+        await tester.tap(find.text('Guardar categor\u00eda'));
         await tester.pumpAndSettle();
         expect(item!['currency'], 'VES');
         expect(item!['limit'], 10000);
         expect(item!['category'], 'Deuda');
-        expect(item!['name'], 'Arturo');
+        expect(item!['name'], '');
         saveBudgetPlan(
           app,
           period: currentMonthKey(),
@@ -106,9 +106,14 @@ void main() {
           (_) => BudgetPage(app: app),
         );
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Arturo'));
-        expect(find.text('Gabriel'), findsOneWidget);
-        expect(find.text('de Bs. 10.000,00'), findsOneWidget);
+        await tester.ensureVisible(find.byType(BudgetCategoryTile));
+        expect(find.text('Gabriel'), findsNothing);
+        expect(
+          tester
+              .widget<BudgetCategoryTile>(find.byType(BudgetCategoryTile))
+              .limit,
+          1050,
+        );
         if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
           await expectLater(
             find.byType(RialApp),

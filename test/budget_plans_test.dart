@@ -353,10 +353,10 @@ void main() {
       await tester.enterText(field('Ahorro previsto en USD'), '100');
       await tester.tap(find.text('Continuar'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Seleccionar egresos'));
+      await tester.tap(find.text('Agregar categor\u00eda'));
       await tester.pumpAndSettle();
       await tester.enterText(field('L\u00edmite del periodo en USD'), '150');
-      await tester.tap(find.text('Guardar partida'));
+      await tester.tap(find.text('Guardar categor\u00eda'));
       await tester.pumpAndSettle();
       expect(app.maps('budgetPlans'), isEmpty);
       await tester.tap(find.text('Continuar'));

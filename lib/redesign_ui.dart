@@ -110,7 +110,13 @@ class _PhoneWidgetsPageState extends State<PhoneWidgetsPage> {
         child: ListView(
           padding: const EdgeInsets.all(18),
           children: [
-            for (final type in const ['movement', 'USD', 'EUR', 'calculator'])
+            for (final type in const [
+              'movement',
+              'USD',
+              'EUR',
+              'USDT',
+              'calculator',
+            ])
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: CupertinoButton(
@@ -142,6 +148,8 @@ class _PhoneWidgetsPageState extends State<PhoneWidgetsPage> {
                                     ? 'Tasa del d\u00f3lar'
                                     : type == 'calculator'
                                     ? 'Calculadora'
+                                    : type == 'USDT'
+                                    ? 'Tasa USDT'
                                     : 'Tasa del euro',
                                 style: TextStyle(
                                   color: t.ink,
@@ -528,13 +536,6 @@ class ModernMenu extends StatelessWidget {
           theme: app.theme,
           items: [
             IconGridItem(
-              'Colores',
-              CupertinoIcons.paintbrush,
-              () => open(
-                (_) => SettingsPage(app: app, section: 'Color del tema'),
-              ),
-            ),
-            IconGridItem(
               'Apariencia',
               CupertinoIcons.moon,
               () => open((_) => SettingsPage(app: app, section: 'Apariencia')),
@@ -587,6 +588,15 @@ List<Widget> settingsPresentation(
       continue;
     }
     groups.putIfAbsent(group, () => []).add(control);
+  }
+  if (selected == 'Apariencia') {
+    return [
+      ...?groups['Apariencia'],
+      SectionHeader(theme: app.theme, title: 'Color del tema'),
+      ...?groups['Color del tema'],
+      SectionHeader(theme: app.theme, title: 'Colores de movimientos'),
+      ...?groups['Colores de movimientos'],
+    ];
   }
   if (selected != null) return groups[selected] ?? [];
   return [
@@ -903,6 +913,8 @@ class AccountListLine extends StatelessWidget {
           children: [
             LogoBadge(
               provider: account['provider']?.toString() ?? '',
+              kind: account['kind']?.toString(),
+              benefitType: account['benefitType']?.toString(),
               theme: t,
               size: 40,
             ),
@@ -1028,7 +1040,7 @@ List<RateObservation> rateObservations(
   ];
 }
 
-class RateSparkline extends StatelessWidget {
+class RateSparkline extends StatefulWidget {
   const RateSparkline({
     super.key,
     required this.points,
@@ -1038,54 +1050,135 @@ class RateSparkline extends StatelessWidget {
   final List<RateObservation> points;
   final RTheme theme;
   final String currency;
+
+  @override
+  State<RateSparkline> createState() => _RateSparklineState();
+}
+
+class _RateSparklineState extends State<RateSparkline> {
+  int? selected;
+
+  @override
+  void didUpdateWidget(covariant RateSparkline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currency != widget.currency ||
+        oldWidget.points.length != widget.points.length ||
+        oldWidget.points.indexed.any(
+          (entry) =>
+              entry.$2.date != widget.points[entry.$1].date ||
+              entry.$2.value != widget.points[entry.$1].value,
+        )) {
+      selected = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (points.length < 2)
+    final theme = widget.theme;
+    final points = widget.points;
+    if (points.isEmpty) {
       return Center(
         child: Text(
-          'Sin historial suficiente',
+          'Sin historial disponible',
           textAlign: TextAlign.center,
           style: TextStyle(color: theme.muted, fontSize: 10),
         ),
       );
+    }
+    final low = points.map((point) => point.value).reduce(math.min);
+    final high = points.map((point) => point.value).reduce(math.max);
+    final margin = math.max(
+      (high - low) * .15,
+      math.max(high.abs() * .002, .01),
+    );
+    final index = (selected ?? points.length - 1).clamp(0, points.length - 1);
+    String describe(int i) {
+      final date = widget.currency == 'USDT'
+          ? caracasTime(points[i].date)
+          : points[i].date;
+      return '${formatDate(date)}\nBs. ${decimal(points[i].value)}';
+    }
+
     final line = charts.LineChartBarData(
       spots: [
         for (var i = 0; i < points.length; i++)
-          charts.FlSpot(i.toDouble(), points[i].value),
+          charts.FlSpot(
+            points.length == 1 ? .5 : i.toDouble(),
+            points[i].value,
+          ),
       ],
       color: theme.accent,
       barWidth: 2,
       isCurved: false,
-      dotData: const charts.FlDotData(show: false),
+      dotData: charts.FlDotData(show: points.length <= 7),
+      showingIndicators: selected == null ? const [] : [index],
       belowBarData: charts.BarAreaData(
-        show: true,
-        color: theme.accent.withOpacity(.08),
+        show: points.length > 1,
+        color: theme.accent.withValues(alpha: .08),
       ),
     );
-    return charts.LineChart(
-      charts.LineChartData(
-        titlesData: const charts.FlTitlesData(show: false),
-        gridData: const charts.FlGridData(show: false),
-        borderData: charts.FlBorderData(show: false),
-        lineBarsData: [line],
-        lineTouchData: charts.LineTouchData(
-          touchTooltipData: charts.LineTouchTooltipData(
-            fitInsideHorizontally: true,
-            fitInsideVertically: true,
-            getTooltipColor: (_) => theme.field,
-            getTooltipItems: (spots) => [
-              for (final spot in spots)
-                charts.LineTooltipItem(
-                  formatDate(points[spot.spotIndex].date) +
-                      '\nBs ' +
-                      decimal(spot.y),
-                  TextStyle(color: theme.ink, fontSize: 10),
-                ),
+    return Semantics(
+      label: 'Historial ${widget.currency}',
+      value: describe(index),
+      increasedValue: index < points.length - 1 ? describe(index + 1) : null,
+      decreasedValue: index > 0 ? describe(index - 1) : null,
+      onIncrease: index < points.length - 1
+          ? () => setState(() => selected = index + 1)
+          : null,
+      onDecrease: index > 0 ? () => setState(() => selected = index - 1) : null,
+      child: RepaintBoundary(
+        child: charts.LineChart(
+          key: ValueKey('rate-chart-${widget.currency}'),
+          charts.LineChartData(
+            minX: 0,
+            maxX: math.max(1, points.length - 1).toDouble(),
+            minY: low - margin,
+            maxY: high + margin,
+            titlesData: const charts.FlTitlesData(show: false),
+            gridData: const charts.FlGridData(show: false),
+            borderData: charts.FlBorderData(show: false),
+            lineBarsData: [line],
+            showingTooltipIndicators: [
+              if (selected != null)
+                charts.ShowingTooltipIndicators([
+                  charts.LineBarSpot(line, 0, line.spots[index]),
+                ]),
             ],
+            lineTouchData: charts.LineTouchData(
+              handleBuiltInTouches: false,
+              // Sparse USDT history must be selectable between observations too.
+              touchSpotThreshold: double.infinity,
+              touchCallback: (event, response) {
+                final spots = response?.lineBarSpots;
+                if (event.isInterestedForInteractions &&
+                    spots != null &&
+                    spots.isNotEmpty) {
+                  final next = spots.first.spotIndex;
+                  if (next != selected) setState(() => selected = next);
+                }
+              },
+              touchTooltipData: charts.LineTouchTooltipData(
+                fitInsideHorizontally: true,
+                fitInsideVertically: true,
+                tooltipPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                tooltipMargin: 4,
+                getTooltipColor: (_) => theme.field,
+                getTooltipItems: (spots) => [
+                  for (final spot in spots)
+                    charts.LineTooltipItem(
+                      describe(spot.spotIndex),
+                      TextStyle(color: theme.ink, fontSize: 11),
+                    ),
+                ],
+              ),
+            ),
           ),
+          duration: Duration.zero,
         ),
       ),
-      duration: Duration.zero,
     );
   }
 }

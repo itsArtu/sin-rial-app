@@ -22,6 +22,7 @@ import java.util.concurrent.Executors
 
 open class MainActivity : FlutterFragmentActivity() {
     protected open val quickAccess: Boolean = false
+    private val calculatorAccess get() = quickAccess && QuickAccessActivity.actionFrom(intent) == "calculator"
     @Volatile private var loadedRevision: Long? = null
     private val channelName = "rial/native_state"
     private var screenReceiver: BroadcastReceiver? = null
@@ -102,6 +103,22 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+            if (calculatorAccess && call.method !in CalculatorAccess.allowedMethods) {
+                result.error("CALCULATOR_ONLY", "Abre Sin Rial para acceder a tus datos", null)
+                return@setMethodCallHandler
+            }
+            if (call.method == "readAppearance" || call.method == "readCalculatorState") {
+                stateExecutor.execute {
+                    try {
+                        val value: Any = if (call.method == "readAppearance") NativeJsonStore.appearance(this)
+                            else CalculatorAccess.project(NativeJsonStore.readMain(this)).toString()
+                        runOnUiThread { result.success(value) }
+                    } catch (_: Exception) {
+                        runOnUiThread { result.error("STORAGE_UNAVAILABLE", "No se pudieron cargar las preferencias", null) }
+                    }
+                }
+                return@setMethodCallHandler
+            }
             if (call.method in setOf("startApkUpdate", "apkUpdateStatus", "cancelApkUpdate", "installApkUpdate", "allowApkUpdates")) {
                 val updater = ApkUpdater(applicationContext)
                 if (call.method == "allowApkUpdates") {
@@ -171,6 +188,7 @@ open class MainActivity : FlutterFragmentActivity() {
                                 runCatching { MovementWidgetProvider.updateAll(this) }
                                 runCatching { UsdRateWidgetProvider.updateAll(this) }
                                 runCatching { EurRateWidgetProvider.updateAll(this) }
+                                runCatching { UsdtRateWidgetProvider.updateAll(this) }
                                 runCatching { CalculatorWidgetProvider.updateAll(this) }
                                 true
                             }
@@ -193,6 +211,7 @@ open class MainActivity : FlutterFragmentActivity() {
                 }
                 "openFullApp" -> {
                     result.success(true)
+                    if (calculatorAccess) prefs.edit().putBoolean("screen_off_pending", true).apply()
                     startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     if (quickAccess) finishAndRemoveTask()
                 }

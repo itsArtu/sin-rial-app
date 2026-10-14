@@ -12,6 +12,20 @@ Future<void> closeQuickAccess() async {
   await _storeChannel.invokeMethod<void>('closeQuickAccess');
 }
 
+Map<String, dynamic> calculatorOnlyState(Map<String, dynamic> source) =>
+    defaultState()..addAll({
+      for (final key in {...rateStateKeys, 'darkMode', 'themeColor'})
+        if (source.containsKey(key)) key: source[key],
+      'onboardingComplete': true,
+      'securitySetupComplete': true,
+    });
+
+Future<Map<String, dynamic>> loadCalculatorState() async {
+  final raw = await _storeChannel.invokeMethod<String>('readCalculatorState');
+  if (raw == null) throw const FormatException('Tasas no disponibles');
+  return calculatorOnlyState((jsonDecode(raw) as Map).cast<String, dynamic>());
+}
+
 class QuickAccessFrame extends StatelessWidget {
   const QuickAccessFrame({
     super.key,
@@ -54,8 +68,19 @@ class QuickAccessFrame extends StatelessWidget {
 
 extension _QuickAccessApp on _RialAppState {
   bool get isQuickAccess => widget.quickAction != null;
+  bool get isCalculatorAccess => widget.quickAction == 'calculator';
 
   Future<void> reloadExternalChanges() async {
+    if (isCalculatorAccess) {
+      try {
+        final fresh = await loadCalculatorState();
+        if (mounted) {
+          _setViewState(() => state = fresh);
+          revision.value++;
+        }
+      } catch (_) {}
+      return;
+    }
     if (_reloadingExternal) return;
     _reloadingExternal = true;
     try {
@@ -250,7 +275,7 @@ extension _QuickMovementForm on _MovementEditorState {
     final currency = source?['currency']?.toString() ?? 'USD';
     final hasPaymentMethod =
         type == 'expense' &&
-        !isBankCommissionCategory(category) &&
+        !isFeeExemptCategory(category) &&
         ((isNationalBankAccount(source) && currency == 'VES') ||
             supportsDollarFees(source) ||
             source?['provider'] == 'CESTATICKET');

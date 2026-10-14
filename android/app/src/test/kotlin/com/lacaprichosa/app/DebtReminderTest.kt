@@ -107,6 +107,17 @@ class DebtReminderTest {
         assertTrue(manager.activeNotifications.isEmpty())
     }
 
+    @Test fun payingALaterInstallmentDoesNotSkipAnEarlierUnpaidReminder() {
+        val d = debt().put("amount", 300).put("installments", 3).put("hasInstallments", true)
+            .put("paymentFrequency", "Mensual").put("installmentMode", "auto").put("paidAmount", 100)
+            .put("installmentPayments", JSONObject().put("m", JSONObject().put("index", 2).put("amount", 100)))
+        assertEquals(Calendar.OCTOBER, DebtReminder.from(d)!!.due.get(Calendar.MONTH))
+        d.put("paidAmount", 200)
+        assertEquals(Calendar.NOVEMBER, DebtReminder.from(d)!!.due.get(Calendar.MONTH))
+        d.put("installmentPayments", JSONObject())
+        assertEquals(Calendar.DECEMBER, DebtReminder.from(d)!!.due.get(Calendar.MONTH))
+    }
+
     @Test fun scheduleMatchesInitialManualCustomAndMonthEndInstallments() {
         val d = debt().put("amount", 100).put("initialAmount", 20).put("initialPaid", true)
             .put("installments", 3).put("paidAmount", 46.66).put("dueDate", "31/01/2026")

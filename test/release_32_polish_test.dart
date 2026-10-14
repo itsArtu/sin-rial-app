@@ -150,31 +150,30 @@ void main() {
     expect(app.state['seenFeatureTour'], '');
     await tester.pumpAndSettle();
     expect(find.byType(HomePage), findsOneWidget);
-    expect(app.state['seenFeatureTour'], '3.2');
+    expect(app.state['seenFeatureTour'], currentFeatureTour);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets(
-    'Lock logo interpolates its height and keeps a stable decoded image',
-    (tester) async {
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetViewInsets);
-      await tester.pumpWidget(RialApp(initialState: security.protectedState()));
-      await tester.pumpAndSettle();
-      final logo = find.byKey(const ValueKey('lock-logo-size'));
-      expect(tester.getSize(logo).height, 64);
-      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 120));
-      expect(tester.getSize(logo).height, inExclusiveRange(40, 64));
-      expect(tester.widget<SinRialLogo>(find.byType(SinRialLogo)).height, 64);
-      await tester.pumpAndSettle();
-      expect(tester.getSize(logo).height, 40);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
+  testWidgets('Lock logo keeps its size when the keyboard opens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpWidget(RialApp(initialState: security.protectedState()));
+    await tester.pumpAndSettle();
+    final logo = find.byKey(const ValueKey('lock-logo-size'));
+    expect(tester.getSize(logo).height, 56);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(tester.getSize(logo).height, 56);
+    expect(tester.widget<SinRialLogo>(find.byType(SinRialLogo)).height, 56);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(logo).height, 56);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

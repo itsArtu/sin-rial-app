@@ -31,7 +31,7 @@ void main() {
         app.completeOnboarding('Nueva persona', addAccount: false);
         await tester.pumpAndSettle();
         expect(find.text('Conoce Sin Rial'), findsOneWidget);
-        expect(find.text('Novedades de 3.2'), findsNothing);
+        expect(find.text('Novedades de 3.2.2'), findsNothing);
         expect(
           tester.widget<ReleaseTour>(find.byType(ReleaseTour)).introduction,
           true,
@@ -46,7 +46,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(HomePage), findsOneWidget);
         expect(app.state['pendingAppTour'], false);
-        expect(app.state['seenFeatureTour'], '3.2');
+        expect(app.state['seenFeatureTour'], currentFeatureTour);
         final saved = withDefaults(Map<String, dynamic>.from(app.state));
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpWidget(RialApp(initialState: saved));
@@ -66,7 +66,7 @@ void main() {
     state.remove('pendingAppTour');
     await tester.pumpWidget(RialApp(initialState: withDefaults(state)));
     await tester.pumpAndSettle();
-    expect(find.text('Novedades de 3.2'), findsOneWidget);
+    expect(find.text('Novedades de 3.2.2'), findsOneWidget);
     expect(find.text('Conoce Sin Rial'), findsNothing);
     await tester.tap(find.text('Omitir'));
     await tester.pumpAndSettle();
@@ -94,7 +94,7 @@ void main() {
     expect(find.byType(HomePage), findsOneWidget);
     expect(find.byType(ReleaseTour), findsNothing);
     expect(app.state['pendingAppTour'], false);
-    expect(app.state['seenFeatureTour'], '3.2');
+    expect(app.state['seenFeatureTour'], currentFeatureTour);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

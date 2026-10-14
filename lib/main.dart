@@ -40,6 +40,9 @@ part 'keyboard_dismiss.dart';
 part 'motion.dart';
 part 'onboarding.dart';
 part 'release_experience.dart';
+part 'debt_installments.dart';
+part 'appearance_preferences.dart';
+part 'account_logos.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,11 +55,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.2',
+  defaultValue: '3.2.2',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 84,
+  defaultValue: 89,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -122,6 +125,7 @@ const List<String> budgetCategories = [
   'Educación',
   'Compras',
   'Recarga saldo',
+  'Chucherías',
   'Deuda',
   'Comisiones bancarias',
   'Pago TDC',
@@ -213,6 +217,8 @@ IconData categoryIcon(String category, {BuildContext? context}) {
       return CupertinoIcons.house_fill;
     case 'comida':
       return CupertinoIcons.cart_fill;
+    case 'chucherias':
+      return material.Icons.cookie_outlined;
     case 'wifi':
       return CupertinoIcons.wifi;
     case 'barberia':
@@ -260,9 +266,24 @@ class RialBootstrap extends StatefulWidget {
 
 class _RialBootstrapState extends State<RialBootstrap> {
   late Future<Map<String, dynamic>?> _state;
+  RTheme? _startupTheme;
 
   Future<Map<String, dynamic>?> _loadProtectedState() async {
     try {
+      final appearance = await _storeChannel.invokeMapMethod<String, dynamic>(
+        'readAppearance',
+      );
+      if (mounted)
+        setState(
+          () => _startupTheme = RTheme(
+            appearance?['darkMode'] != false,
+            appearance?['themeColor']?.toString() ?? 'emerald',
+          ),
+        );
+    } catch (_) {}
+    try {
+      if (widget.quickAction == 'calculator')
+        return await loadCalculatorState();
       return await NativeStateStore.load();
     } catch (_) {
       return null;
@@ -303,13 +324,15 @@ class _RialBootstrapState extends State<RialBootstrap> {
             builder: widget.quickAction == null
                 ? null
                 : (_, child) => QuickAccessFrame(child: child!),
-            home: const CupertinoPageScaffold(
-              backgroundColor: Color(0xFF000000),
+            home: CupertinoPageScaffold(
+              backgroundColor: _startupTheme?.bg ?? const Color(0xFF000000),
               child: Center(
-                child: RialLoadingIndicator(
-                  color: Color(0xFF55BD91),
-                  semanticsLabel: 'Cargando Sin Rial',
-                ),
+                child: _startupTheme == null
+                    ? const SizedBox.shrink()
+                    : RialLoadingIndicator(
+                        color: _startupTheme!.accent,
+                        semanticsLabel: 'Cargando Sin Rial',
+                      ),
               ),
             ),
           );
@@ -638,11 +661,14 @@ Map<String, dynamic> defaultState() {
     'userName': '',
     'userLastName': '',
     'userBirthDate': '',
+    // Preserve the saved opt-in key, now shared by income and expenses.
     'askExpenseReference': false,
-    'seenFeatureTour': '3.2',
+    'seenFeatureTour': currentFeatureTour,
     'pendingAppTour': false,
     'darkMode': true,
     'themeColor': 'emerald',
+    'incomeColor': 'default',
+    'expenseColor': 'default',
     'hideAmounts': false,
     'homeBalanceCurrency': 'USD',
     'homeBalanceMode': 'total',
@@ -810,6 +836,9 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
   state['screenPrivacyEnabled'] = state['screenPrivacyEnabled'] == true;
   state['themeColor'] = themeColorByKey(state['themeColor']?.toString() ?? '')
       .key;
+  for (final key in ['incomeColor', 'expenseColor']) {
+    state[key] = movementColorKey(state[key]);
+  }
   final hasLegacyData =
       source.containsKey('userName') ||
       source.containsKey('accounts') ||
@@ -1327,13 +1356,14 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     state = widget._normalized
         ? widget.initialState
         : withDefaults(widget.initialState);
+    if (isCalculatorAccess) state = calculatorOnlyState(state);
     locked = stateHasSecurity(state);
     WidgetsBinding.instance.addObserver(this);
     _pageController = PageController();
     _scheduleDayBoundary();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      scheduleDailyReminderFromState();
+      if (!isCalculatorAccess) scheduleDailyReminderFromState();
       unawaited(NativeStateStore.scheduleRateUpdate());
       if (!isQuickAccess || widget.quickAction == 'calculator') {
         unawaited(refreshRateIfNeeded(checkForUpdates: !isQuickAccess));
@@ -1454,8 +1484,10 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     setState(() => _privacySuspended = false);
     _updateScreenPrivacy();
     backgroundedAt = null;
-    unawaited(NativeStateStore.consumeScreenOff());
-    unawaited(checkNativeLaunchAction());
+    if (!isCalculatorAccess) {
+      unawaited(NativeStateStore.consumeScreenOff());
+      unawaited(checkNativeLaunchAction());
+    }
     if (!isQuickAccess || widget.quickAction == 'calculator')
       unawaited(refreshRateIfNeeded());
   }
@@ -1488,7 +1520,12 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     setState(() => pendingLaunchAction = action);
   }
 
-  RTheme get theme => RTheme(dark, themeColorKey);
+  RTheme get theme => RTheme(
+    dark,
+    themeColorKey,
+    incomeColorKey: movementColorKey(state['incomeColor']),
+    expenseColorKey: movementColorKey(state['expenseColor']),
+  );
   bool get dark => state['darkMode'] == true;
   String get themeColorKey => state['themeColor']?.toString() ?? 'emerald';
   double get rate {
@@ -1592,7 +1629,8 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   void mutate(VoidCallback action) {
     setState(action);
     revision.value++;
-    if (!_deferPersistence) unawaited(NativeStateStore.save(state));
+    if (!_deferPersistence && !isCalculatorAccess)
+      unawaited(NativeStateStore.save(state));
   }
 
   void scheduleDailyReminderFromState() {
@@ -1652,6 +1690,8 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     _showUndo = false;
     final keepDark = dark;
     final keepColor = themeColorKey;
+    final keepIncomeColor = state['incomeColor'];
+    final keepExpenseColor = state['expenseColor'];
     final keepName = state['userName']?.toString() ?? '';
     final keepLastName = state['userLastName'];
     final keepBirthDate = state['userBirthDate'];
@@ -1684,6 +1724,8 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       state['userBirthDate'] = keepBirthDate ?? '';
       state['darkMode'] = keepDark;
       state['themeColor'] = keepColor;
+      state['incomeColor'] = movementColorKey(keepIncomeColor);
+      state['expenseColor'] = movementColorKey(keepExpenseColor);
       state['hideAmounts'] = keepHideAmounts;
       state['securitySetupComplete'] = keepSecuritySetupComplete;
       state['pinEnabled'] = keepPinEnabled;
@@ -1738,7 +1780,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       return;
     scheduleRateBoundary();
     try {
-      final raw = await _storeChannel.invokeMethod<String>('readRateState');
+      final raw = await _storeChannel.invokeMethod<String>(
+        isCalculatorAccess ? 'readCalculatorState' : 'readRateState',
+      );
       if (raw != null && mounted) {
         final saved = jsonDecode(raw);
         if (saved is Map &&
@@ -2231,6 +2275,19 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                 : numberValue(debt['paidAmount']),
           );
     if (direction > 0) movement['debtAppliedAmount'] = delta;
+    final assignments = Map<String, dynamic>.from(
+      debt['installmentPayments'] as Map? ?? {},
+    );
+    assignments.remove(movement['id']);
+    if (direction > 0 && movement['debtInstallmentIndex'] is int) {
+      assignments[movement['id'].toString()] = {
+        'index': movement['debtInstallmentIndex'],
+        'amount': delta,
+      };
+    }
+    if (assignments.isNotEmpty || debt.containsKey('installmentPayments')) {
+      debt['installmentPayments'] = assignments;
+    }
     final paid = math.max(
       0.0,
       math.min(
@@ -2280,7 +2337,11 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     );
   }
 
-  void saveDebt(Map<String, dynamic> debt, {String? editingId}) {
+  void saveDebt(
+    Map<String, dynamic> debt, {
+    String? editingId,
+    String? depositAccountId,
+  }) {
     debt = Map<String, dynamic>.from(debt);
     debt['id'] = editingId ?? debt['id'] ?? id();
     for (final key in [
@@ -2302,25 +2363,58 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         'Revisa el total, la inicial y el monto pagado',
       );
     }
+    final receiving = depositAccountId != null;
+    final destination = receiving ? accountById(depositAccountId) : null;
+    if (receiving &&
+        (!canReceiveLoan(debt) ||
+            destination == null ||
+            !loanAccountMatches(debt, destination) ||
+            maps('movements').any((m) => m['loanDebtId'] == debt['id']))) {
+      throw const FormatException(
+        'Revisa la cuenta y la moneda. Este préstamo no puede ingresarse dos veces ni aplica a Cashea.',
+      );
+    }
+    final receiptId = receiving ? id() : null;
+    final now = DateTime.now();
+    final quote = receiving ? movementBcvQuote(state, now) : null;
     undoableMutation(
       editingId == null ? 'Registro creado' : 'Registro editado',
       {
         'debts': {debt['id'].toString()},
+        if (receiving) 'accounts': {depositAccountId},
+        if (receiving) 'movements': {receiptId!},
       },
       () {
         final list = rawList('debts');
-        if (editingId != null && editingId.isNotEmpty) {
-          for (var i = 0; i < list.length; i++) {
-            final item = list[i];
-            if (item is Map && item['id'] == editingId) {
-              debt['id'] = editingId;
-              list[i] = debt;
-              return;
-            }
-          }
+        final position = list.indexWhere(
+          (item) => item is Map && item['id'] == editingId,
+        );
+        if (position < 0) {
+          list.add(debt);
+        } else {
+          list[position] = debt;
         }
-        debt['id'] = debt['id'] ?? id();
-        list.add(debt);
+        if (receiving) {
+          final value = numberValue(debt['amount']);
+          destination!['balance'] = moneyAdd(
+            numberValue(destination['balance']),
+            value,
+          );
+          rawList('movements').add({
+            'id': receiptId,
+            'type': 'income',
+            'loanDebtId': debt['id'],
+            'accountId': depositAccountId,
+            'amount': value,
+            'currency': destination['currency'],
+            'feeAmount': 0.0,
+            'feeMode': 'none',
+            'description': 'Préstamo recibido: ${selectedDebtLabel(debt)}',
+            'date': formatDateTime(now),
+            'rate': numberValue(quote?['USD']),
+            ...movementBcvFields(quote),
+          });
+        }
       },
     );
   }
@@ -2350,7 +2444,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       movement['bankTransferScope'] = '';
     }
     if (movement['type'] == 'expense' &&
-        isBankCommissionCategory(movement['category']?.toString() ?? '')) {
+        isFeeExemptCategory(movement['category']?.toString() ?? '')) {
       movement['feeAmount'] = 0.0;
       movement['feeMode'] = 'none';
       movement['paymentMethod'] = '';
@@ -2371,6 +2465,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (editingId != null && previous == null)
       throw const FormatException('El movimiento ya no existe');
     validateMovementBudgetLink(this, movement, previous);
+    validateInstallmentPayment(this, movement, previous);
     validateRecurringMovement(this, movement, previous);
     if (accountById(movement['accountId']?.toString() ?? '') == null)
       throw const FormatException('La cuenta ya no existe');
@@ -2396,6 +2491,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       );
     }
     if (movement['type'] == 'expense' &&
+        !isFeeExemptCategory(movement['category']?.toString() ?? '') &&
         feeSource?['provider'] == 'CESTATICKET') {
       movement['paymentMethod'] =
           isCestaticketIntegral(feeSource) &&
@@ -2408,7 +2504,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (movement['type'] == 'expense' && feeSource?['currency'] == 'USD') {
       // Keep historical charges when editing; new dollar expenses have no fee.
       movement['feeAmount'] =
-          !isBankCommissionCategory(movement['category']?.toString() ?? '') &&
+          !isFeeExemptCategory(movement['category']?.toString() ?? '') &&
               previous?['accountId'] == movement['accountId']
           ? numberValue(previous?['feeAmount'])
           : 0.0;
@@ -2655,7 +2751,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       state['userName'] = name.trim();
       state['onboardingComplete'] = true;
       state['pendingAppTour'] = true;
-      state['seenFeatureTour'] = '3.2';
+      state['seenFeatureTour'] = currentFeatureTour;
     });
   }
 
@@ -2804,8 +2900,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                   fit: StackFit.expand,
                   children: [
                     appContent,
-                    if (error != null &&
-                        (!isQuickAccess || widget.quickAction == 'calculator'))
+                    if (error != null && !isQuickAccess)
                       if (NativeStateStore.persistenceConflict)
                         StateConflictPage(
                           onReload: reloadExternalChangesAfterConflict,
@@ -2897,7 +2992,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                     introduction: true,
                   );
                 }
-                if (!locked && state['seenFeatureTour'] != '3.2') {
+                if (!locked && state['seenFeatureTour'] != currentFeatureTour) {
                   return ReleaseTour(
                     key: const ValueKey('release-news'),
                     app: this,
@@ -3004,6 +3099,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     String? recurringId,
     String? recurringDate,
     bool partialDebtPayment = false,
+    int? defaultInstallmentIndex,
     bool lockAccount = false,
   }) {
     if (movement == null && !ensureCanCreateMovement(context, defaultType)) {
@@ -3022,6 +3118,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           defaultAmount: defaultAmount,
           defaultDate: defaultDate,
           partialDebtPayment: partialDebtPayment,
+          defaultInstallmentIndex: defaultInstallmentIndex,
           lockAccount: lockAccount,
           onSave: (next) {
             try {
@@ -3048,6 +3145,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     BuildContext context,
     Map<String, dynamic> debt, {
     bool partial = false,
+    int? installmentIndex,
   }) {
     final kind = debt['kind']?.toString() == 'receivable'
         ? 'receivable'
@@ -3073,6 +3171,11 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       defaultDebtId: debt['id']?.toString() ?? '',
       defaultDescription: debt['title']?.toString(),
       partialDebtPayment: partial,
+      defaultInstallmentIndex:
+          installmentIndex ??
+          (!partial && debtHasInstallments(debt)
+              ? debtNextInstallmentIndex(debt)
+              : null),
     );
   }
 
@@ -3680,7 +3783,6 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final app = widget.app;
     final t = app.theme;
-    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     final busy = autoUnlocking || checkingBiometric;
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
@@ -3690,17 +3792,12 @@ class _LockScreenState extends State<LockScreen> with WidgetsBindingObserver {
             constraints: const BoxConstraints(maxWidth: 420),
             child: ListView(
               controller: scroll,
-              shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
               children: [
-                AnimatedContainer(
+                SizedBox(
                   key: const ValueKey('lock-logo-size'),
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 300),
-                  curve: Curves.easeOutCubic,
-                  height: keyboard > 0 ? 40 : 64,
-                  child: SinRialLogo(theme: t, color: t.accent, height: 64),
+                  height: 56,
+                  child: BrandEntrance(theme: t),
                 ),
                 const SizedBox(height: 28),
                 Text(
@@ -3968,6 +4065,7 @@ void showModernActionSheet(
   String? title,
   String? message,
   required List<ModernSheetAction> actions,
+  ModernSheetAction? pinnedAction,
 }) {
   final t = themeFromContext(context);
   showGeneralDialog<void>(
@@ -3997,6 +4095,7 @@ void showModernActionSheet(
               title: title,
               message: message,
               actions: actions,
+              pinnedAction: pinnedAction,
               closeContext: dialogContext,
             ),
           ),
@@ -4015,11 +4114,13 @@ class ModernSheet extends StatefulWidget {
     required this.closeContext,
     this.title,
     this.message,
+    this.pinnedAction,
   });
 
   final RTheme theme;
   final String? title;
   final String? message;
+  final ModernSheetAction? pinnedAction;
   final List<ModernSheetAction> actions;
   final BuildContext closeContext;
 
@@ -4158,6 +4259,12 @@ class _ModernSheetState extends State<ModernSheet> {
                 ),
                 const SizedBox(height: 10),
               ],
+              if (widget.pinnedAction != null)
+                ModernSheetTile(
+                  theme: theme,
+                  action: widget.pinnedAction!,
+                  closeContext: widget.closeContext,
+                ),
               Flexible(
                 fit: FlexFit.loose,
                 child: visibleActions.isEmpty
@@ -5400,7 +5507,14 @@ class TimePeriodButton extends StatelessWidget {
 }
 
 class RTheme {
-  RTheme(this.dark, this.colorKey);
+  RTheme(
+    this.dark,
+    this.colorKey, {
+    this.incomeColorKey = 'default',
+    this.expenseColorKey = 'default',
+  });
+  final String incomeColorKey;
+  final String expenseColorKey;
   final bool dark;
   final String colorKey;
 
@@ -5433,6 +5547,12 @@ class RTheme {
       : Color.lerp(const Color(0xFF357A5D), accent, .54)!;
   Color get green => dark ? const Color(0xFF58BE86) : const Color(0xFF2F8B63);
   Color get red => dark ? const Color(0xFFE86A7B) : const Color(0xFFC94F62);
+  Color get income => movementColorKey(incomeColorKey) == 'default'
+      ? green
+      : themeColorByKey(incomeColorKey).colorFor(dark);
+  Color get expense => movementColorKey(expenseColorKey) == 'default'
+      ? red
+      : themeColorByKey(expenseColorKey).colorFor(dark);
   Color get amber => dark ? const Color(0xFFE0AE55) : const Color(0xFFAA7330);
 }
 
@@ -5640,7 +5760,7 @@ class HomePage extends StatelessWidget {
                   theme: t,
                   title: 'Ingresos',
                   value: app.secureMoney(income, 'USD'),
-                  color: t.green,
+                  color: t.income,
                   icon: CupertinoIcons.arrow_down_left,
                   onTap: () => app.pushPage(
                     context,
@@ -5657,7 +5777,7 @@ class HomePage extends StatelessWidget {
                   theme: t,
                   title: 'Gastos',
                   value: app.secureMoney(expenses, 'USD'),
-                  color: t.red,
+                  color: t.expense,
                   icon: CupertinoIcons.arrow_up_right,
                   onTap: () => app.pushPage(
                     context,
@@ -7105,83 +7225,6 @@ class MetricCard extends StatelessWidget {
   }
 }
 
-class ThemeToggleButton extends StatelessWidget {
-  const ThemeToggleButton({super.key, required this.app});
-  final _RialAppState app;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = app.theme;
-    return GestureDetector(
-      onTap: () => app.mutate(() => app.state['darkMode'] = !app.dark),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: t.card,
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(color: t.border),
-          boxShadow: [
-            BoxShadow(
-              color: CupertinoColors.black.withOpacity(t.dark ? .10 : .04),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Icon(
-          app.dark ? CupertinoIcons.sun_max_fill : CupertinoIcons.moon_fill,
-          color: t.accent,
-          size: 21,
-        ),
-      ),
-    );
-  }
-}
-
-class PrivacyToggleButton extends StatelessWidget {
-  const PrivacyToggleButton({super.key, required this.app});
-  final _RialAppState app;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = app.theme;
-    return GestureDetector(
-      onTap: () =>
-          app.mutate(() => app.state['hideAmounts'] = !app.hideAmounts),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: app.hideAmounts ? t.accent.withOpacity(.16) : t.card,
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(
-            color: app.hideAmounts ? t.accent.withOpacity(.36) : t.border,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: CupertinoColors.black.withOpacity(t.dark ? .10 : .04),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Icon(
-          app.hideAmounts
-              ? CupertinoIcons.eye_slash_fill
-              : CupertinoIcons.eye_fill,
-          color: t.accent,
-          size: 21,
-        ),
-      ),
-    );
-  }
-}
-
 enum MovementHistoryMode { all, income, expense }
 
 class MovementHistoryPage extends StatefulWidget {
@@ -7371,7 +7414,7 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                                         'Ingresos ${app.secureMoney(_income, 'USD')}',
                                         key: const ValueKey('filtered-income'),
                                         style: TextStyle(
-                                          color: t.green,
+                                          color: t.income,
                                           fontSize: 12,
                                         ),
                                       ),
@@ -7388,7 +7431,7 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                                           'filtered-expenses',
                                         ),
                                         style: TextStyle(
-                                          color: t.red,
+                                          color: t.expense,
                                           fontSize: 12,
                                         ),
                                       ),
@@ -7518,8 +7561,8 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
 
   Color amountColor(RTheme t) => switch (widget.mode) {
     MovementHistoryMode.all => t.accent,
-    MovementHistoryMode.income => t.green,
-    MovementHistoryMode.expense => t.red,
+    MovementHistoryMode.income => t.income,
+    MovementHistoryMode.expense => t.expense,
   };
 }
 
@@ -7748,94 +7791,6 @@ class MonthlyMovementSummaryCard extends StatelessWidget {
   }
 }
 
-class AccountDistributionCard extends StatelessWidget {
-  const AccountDistributionCard({
-    super.key,
-    required this.app,
-    required this.theme,
-    required this.entries,
-  });
-
-  final _RialAppState app;
-  final RTheme theme;
-  final List<AccountDistributionEntry> entries;
-
-  @override
-  Widget build(BuildContext context) {
-    return RCard(
-      theme: theme,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Por cuenta',
-            style: TextStyle(
-              color: theme.muted,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .5,
-            ),
-          ),
-          const SizedBox(height: 12),
-          RatioBar(
-            theme: theme,
-            separateParts: true,
-            parts: entries
-                .map(
-                  (entry) =>
-                      RatioPart(color: entry.color, value: entry.amountUsd),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 14),
-          ...entries
-              .take(5)
-              .map(
-                (entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: entry.color,
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          accountPrimaryName(entry.account),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: theme.ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        app.secureMoney(entry.amountUsd, 'USD'),
-                        style: TextStyle(
-                          color: theme.muted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-        ],
-      ),
-    );
-  }
-}
-
 class BalanceGroupCard extends StatelessWidget {
   const BalanceGroupCard({
     super.key,
@@ -7997,118 +7952,6 @@ class CurrencyConversionPill extends StatelessWidget {
   }
 }
 
-class CurrencyAccountSummaryLine extends StatelessWidget {
-  const CurrencyAccountSummaryLine({
-    super.key,
-    required this.app,
-    required this.account,
-    required this.total,
-    this.compact = false,
-  });
-
-  final _RialAppState app;
-  final Map<String, dynamic> account;
-  final double total;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = app.theme;
-    final currency = account['currency']?.toString() ?? 'USD';
-    final balance = numberValue(account['balance']);
-    final pct = total > 0 ? (balance / total * 100).clamp(0, 999) : 0;
-    final content = Row(
-      children: [
-        Container(
-          width: 11,
-          height: 11,
-          decoration: BoxDecoration(
-            color: accountColor(account),
-            borderRadius: BorderRadius.circular(99),
-          ),
-        ),
-        const SizedBox(width: 10),
-        LogoBadge(
-          provider: account['provider']?.toString() ?? '',
-          theme: t,
-          size: compact ? 34 : 44,
-        ),
-        const SizedBox(width: 11),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                accountPrimaryName(account),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: t.ink,
-                  fontSize: compact ? 14 : 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              if (!compact) ...[
-                const SizedBox(height: 3),
-                Text(
-                  app.secureMoney(balance, currency),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: t.muted,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        if (compact)
-          Text(
-            app.secureMoney(balance, currency),
-            style: TextStyle(
-              color: t.ink,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-            ),
-          )
-        else
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: t.accent.withOpacity(.18),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '${pct.round()}%',
-              style: TextStyle(
-                color: t.accent,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        if (!compact) ...[
-          const SizedBox(width: 8),
-          Icon(CupertinoIcons.chevron_right, color: t.muted, size: 17),
-        ],
-      ],
-    );
-    if (compact) {
-      return Padding(padding: const EdgeInsets.only(bottom: 9), child: content);
-    }
-    return GestureDetector(
-      onTap: () => app.pushPage(
-        context,
-        (_) => AccountDetailPage(app: app, account: account),
-      ),
-      child: RCard(theme: t, child: content),
-    );
-  }
-}
-
 class CurrencyBadgeCircle extends StatelessWidget {
   const CurrencyBadgeCircle({
     super.key,
@@ -8185,100 +8028,6 @@ class FilterChip extends StatelessWidget {
   }
 }
 
-class AccountMiniCard extends StatelessWidget {
-  const AccountMiniCard({super.key, required this.app, required this.account});
-  final _RialAppState app;
-  final Map<String, dynamic> account;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = app.theme;
-    final currency = account['currency']?.toString() ?? 'USD';
-    return GestureDetector(
-      onTap: () => app.pushPage(
-        context,
-        (_) => AccountDetailPage(app: app, account: account),
-      ),
-      child: Container(
-        width: 172,
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: t.card,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: t.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            LogoBadge(
-              provider: account['provider']?.toString() ?? '',
-              theme: t,
-              size: 42,
-            ),
-            const Spacer(),
-            Text(
-              accountPrimaryName(account),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: t.ink,
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              accountSecondaryName(account),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: t.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              app.secureMoney(numberValue(account['balance']), currency),
-              style: TextStyle(
-                color: t.muted,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void accountActions(BuildContext context) {
-    showModernActionSheet(
-      context,
-      title: accountPrimaryName(account),
-      actions: [
-        ModernSheetAction(
-          icon: CupertinoIcons.pencil,
-          title: 'Editar cuenta',
-          onPressed: () => app.openAccountEditor(context, account: account),
-        ),
-        ModernSheetAction(
-          icon: CupertinoIcons.trash_fill,
-          title: 'Eliminar cuenta',
-          subtitle: 'También elimina sus movimientos',
-          destructive: true,
-          onPressed: () => app.confirmDelete(
-            context,
-            'Eliminar cuenta',
-            'Se eliminará esta cuenta y sus movimientos.',
-            () => app.deleteAccount(account),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class MovementTile extends StatelessWidget {
   const MovementTile({
     super.key,
@@ -8301,10 +8050,10 @@ class MovementTile extends StatelessWidget {
         ? ''
         : '-';
     final color = type == 'income'
-        ? t.green
+        ? t.income
         : type == 'transfer'
         ? t.accent
-        : t.red;
+        : t.expense;
     final account = app.accountById(movement['accountId']?.toString() ?? '');
     final quote = showBcv && currency == 'VES'
         ? recordedBcvQuote(movement) ??
@@ -8485,12 +8234,11 @@ class MovementDetailPage extends StatelessWidget {
     final feeMode = movement['feeMode']?.toString() ?? '';
     final scope = movement['bankTransferScope']?.toString() ?? '';
     final category = movement['category']?.toString().trim() ?? '';
-    final budgetName = movement['budgetItemName']?.toString().trim() ?? '';
     final color = income
-        ? t.green
+        ? t.income
         : transfer
         ? t.accent
-        : t.red;
+        : t.expense;
     final sign = income
         ? '+'
         : transfer
@@ -8549,7 +8297,6 @@ class MovementDetailPage extends StatelessWidget {
                   : 'No disponible para esta fecha',
             ),
           ),
-        if (budgetName.isNotEmpty) row('Partida del presupuesto', budgetName),
         const SizedBox(height: 20),
         Row(
           children: [
@@ -8637,11 +8384,12 @@ class MovementDetailPage extends StatelessWidget {
         if (movement['reference']?.toString().isNotEmpty == true)
           row('Referencia', movement['reference'].toString()),
         row('Categoría', category.isEmpty ? 'Otro' : category),
-        if (method.isNotEmpty)
+        if (method.isNotEmpty && (transfer || !isFeeExemptCategory(category)))
           row('Método', paymentMethodLabel(method, currency: currency)),
-        if (scope.isNotEmpty)
+        if (scope.isNotEmpty && (transfer || !isFeeExemptCategory(category)))
           row('Transferencia bancaria', bankTransferScopeLabel(scope)),
-        if (!income) ...[
+        if (!income &&
+            (transfer || !isFeeExemptCategory(category) || fee > 0)) ...[
           row('Comisión', app.secureMoney(fee, currency)),
           if (feeMode.isNotEmpty)
             row('Cálculo de comisión', feeModeLabel(feeMode)),
@@ -8840,10 +8588,13 @@ class _CalculatorPageState extends State<CalculatorPage> {
               ),
         trailing: CircleTool(
           theme: t,
-          icon: CupertinoIcons.chart_bar,
-          label: 'Tasas de cambio',
-          onTap: () =>
-              app.pushPage(context, (_) => ExchangeRatesPage(app: app)),
+          icon: app.isCalculatorAccess
+              ? CupertinoIcons.lock
+              : CupertinoIcons.chart_bar,
+          label: app.isCalculatorAccess ? 'Abrir Sin Rial' : 'Tasas de cambio',
+          onTap: () => app.isCalculatorAccess
+              ? _storeChannel.invokeMethod<void>('openFullApp')
+              : app.pushPage(context, (_) => ExchangeRatesPage(app: app)),
         ),
       ),
       child: SafeArea(
@@ -9276,6 +9027,8 @@ class AccountRow extends StatelessWidget {
           children: [
             LogoBadge(
               provider: account['provider']?.toString() ?? '',
+              kind: account['kind']?.toString(),
+              benefitType: account['benefitType']?.toString(),
               theme: t,
               size: 48,
             ),
@@ -9304,7 +9057,8 @@ class AccountRow extends StatelessWidget {
                 ],
               ),
             ),
-            Flexible(
+            const SizedBox(width: 10),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -9385,6 +9139,8 @@ class AccountDetailPage extends StatelessWidget {
                 children: [
                   LogoBadge(
                     provider: current['provider']?.toString() ?? '',
+                    kind: current['kind']?.toString(),
+                    benefitType: current['benefitType']?.toString(),
                     theme: t,
                     size: 58,
                   ),
@@ -9449,7 +9205,7 @@ class AccountDetailPage extends StatelessWidget {
                     theme: t,
                     label: 'Gasto',
                     icon: CupertinoIcons.arrow_up_right_circle_fill,
-                    color: t.red,
+                    color: t.expense,
                     onTap: () => app.openMovementEditor(
                       context,
                       defaultType: 'expense',
@@ -9464,7 +9220,7 @@ class AccountDetailPage extends StatelessWidget {
                     theme: t,
                     label: 'Ingreso',
                     icon: CupertinoIcons.arrow_down_left_circle_fill,
-                    color: t.green,
+                    color: t.income,
                     onTap: () => app.openMovementEditor(
                       context,
                       defaultType: 'income',
@@ -10459,7 +10215,7 @@ class SavingsHistoryTile extends StatelessWidget {
             withdraw
                 ? CupertinoIcons.arrow_up_circle
                 : CupertinoIcons.arrow_down_circle,
-            color: withdraw ? t.red : t.green,
+            color: withdraw ? t.expense : t.income,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -10495,7 +10251,7 @@ class SavingsHistoryTile extends StatelessWidget {
               item['currency']?.toString() ?? 'USD',
             ),
             style: TextStyle(
-              color: withdraw ? t.red : t.green,
+              color: withdraw ? t.expense : t.income,
               fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
@@ -10654,6 +10410,7 @@ class DebtDetailPage extends StatelessWidget {
     final frequency = debt['paymentFrequency']?.toString().trim() ?? '';
     final nextDate = debtUpcomingDate(debt);
     final dates = debtInstallmentDates(debt);
+    final installmentRemaining = debtInstallmentRemainingAmounts(debt);
     final linkedMovements =
         app
             .maps('movements')
@@ -10789,36 +10546,74 @@ class DebtDetailPage extends StatelessWidget {
                         value: displayDateOnly(nextDate),
                         bottom: dates.isNotEmpty,
                       ),
-                    if (dates.isNotEmpty)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (var i = 0; i < dates.length; i++)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
+                    if (hasInstallments)
+                      for (var i = 0; i < installmentRemaining.length; i++)
+                        CupertinoButton(
+                          key: ValueKey('debt-installment-$i'),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          onPressed: installmentRemaining[i] <= 0
+                              ? null
+                              : () => app.openDebtMovement(
+                                  context,
+                                  debt,
+                                  installmentIndex: i,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: t.field,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: t.border),
+                          child: Row(
+                            children: [
+                              Icon(
+                                installmentRemaining[i] <= 0
+                                    ? CupertinoIcons.check_mark_circled_solid
+                                    : CupertinoIcons.circle,
+                                size: 22,
+                                color: installmentRemaining[i] <= 0
+                                    ? t.green
+                                    : t.accent,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Cuota ${i + 1}',
+                                      style: TextStyle(
+                                        color: t.ink,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (i < dates.length)
+                                      Text(
+                                        dates[i],
+                                        style: TextStyle(
+                                          color: t.muted,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                  ],
                                 ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
                                 child: Text(
-                                  'Cuota ${i + 1}: ${dates[i]}',
+                                  installmentRemaining[i] <= 0
+                                      ? 'Pagada'
+                                      : app.secureMoney(
+                                          installmentRemaining[i],
+                                          currency,
+                                        ),
+                                  textAlign: TextAlign.right,
                                   style: TextStyle(
-                                    color: t.ink,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
+                                    color: installmentRemaining[i] <= 0
+                                        ? t.green
+                                        : t.ink,
+                                    fontSize: 14,
                                   ),
                                 ),
                               ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
                   ],
                 ),
               ),
@@ -10845,10 +10640,13 @@ class DebtDetailPage extends StatelessWidget {
                       final sign = movementType == 'income' ? '+' : '-';
                       return DebtDetailRow(
                         theme: t,
-                        label: movement['date']?.toString() ?? '',
+                        label:
+                            '${movement['debtInstallmentIndex'] is int ? 'Cuota ${(movement['debtInstallmentIndex'] as int) + 1} · ' : ''}${movement['date'] ?? ''}',
                         value:
                             '$sign${app.secureMoney(numberValue(movement['amount']), movementCurrency)}',
-                        valueColor: movementType == 'income' ? t.green : t.red,
+                        valueColor: movementType == 'income'
+                            ? t.income
+                            : t.expense,
                       );
                     }),
                   ],
@@ -10872,6 +10670,55 @@ class DebtDetailPage extends StatelessWidget {
                     app.openDebtMovement(context, debt, partial: true),
               ),
             if (!completed) const SizedBox(height: 12),
+            if (canReceiveLoan(debt) &&
+                !app
+                    .maps('movements')
+                    .any((m) => m['loanDebtId'] == debtId)) ...[
+              SecondaryActionButton(
+                theme: t,
+                label: 'Registrar dinero recibido',
+                onPressed: () => chooseLoanAccount(context, app, debt, (
+                  accountId,
+                ) {
+                  showCupertinoDialog<void>(
+                    context: context,
+                    builder: (dialog) => CupertinoAlertDialog(
+                      title: const Text('Préstamo recibido'),
+                      content: Text(
+                        '${app.secureMoney(total, currency)} en ${accountLabel(app.accountById(accountId))}',
+                      ),
+                      actions: [
+                        CupertinoDialogAction(
+                          onPressed: () => Navigator.pop(dialog),
+                          child: const Text('Cancelar'),
+                        ),
+                        CupertinoDialogAction(
+                          child: const Text('Registrar ingreso'),
+                          onPressed: () {
+                            try {
+                              app.saveDebt(
+                                debt,
+                                editingId: debtId,
+                                depositAccountId: accountId,
+                              );
+                              Navigator.pop(dialog);
+                            } on FormatException catch (error) {
+                              Navigator.pop(dialog);
+                              showModernNotice(
+                                context,
+                                title: 'Préstamo',
+                                message: error.message,
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 12),
+            ],
             SecondaryActionButton(
               theme: t,
               label: 'Editar registro',
@@ -11010,6 +10857,8 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
   bool hasDueDate = true;
   bool notifyDueDate = true;
   bool automaticInstallments = true;
+  bool receiveLoan = false;
+  String? receiptAccountId;
 
   @override
   void initState() {
@@ -11227,10 +11076,41 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
                 context,
                 const ['Dólares', 'Bolívares', 'Euros', 'USDT'],
                 displayCurrency(currency),
-                (value) =>
-                    setState(() => currency = currencyCodeFromLabel(value)),
+                (value) => setState(() {
+                  currency = currencyCodeFromLabel(value);
+                  receiptAccountId = null;
+                }),
               ),
             ),
+            if (kind == 'payable' &&
+                selectedParty != 'Cashea' &&
+                !app
+                    .maps('movements')
+                    .any(
+                      (m) =>
+                          widget.debt != null &&
+                          m['loanDebtId'] == widget.debt!['id'],
+                    )) ...[
+              SettingsSwitchTile(
+                theme: t,
+                icon: CupertinoIcons.arrow_down_left_circle,
+                title: 'Ingresar el préstamo a una cuenta',
+                subtitle: 'Registrar el dinero recibido',
+                value: receiveLoan,
+                onTap: () => setState(() => receiveLoan = !receiveLoan),
+              ),
+              if (receiveLoan)
+                OptionField(
+                  theme: t,
+                  label: 'Recibir en cuenta',
+                  value: receiptAccountId == null
+                      ? 'Seleccionar cuenta'
+                      : accountLabel(app.accountById(receiptAccountId!)),
+                  onTap: () => chooseLoanAccount(context, app, {
+                    'currency': currency,
+                  }, (id) => setState(() => receiptAccountId = id)),
+                ),
+            ],
             if (hasInstallments)
               KindSelector(
                 theme: t,
@@ -11543,39 +11423,54 @@ class _DebtEditorPageState extends State<DebtEditorPage> {
         : numberValue(editingDebt['paidAmount']);
     final paidAmount = math.min(amount, math.max(initialValue, previousPaid));
     final isPaid = paidAmount + .0001 >= amount;
+    final deposit =
+        receiveLoan && kind == 'payable' && selectedParty != 'Cashea';
+    if (deposit && receiptAccountId == null) {
+      showModernNotice(
+        context,
+        title: 'Recibir en cuenta',
+        message: 'Selecciona la cuenta que recibió el préstamo.',
+      );
+      return;
+    }
     try {
-      app.saveDebt({
-        'id': editingId.isEmpty ? app.id() : editingId,
-        'kind': kind,
-        'title': titleText,
-        'partyType': selectedParty,
-        'partyLogo': debtPartyLogoCode(selectedParty) ?? '',
-        'creditor': creditorText,
-        'amount': amount,
-        'paidAmount': paidAmount,
-        'initialAmount': initialValue,
-        'initialPaid': hasInitial,
-        'hasInstallments': hasInstallments,
-        'hasDueDate': hasDueDate,
-        'notifyDueDate': hasDueDate && notifyDueDate,
-        'installments': count,
-        'installmentMode': automaticInstallments ? 'auto' : 'manual',
-        'installmentAmount': hasInstallments ? installmentValue : 0.0,
-        'installmentDates': savedInstallmentDates,
-        'currency': currency,
-        'dueDate': hasDueDate ? firstDueDate : '',
-        'paymentFrequency': hasInstallments ? frequency : '',
-        'status': isPaid ? 'paid' : 'pending',
-        'paidAt': isPaid
-            ? (editingDebt?['paidAt']?.toString().isNotEmpty == true
-                  ? editingDebt!['paidAt'].toString()
-                  : formatDateTime(DateTime.now()))
-            : '',
-        'createdAt':
-            editingDebt?['createdAt']?.toString() ??
-            formatDateTime(DateTime.now()),
-        'updatedAt': formatDateTime(DateTime.now()),
-      }, editingId: editingId.isEmpty ? null : editingId);
+      app.saveDebt(
+        {
+          ...?editingDebt,
+          'id': editingId.isEmpty ? app.id() : editingId,
+          'kind': kind,
+          'title': titleText,
+          'partyType': selectedParty,
+          'partyLogo': debtPartyLogoCode(selectedParty) ?? '',
+          'creditor': creditorText,
+          'amount': amount,
+          'paidAmount': paidAmount,
+          'initialAmount': initialValue,
+          'initialPaid': hasInitial,
+          'hasInstallments': hasInstallments,
+          'hasDueDate': hasDueDate,
+          'notifyDueDate': hasDueDate && notifyDueDate,
+          'installments': count,
+          'installmentMode': automaticInstallments ? 'auto' : 'manual',
+          'installmentAmount': hasInstallments ? installmentValue : 0.0,
+          'installmentDates': savedInstallmentDates,
+          'currency': currency,
+          'dueDate': hasDueDate ? firstDueDate : '',
+          'paymentFrequency': hasInstallments ? frequency : '',
+          'status': isPaid ? 'paid' : 'pending',
+          'paidAt': isPaid
+              ? (editingDebt?['paidAt']?.toString().isNotEmpty == true
+                    ? editingDebt!['paidAt'].toString()
+                    : formatDateTime(DateTime.now()))
+              : '',
+          'createdAt':
+              editingDebt?['createdAt']?.toString() ??
+              formatDateTime(DateTime.now()),
+          'updatedAt': formatDateTime(DateTime.now()),
+        },
+        editingId: editingId.isEmpty ? null : editingId,
+        depositAccountId: deposit ? receiptAccountId : null,
+      );
     } on FormatException catch (error) {
       showModernNotice(
         context,
@@ -11776,12 +11671,15 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    'Hecha por Arturo el siuuuu',
-                    style: TextStyle(
-                      color: t.muted,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+                  Center(
+                    child: Text(
+                      'Hecha por Arturo el siuuuu',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: t.muted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -12169,12 +12067,17 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               ),
             ),
+            SectionHeader(theme: t, title: 'Colores de movimientos'),
+            _MovementColorPreferences(
+              app: app,
+              onChanged: () => setState(() {}),
+            ),
             SectionHeader(theme: t, title: 'Movimientos'),
             SettingsSwitchTile(
               theme: t,
               icon: CupertinoIcons.doc_text,
               title: 'Referencia bancaria',
-              subtitle: 'Preguntar al registrar un gasto',
+              subtitle: 'Preguntar al registrar ingresos y gastos',
               value: app.state['askExpenseReference'] == true,
               onTap: () {
                 app.mutate(
@@ -12573,6 +12476,7 @@ class MovementEditor extends StatefulWidget {
     this.defaultAmount,
     this.defaultDate,
     this.partialDebtPayment = false,
+    this.defaultInstallmentIndex,
     this.lockAccount = false,
     this.quick = false,
   });
@@ -12586,6 +12490,7 @@ class MovementEditor extends StatefulWidget {
   final double? defaultAmount;
   final String? defaultDate;
   final bool partialDebtPayment;
+  final int? defaultInstallmentIndex;
   final bool lockAccount;
   final bool quick;
   final FutureOr<void> Function(Map<String, dynamic>) onSave;
@@ -12614,7 +12519,7 @@ class _MovementEditorState extends State<MovementEditor> {
   final debtExchangeRate = TextEditingController();
   String paymentMethod = 'payment_mobile_p2p';
   String debtId = '';
-  String budgetItemId = '';
+  int? debtInstallmentIndex;
   bool amountEdited = false;
   String feeMode = 'auto';
   String bankTransferScope = 'other_bank';
@@ -12651,7 +12556,8 @@ class _MovementEditorState extends State<MovementEditor> {
         widget.defaultDate ??
         formatDateTime(DateTime.now());
     debtId = m?['debtId']?.toString() ?? widget.defaultDebtId ?? '';
-    budgetItemId = m?['budgetItemId']?.toString() ?? '';
+    debtInstallmentIndex =
+        m?['debtInstallmentIndex'] as int? ?? widget.defaultInstallmentIndex;
     if (m != null) {
       amountEdited = true;
       final debt = widget.app.debtById(debtId);
@@ -12771,20 +12677,10 @@ class _MovementEditorState extends State<MovementEditor> {
   }
 
   Map<String, dynamic> budgetLinkFields() {
-    if (type != 'expense' || budgetItemId.isEmpty) return {};
-    final item = movementBudgetItems(
-      widget.app,
-      category,
-      date,
-    ).where((item) => item['id'] == budgetItemId).firstOrNull;
-    if (item != null)
-      return {
-        'budgetItemId': budgetItemId,
-        'budgetPlanId': item['planId'],
-        'budgetItemName': budgetItemName(item),
-      };
+    // Preserve legacy metadata on unchanged edits; new expenses use categories.
     final previous = widget.movement;
-    if (previous?['budgetItemId'] == budgetItemId &&
+    if (type == 'expense' &&
+        previous?['budgetItemId'] != null &&
         previous?['category'] == category &&
         previous?['date'] == date) {
       return {
@@ -12793,34 +12689,6 @@ class _MovementEditorState extends State<MovementEditor> {
       };
     }
     return {};
-  }
-
-  void pickBudgetItem() {
-    final items = movementBudgetItems(widget.app, category, date);
-    showModernActionSheet(
-      context,
-      title: 'Partida del presupuesto',
-      actions: [
-        ModernSheetAction(
-          title: 'Sin partida',
-          icon: CupertinoIcons.circle,
-          selected: budgetItemId.isEmpty,
-          onPressed: () => setState(() => budgetItemId = ''),
-        ),
-        for (final item in items)
-          ModernSheetAction(
-            title: budgetItemName(item),
-            subtitle: widget.app.secureMoney(
-              numberValue(item['limit']),
-              item['currency']?.toString() ?? 'USD',
-            ),
-            icon: categoryIcon(category, context: context),
-            selected: item['id'] == budgetItemId,
-            onPressed: () =>
-                setState(() => budgetItemId = item['id'].toString()),
-          ),
-      ],
-    );
   }
 
   double dollarFeeForSave() => dollarOperationFee(
@@ -12954,9 +12822,15 @@ class _MovementEditorState extends State<MovementEditor> {
 
   double defaultDebtPayment(Map<String, dynamic> debt) {
     final previous = widget.movement;
-    if (previous != null && previous['debtId'] == debt['id']) {
+    if (previous != null &&
+        previous['debtId'] == debt['id'] &&
+        previous['debtInstallmentIndex'] == debtInstallmentIndex) {
       final applied = numberValue(previous['debtAppliedAmount']);
       if (applied > 0) return applied;
+    }
+    if (debtInstallmentIndex != null &&
+        debtInstallmentIndex! < debtInstallmentCount(debt)) {
+      return debtInstallmentRemainingAmounts(debt)[debtInstallmentIndex!];
     }
     return widget.partialDebtPayment ? 0 : debtNextPaymentAmount(debt);
   }
@@ -13137,7 +13011,6 @@ class _MovementEditorState extends State<MovementEditor> {
                   }
                   setState(() {
                     type = v;
-                    budgetItemId = '';
                     if (type == 'income') {
                       fee.clear();
                       feeMode = 'auto';
@@ -13206,7 +13079,8 @@ class _MovementEditorState extends State<MovementEditor> {
                     placeholder: 'Descripción',
                     onChanged: inferCategory,
                   ),
-                  if (widget.movement != null && type == 'expense')
+                  if (widget.movement != null &&
+                      (type == 'expense' || type == 'income'))
                     RField(
                       theme: t,
                       controller: operationReference,
@@ -13245,22 +13119,9 @@ class _MovementEditorState extends State<MovementEditor> {
                         category,
                         (v) => setState(() {
                           category = v;
-                          budgetItemId = '';
                           categoryTouched = true;
                         }),
                       ),
-                    ),
-                  if (type == 'expense' &&
-                      (movementBudgetItems(app, category, date).isNotEmpty ||
-                          budgetItemId.isNotEmpty))
-                    OptionField(
-                      theme: t,
-                      label: 'Partida del presupuesto',
-                      value:
-                          budgetLinkFields()['budgetItemName']?.toString() ??
-                          'Sin partida',
-                      icon: CupertinoIcons.tag,
-                      onTap: pickBudgetItem,
                     ),
                   widget.lockAccount
                       ? LockedAccountField(
@@ -13320,6 +13181,18 @@ class _MovementEditorState extends State<MovementEditor> {
                     ),
                   if (selectedDebt != null &&
                       type != 'transfer' &&
+                      debtHasInstallments(selectedDebt))
+                    OptionField(
+                      theme: t,
+                      label: 'Aplicar pago a',
+                      value: debtInstallmentIndex == null
+                          ? 'Abono general'
+                          : 'Cuota ${debtInstallmentIndex! + 1}',
+                      icon: CupertinoIcons.calendar_badge_plus,
+                      onTap: () => pickInstallment(selectedDebt),
+                    ),
+                  if (selectedDebt != null &&
+                      type != 'transfer' &&
                       debtCurrency == 'USDT' &&
                       debtCurrency != sourceCurrency &&
                       !walletUsdtPayment)
@@ -13370,7 +13243,7 @@ class _MovementEditorState extends State<MovementEditor> {
                       ],
                     ),
                   if (type == 'expense' &&
-                      !isBankCommissionCategory(category) &&
+                      !isFeeExemptCategory(category) &&
                       ((isNationalBankAccount(source) &&
                               sourceCurrency == 'VES') ||
                           source?['provider'] == 'CESTATICKET' ||
@@ -13619,7 +13492,7 @@ class _MovementEditorState extends State<MovementEditor> {
                             ),
                           if (type != 'income' &&
                               (type != 'expense' ||
-                                  !isBankCommissionCategory(category)))
+                                  !isFeeExemptCategory(category)))
                             DebtDetailRow(
                               theme: t,
                               label: 'Comisión aplicada',
@@ -13725,7 +13598,6 @@ class _MovementEditorState extends State<MovementEditor> {
     if (inferred != category) {
       setState(() {
         category = inferred;
-        budgetItemId = '';
       });
     }
   }
@@ -13751,12 +13623,6 @@ class _MovementEditorState extends State<MovementEditor> {
           ? moneyConvert(parseAmount(amount.text), 1, previousQuote)
           : 0.0;
       date = formatDateTime(value);
-      if (movementBudgetItems(
-        widget.app,
-        category,
-        date,
-      ).every((item) => item['id'] != budgetItemId))
-        budgetItemId = '';
       if (debt != null && debt['currency'] != 'USDT') {
         final quote = debtQuote(debt);
         debtExchangeRate.text = quote > 0 ? quote.toString() : '';
@@ -13796,6 +13662,42 @@ class _MovementEditorState extends State<MovementEditor> {
     );
   }
 
+  void pickInstallment(Map<String, dynamic> debt) {
+    final remaining = debtInstallmentRemainingAmounts(debt);
+    final dates = debtInstallmentDates(debt);
+    final currency = debt['currency']?.toString() ?? 'USD';
+    showModernActionSheet(
+      context,
+      title: 'Aplicar pago a',
+      actions: [
+        ModernSheetAction(
+          icon: CupertinoIcons.money_dollar_circle,
+          title: 'Abono general',
+          selected: debtInstallmentIndex == null,
+          onPressed: () => setState(() {
+            debtInstallmentIndex = null;
+            amount.clear();
+            amountEdited = false;
+          }),
+        ),
+        for (var i = 0; i < remaining.length; i++)
+          if (remaining[i] > 0 || widget.movement?['debtInstallmentIndex'] == i)
+            ModernSheetAction(
+              icon: CupertinoIcons.calendar,
+              title: 'Cuota ${i + 1}',
+              subtitle:
+                  '${i < dates.length ? '${dates[i]} · ' : ''}${widget.app.secureMoney(remaining[i], currency)} pendientes',
+              selected: debtInstallmentIndex == i,
+              onPressed: () => setState(() {
+                debtInstallmentIndex = i;
+                amountEdited = false;
+                applyDebtDefaults(debtId);
+              }),
+            ),
+      ],
+    );
+  }
+
   void pickDebt(BuildContext context) {
     final wantedKind = type == 'income' ? 'receivable' : 'payable';
     final debts = widget.app.maps('debts').where((debt) {
@@ -13816,7 +13718,10 @@ class _MovementEditorState extends State<MovementEditor> {
               : CupertinoIcons.circle,
           title: 'Sin vincular',
           selected: debtId.isEmpty,
-          onPressed: () => setState(() => debtId = ''),
+          onPressed: () => setState(() {
+            debtId = '';
+            debtInstallmentIndex = null;
+          }),
         ),
         ...debts.map((debt) {
           final id = debt['id']?.toString() ?? '';
@@ -13835,6 +13740,7 @@ class _MovementEditorState extends State<MovementEditor> {
             selected: id == debtId,
             onPressed: () => setState(() {
               debtId = id;
+              debtInstallmentIndex = null;
               applyDebtDefaults(id, overwriteAmount: !amountEdited);
             }),
           );
@@ -13845,7 +13751,7 @@ class _MovementEditorState extends State<MovementEditor> {
 
   double operationFeeForSave(Map<String, dynamic> source) {
     if (type == 'expense' && source['currency'] == 'USD') {
-      if (isBankCommissionCategory(category)) return 0;
+      if (isFeeExemptCategory(category)) return 0;
       return widget.movement?['accountId'] == accountId
           ? numberValue(widget.movement?['feeAmount'])
           : 0;
@@ -14020,14 +13926,23 @@ class _MovementEditorState extends State<MovementEditor> {
         );
       }
       final reference =
-          type == 'expense' &&
+          (type == 'expense' || type == 'income') &&
               widget.movement == null &&
               app.state['askExpenseReference'] == true
-          ? await promptExpenseReference(context, app.theme) ?? ''
+          ? await promptMovementReference(
+                  context,
+                  app.theme,
+                  income: type == 'income',
+                ) ??
+                ''
           : operationReference.text.trim();
       if (!mounted) return;
       await widget.onSave({
-        for (final key in ['maintenanceAccountId', 'maintenanceMonth'])
+        for (final key in [
+          'maintenanceAccountId',
+          'maintenanceMonth',
+          'loanDebtId',
+        ])
           if (widget.movement?.containsKey(key) == true)
             key: widget.movement![key],
         'reference': reference,
@@ -14035,8 +13950,7 @@ class _MovementEditorState extends State<MovementEditor> {
         'id': widget.movement?['id'] ?? _quickMovementId,
         'type': type,
         if (type == 'transfer') 'feeTreatment': effectiveTransferTreatment,
-        'paymentMethod':
-            type == 'expense' && !isBankCommissionCategory(category)
+        'paymentMethod': type == 'expense' && !isFeeExemptCategory(category)
             ? paymentMethod
             : '',
         if (dollarFees) 'feeUnit': feeMode == 'auto' ? 'percent' : feeUnit,
@@ -14058,7 +13972,7 @@ class _MovementEditorState extends State<MovementEditor> {
         'bankTransferScope': type == 'transfer'
             ? bankTransferScopeForAccounts(source, app.accountById(targetId))
             : (type == 'expense' &&
-                  !isBankCommissionCategory(category) &&
+                  !isFeeExemptCategory(category) &&
                   paymentMethod == 'bank_transfer')
             ? bankTransferScope
             : '',
@@ -14074,6 +13988,10 @@ class _MovementEditorState extends State<MovementEditor> {
         'feeCurrency': source['currency'] ?? 'USD',
         'accountId': accountId,
         'debtId': type == 'expense' || type == 'income' ? debtId : '',
+        if (type != 'transfer' &&
+            debtId.isNotEmpty &&
+            debtInstallmentIndex != null)
+          'debtInstallmentIndex': debtInstallmentIndex,
         if (debtId.isNotEmpty &&
             type != 'transfer' &&
             parseAmount(debtExchangeRate.text) > 0)
@@ -14793,6 +14711,8 @@ class LockedAccountField extends StatelessWidget {
             if (account != null) ...[
               LogoBadge(
                 provider: account!['provider']?.toString() ?? '',
+                kind: account!['kind']?.toString(),
+                benefitType: account!['benefitType']?.toString(),
                 theme: theme,
                 size: 38,
               ),
@@ -15086,52 +15006,66 @@ class ThemeColorSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: themeColorOptions.map((option) {
-        final selected = option.key == value;
-        final color = option.colorFor(theme.dark);
-        return GestureDetector(
-          onTap: () => onChanged(option.key),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-            decoration: BoxDecoration(
-              color: selected ? color.withOpacity(.14) : theme.field,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: selected ? color.withOpacity(.70) : theme.border,
-                width: selected ? 1.4 : 1,
+    return LayoutBuilder(
+      builder: (context, constraints) => Wrap(
+        spacing: 8,
+        runSpacing: 12,
+        children: themeColorOptions.map((option) {
+          final selected = option.key == value;
+          final color = option.colorFor(theme.dark);
+          return SizedBox(
+            width: (constraints.maxWidth - 16) / 3,
+            height:
+                84 +
+                math.max(0, MediaQuery.textScalerOf(context).scale(12) - 12) *
+                    2,
+            child: Semantics(
+              selected: selected,
+              label: option.label,
+              child: CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () => onChanged(option.key),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                      child: selected
+                          ? Icon(
+                              CupertinoIcons.check_mark,
+                              size: 20,
+                              color: theme.dark
+                                  ? CupertinoColors.black
+                                  : CupertinoColors.white,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      option.label,
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: selected ? theme.ink : theme.muted,
+                        fontSize: 12,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: theme.card, width: 2),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  option.label,
-                  style: TextStyle(
-                    color: selected ? theme.ink : theme.muted,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
+          );
+        }).toList(),
+      ),
     );
   }
 }
@@ -15429,54 +15363,6 @@ class EmptyCard extends StatelessWidget {
   }
 }
 
-class LogoBadge extends StatelessWidget {
-  const LogoBadge({
-    super.key,
-    required this.provider,
-    required this.theme,
-    this.size = 44,
-  });
-  final String provider;
-  final RTheme theme;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final asset = logoAsset(provider);
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFCFCFA),
-        borderRadius: BorderRadius.circular(size * .25),
-        border: Border.all(
-          color: theme.dark ? const Color(0xFF2C3340) : const Color(0xFFE6E1D7),
-        ),
-      ),
-      padding: EdgeInsets.all(size * .14),
-      child: asset == null
-          ? Center(
-              child: Text(
-                logoText(provider),
-                style: TextStyle(
-                  color: const Color(0xFF151515),
-                  fontSize: size * .24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            )
-          : ClipRRect(
-              borderRadius: BorderRadius.circular(size * .12),
-              child: Image.asset(
-                asset,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.high,
-              ),
-            ),
-    );
-  }
-}
-
 const _accountColorPalette = [
   Color(0xFF58BE86),
   Color(0xFF5CC3DE),
@@ -15667,12 +15553,25 @@ void pickValue(
 void pickCategory(
   BuildContext context,
   String selected,
-  ValueChanged<String> onSelect,
-) {
+  ValueChanged<String> onSelect, {
+  Set<String> excluded = const {},
+}) {
+  final app = context.findAncestorStateOfType<_RialAppState>();
   showModernActionSheet(
     context,
     title: 'Categoría',
+    pinnedAction: app == null
+        ? null
+        : ModernSheetAction(
+            icon: CupertinoIcons.add_circled,
+            title: 'Crear categoría',
+            onPressed: () => app.pushPage(
+              context,
+              (_) => CustomCategoryEditor(app: app, onCreated: onSelect),
+            ),
+          ),
     actions: categoryChoices(context, selected: selected)
+        .where((category) => !excluded.contains(category))
         .map(
           (category) => ModernSheetAction(
             icon: categoryIcon(category, context: context),
@@ -15893,19 +15792,6 @@ IconData debtPartyIcon(String party, String kind) {
   if (normalized == 'trabajo') return CupertinoIcons.briefcase_fill;
   if (kind == 'receivable') return CupertinoIcons.arrow_down_left_circle_fill;
   return CupertinoIcons.arrow_up_right_circle_fill;
-}
-
-String logoText(String code) {
-  if (code == 'CASH') return r'$';
-  if (code == 'CASHEA') return 'C';
-  if (code == 'KRECE') return 'K';
-  if (code == 'WEPPA') return 'W';
-  if (code == 'OKX') return 'OKX';
-  if (code.length >= 2)
-    return shortProviderName(code)
-        .substring(0, math.min(2, shortProviderName(code).length))
-        .toUpperCase();
-  return 'SR';
 }
 
 String normalizeText(String value) {
@@ -16377,17 +16263,10 @@ double debtRemainingAmount(Map<String, dynamic> debt) {
 double debtNextPaymentAmount(Map<String, dynamic> debt) {
   final remaining = debtRemainingAmount(debt);
   if (!debtHasInstallments(debt) || remaining == 0) return remaining;
-  final schedule = debtInstallmentAmounts(debt);
-  final index = debtNextInstallmentIndex(debt);
-  final boundary = schedule
-      .take(index + 1)
-      .fold<int>(0, (sum, v) => sum + moneyCents(v));
-  final paid = math.max(
-    0,
-    moneyCents(numberValue(debt['paidAmount'])) -
-        moneyCents(debtInitialAmount(debt)),
+  return math.min(
+    remaining,
+    debtInstallmentRemainingAmounts(debt)[debtNextInstallmentIndex(debt)],
   );
-  return math.min(remaining, math.max(0, boundary - paid) / 100);
 }
 
 bool debtHasInstallments(Map<String, dynamic> debt) {
@@ -16413,18 +16292,9 @@ List<String> debtInstallmentDates(Map<String, dynamic> debt) {
 
 int debtNextInstallmentIndex(Map<String, dynamic> debt) {
   if (!debtHasInstallments(debt)) return 0;
-  final schedule = debtInstallmentAmounts(debt);
-  final paid = math.max(
-    0,
-    moneyCents(numberValue(debt['paidAmount'])) -
-        moneyCents(debtInitialAmount(debt)),
-  );
-  var boundary = 0;
-  for (var i = 0; i < schedule.length; i++) {
-    boundary += moneyCents(schedule[i]);
-    if (paid < boundary) return i;
-  }
-  return schedule.length - 1;
+  final remaining = debtInstallmentRemainingAmounts(debt);
+  final index = remaining.indexWhere((value) => value > 0);
+  return index < 0 ? remaining.length - 1 : index;
 }
 
 String debtUpcomingDate(Map<String, dynamic> debt) {

@@ -1,9 +1,9 @@
 {
-  "version": "3.2",
-  "build": 84,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.2%2B84/sin-rial-3.2-build84.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.2%2B84",
-  "sha256": "181D16FA2A0293B7C5B1EDE64DE6321376830D086028D94D95356A1E11D39190",
-  "size": 65862858,
-  "notes": "Sin Rial 3.2: nueva identidad y configuracion inicial. Recorrido opcional para usuarios nuevos y novedades para quienes actualizan. PIN opcional, categorias personalizadas, hora por teclado, referencias bancarias y movimientos recurrentes por confirmar. Deudas pendientes y pagadas separadas, Cestaticket Alimentacion/Integral y formas de pago revisadas. Mantenimiento local de Bs. 684 solo en cuentas bancarias corrientes en bolivares, desde el proximo mes; importe basado en el limite publicado, editable y eliminable, sin conexion ni debito al banco. Actualiza sin desinstalar ni borrar datos."
+  "version": "3.2.2",
+  "build": 89,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.2.2%2B89/sin-rial-3.2.2-build89.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.2.2%2B89",
+  "sha256": "1c798758538d6a63d521d5845ed34b77b595485a692a47680da863366b7f4838",
+  "size": 66014419,
+  "notes": "Sin Rial 3.2.2: presupuesto simple por categorias, creacion de categorias desde el selector y Chucherias. Cuotas seleccionables e ingreso opcional de prestamos. Widget USDT y calculadora independiente con acceso protegido a la app completa. Referencias opcionales para ingresos y gastos, grafica USDT interactiva, colores de movimientos independientes, logos y animaciones mejorados. Recorrido de novedades con opcion Omitir. Actualiza sin desinstalar ni borrar datos."
 }

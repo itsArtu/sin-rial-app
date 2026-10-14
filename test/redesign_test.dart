@@ -339,7 +339,7 @@ void main() {
         app.setTab(2);
         await capture('menu');
         await tester.scrollUntilVisible(
-          find.text('Colores'),
+          find.text('Apariencia'),
           150,
           scrollable: find
               .descendant(
@@ -349,12 +349,12 @@ void main() {
               .first,
         );
         await Scrollable.ensureVisible(
-          tester.element(find.text('Colores')),
+          tester.element(find.text('Apariencia')),
           alignment: .35,
         );
         await tester.pumpAndSettle();
         await capture('menu-personalization');
-        await tester.tap(find.text('Colores'));
+        await tester.tap(find.text('Apariencia'));
         await capture('colors');
         expect(find.byType(ThemeColorSelector), findsOneWidget);
         app.rootNavigatorKey.currentState.pop();

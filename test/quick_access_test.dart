@@ -42,6 +42,7 @@ void main() {
   bool pinAccepted = false;
   bool externalChange = false;
   bool loseAcknowledgement = false;
+  final calls = <String>[];
 
   setUpAll(() async {
     if (!const bool.fromEnvironment('FINANCE_GOLDENS')) return;
@@ -70,6 +71,7 @@ void main() {
 
   setUp(() {
     stored = quickState();
+    calls.clear();
     closes = 0;
     writes = 0;
     writeGate = null;
@@ -82,7 +84,16 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           switch (call.method) {
+            case 'readAppearance':
+              return {
+                'darkMode': stored['darkMode'],
+                'themeColor': stored['themeColor'],
+              };
+            case 'readCalculatorState':
+              calls.add(call.method);
+              return jsonEncode(calculatorOnlyState(stored));
             case 'readState':
+              calls.add(call.method);
               return jsonEncode(stored);
             case 'readRateState':
               return jsonEncode(stored);
@@ -105,6 +116,9 @@ void main() {
               return null;
             case 'closeQuickAccess':
               closes++;
+              return null;
+            case 'openFullApp':
+              calls.add(call.method);
               return null;
             case 'verifyPin':
               return {'accepted': pinAccepted};
@@ -254,6 +268,30 @@ void main() {
     expect(writes, 0);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'Public calculator never reads the ledger or grants full access',
+    (tester) async {
+      stored = quickState(locked: true)..['userName'] = 'Private profile';
+      await launch(tester, 'calculator');
+      expect(find.byType(CalculatorPage), findsOneWidget);
+      expect(find.byType(LockScreen), findsNothing);
+      expect(calls, contains('readCalculatorState'));
+      expect(calls, isNot(contains('readState')));
+      final dynamic app = tester.state(find.byType(RialApp));
+      expect(app.maps('accounts'), isEmpty);
+      expect(app.state['pinHash'], isNot('test'));
+      expect(app.state['userName'], isNot('Private profile'));
+      app.mutate(() => app.state['hideAmounts'] = true);
+      await tester.pumpAndSettle();
+      expect(writes, 0);
+      await tester.tap(find.byTooltip('Abrir Sin Rial'));
+      await tester.pumpAndSettle();
+      expect(calls, contains('openFullApp'));
+      expect(find.byType(HomePage), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('An empty ledger offers setup without writing or exposing home', (
     tester,

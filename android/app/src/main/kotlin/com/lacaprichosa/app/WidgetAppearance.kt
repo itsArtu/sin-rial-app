@@ -13,8 +13,15 @@ class WidgetAppearance(state: JSONObject) {
     val red = Color.parseColor(if (dark) "#EF6683" else "#B83452")
     val background = if (dark) R.drawable.widget_background else R.drawable.widget_background_light
     val button = if (dark) R.drawable.widget_button_neutral else R.drawable.widget_button_light
-    val accent: Int = run {
-        val pair = when (state.optString("themeColor", "emerald")) {
+    val accent = paletteColor(state.optString("themeColor", "emerald"),
+        Color.parseColor(if (dark) "#55BD91" else "#03674A"))
+    val income = paletteColor(state.optString("incomeColor"),
+        Color.parseColor(if (dark) "#58BE86" else "#2F8B63"))
+    val expense = paletteColor(state.optString("expenseColor"),
+        Color.parseColor(if (dark) "#E86A7B" else "#C94F62"))
+
+    private fun paletteColor(key: String, fallback: Int): Int {
+        val pair = when (key) {
             "amber" -> "B98518" to "E0AE55"
             "indigo", "navy", "sky" -> "2463D4" to "5B9AFF"
             "cyan" -> "237C9A" to "62C4E2"
@@ -26,9 +33,10 @@ class WidgetAppearance(state: JSONObject) {
             "wine" -> "C41E1E" to "E05252"
             "rose" -> "B84E68" to "E9819A"
             "teal" -> "247B7B" to "55BDBD"
-            else -> "03674A" to "55BD91"
+            "emerald" -> "03674A" to "55BD91"
+            else -> return fallback
         }
-        Color.parseColor("#" + if (dark) pair.second else pair.first)
+        return Color.parseColor("#" + if (dark) pair.second else pair.first)
     }
 
     companion object {

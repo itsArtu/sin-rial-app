@@ -77,6 +77,48 @@ Map<String, dynamic>? findBudgetPlan(_RialAppState app, String id) =>
 List<Map<String, dynamic>> budgetPlanItems(_RialAppState app, String id) =>
     app.maps('budgets').where((b) => b['planId'] == id).toList();
 
+// Older plans may contain named rows. Project them without changing history.
+List<Map<String, dynamic>> budgetCategoryLimits(
+  Iterable<Map<String, dynamic>> items, {
+  required double usdRate,
+  required double eurRate,
+}) {
+  final groups = <String, List<Map<String, dynamic>>>{};
+  for (final item in items) {
+    (groups[item['category']?.toString() ?? 'Otro'] ??= []).add(item);
+  }
+  return [
+    for (final entry in groups.entries)
+      (() {
+        final rows = entry.value;
+        final currencies = rows
+            .map((row) => row['currency']?.toString() ?? 'USD')
+            .toSet();
+        final currency = currencies.length == 1 ? currencies.single : 'USD';
+        return <String, dynamic>{
+          ...rows.first,
+          'category': entry.key,
+          'name': '',
+          'currency': currency,
+          'limit': rows.fold<double>(
+            0,
+            (total, row) => moneyAdd(
+              total,
+              currencies.length == 1
+                  ? numberValue(row['limit'])
+                  : budgetUsd(
+                      numberValue(row['limit']),
+                      row['currency']?.toString() ?? 'USD',
+                      usdRate,
+                      eurRate,
+                    ),
+            ),
+          ),
+        };
+      })(),
+  ];
+}
+
 double budgetUsd(double amount, String currency, double rate, double eurRate) {
   if (currency == 'USD' || currency == 'USDT') return moneyRound(amount);
   if (rate <= 0 || (currency == 'EUR' && eurRate <= 0)) {
@@ -255,6 +297,10 @@ BudgetSpending summarizeBudgetSpending(
           : moneyCents(
               movementBudgetUsd(movement, sourceCents / 100, usdRate, eurRate),
             );
+      if (items.isEmpty) {
+        cents[key] = (cents[key] ?? 0) + valueCents;
+        continue;
+      }
       final linkedId = movement['budgetItemId']?.toString() ?? '';
       final candidates = legacy[key] ?? const <Map<String, dynamic>>[];
       final item = linkedId.isNotEmpty

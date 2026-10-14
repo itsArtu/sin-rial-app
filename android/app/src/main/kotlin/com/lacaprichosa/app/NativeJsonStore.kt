@@ -13,13 +13,25 @@ object NativeJsonStore {
     private val objectKeys = listOf("savingsFunds")
     internal val partNames = arrayKeys + objectKeys
     internal var cipher = StateCipher()
-    private val rateKeys = listOf("bcvRateSnapshots", "bcvRateHistory", "rateCheckedDate", "rateLastFetchAttemptMillis",
+    internal val rateKeys = listOf("bcvRateSnapshots", "bcvRateHistory", "rateCheckedDate", "rateLastFetchAttemptMillis",
         "rate", "previousRate", "lastRateDate", "rateEffectiveDate", "rateUpdatedAt", "lastRateMillis",
         "eurRate", "previousEurRate", "eurRateEffectiveDate", "eurRateUpdatedAt", "eurLastRateMillis",
         "usdtRate", "previousUsdtRate", "usdtRateUpdatedAt", "usdtLastRateMillis",
         "rateLastAttemptMillis", "rateFetchStatus", "eurRateFetchStatus", "usdtRateFetchStatus")
 
     fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
+
+    fun appearance(context: Context): Map<String, Any> {
+        val cache = prefs(context)
+        if (!cache.contains("appearance_color")) cacheAppearance(context, readMain(context))
+        return mapOf("themeColor" to cache.getString("appearance_color", "emerald").orEmpty(),
+            "darkMode" to cache.getBoolean("appearance_dark", true))
+    }
+
+    private fun cacheAppearance(context: Context, state: JSONObject) {
+        prefs(context).edit().putString("appearance_color", state.optString("themeColor", "emerald"))
+            .putBoolean("appearance_dark", state.optBoolean("darkMode", true)).apply()
+    }
 
     @Synchronized fun readState(context: Context, collections: Set<String> = partNames.toSet()): JSONObject = SqliteStateStore(context, cipher).use { store ->
         store.transaction { store.readState(collections) }
@@ -69,7 +81,7 @@ object NativeJsonStore {
                         if (stored.has(key)) slim.put(key, stored.get(key)) else slim.remove(key)
                     }
                 }
-                store.write(slim, parts)
+                store.write(slim, parts).also { cacheAppearance(context, slim) }
             }
         }
     }

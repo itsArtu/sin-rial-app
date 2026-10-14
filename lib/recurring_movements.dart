@@ -430,7 +430,7 @@ class RecurringTile extends StatelessWidget {
               income
                   ? CupertinoIcons.arrow_down_left
                   : CupertinoIcons.arrow_up_right,
-              color: income ? t.green : t.red,
+              color: income ? t.income : t.expense,
               size: 22,
             ),
             const SizedBox(width: 12),
@@ -458,7 +458,7 @@ class RecurringTile extends StatelessWidget {
                       rule['currency'].toString(),
                     ),
                     style: TextStyle(
-                      color: income ? t.green : t.red,
+                      color: income ? t.income : t.expense,
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),

@@ -88,11 +88,11 @@ void main() {
     expect(find.byType(ReleaseTour), findsOneWidget);
     await tester.tap(find.text('Siguiente'));
     await tester.pumpAndSettle();
-    expect(find.text('Cada cuenta, a tu medida'), findsOneWidget);
+    expect(find.text('Categor\u00edas a tu medida'), findsOneWidget);
     await tester.tap(find.text('Omitir'));
     await tester.pumpAndSettle();
     expect(find.byType(HomePage), findsOneWidget);
-    expect(app.state['seenFeatureTour'], '3.2');
+    expect(app.state['seenFeatureTour'], currentFeatureTour);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -114,7 +114,7 @@ void main() {
   testWidgets('Reference is disabled by default', (tester) async {
     final dynamic app = await expense(tester, ask: false);
     await tester.pumpAndSettle();
-    expect(find.byType(ExpenseReferenceDialog), findsNothing);
+    expect(find.byType(MovementReferenceDialog), findsNothing);
     expect(app.maps('movements').length, 1);
     expect(app.maps('movements').single['reference'], '');
     await tester.pumpWidget(const SizedBox.shrink());
@@ -124,11 +124,11 @@ void main() {
     tester,
   ) async {
     final dynamic app = await expense(tester);
-    expect(find.byType(ExpenseReferenceDialog), findsOneWidget);
+    expect(find.byType(MovementReferenceDialog), findsOneWidget);
     expect(app.maps('movements'), isEmpty);
     await tester.pump(const Duration(seconds: 30));
     expect(app.maps('movements'), isEmpty);
-    expect(find.byType(ExpenseReferenceDialog), findsOneWidget);
+    expect(find.byType(MovementReferenceDialog), findsOneWidget);
     await tester.tap(find.text('No'));
     await tester.pumpAndSettle();
     expect(app.maps('movements').length, 1);
@@ -157,7 +157,7 @@ void main() {
     await tester.enterText(field('Referencia (opcional)'), '009876');
     await tester.tap(find.text('Guardar cambios'));
     await tester.pumpAndSettle();
-    expect(find.byType(ExpenseReferenceDialog), findsNothing);
+    expect(find.byType(MovementReferenceDialog), findsNothing);
     expect(app.maps('movements').single['reference'], '009876');
     expect(app.accountById('a')['balance'], 90);
     await tester.pumpWidget(const SizedBox.shrink());

@@ -231,7 +231,6 @@ Future<Uint8List> renderBudgetPdf(Map<String, dynamic> report) async {
   );
   final rows = (report['rows'] as List).cast<Map>();
   final details = (report['details'] as List? ?? const []).cast<Map>();
-  final items = (report['items'] as List? ?? const []).cast<Map>();
   final distribution = rows
       .where((row) => numberValue(row['spentCents']) > 0)
       .toList();
@@ -462,55 +461,6 @@ Future<Uint8List> renderBudgetPdf(Map<String, dynamic> report) async {
         ),
         if (rows.isEmpty)
           text('Este plan no tiene categor\u00edas asignadas.', color: muted),
-        if (items.isNotEmpty) ...[
-          section(
-            'Partidas del presupuesto',
-            subtitle: 'Montos en la moneda de cada partida',
-          ),
-          pw.Table(
-            columnWidths: const {
-              0: pw.FlexColumnWidth(2),
-              1: pw.FlexColumnWidth(),
-              2: pw.FlexColumnWidth(),
-              3: pw.FlexColumnWidth(),
-            },
-            border: const pw.TableBorder(
-              horizontalInside: pw.BorderSide(color: PdfColors.grey200),
-            ),
-            children: [
-              pw.TableRow(
-                repeat: true,
-                children: [
-                  tableHeading('PARTIDA'),
-                  tableHeading('LIMITE', right: true),
-                  tableHeading('GASTADO', right: true),
-                  tableHeading('RESTANTE', right: true),
-                ],
-              ),
-              for (final item in items)
-                pw.TableRow(
-                  children: [
-                    cell(
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          text(item['name'].toString()),
-                          text(
-                            item['category'].toString(),
-                            size: 8,
-                            color: muted,
-                          ),
-                        ],
-                      ),
-                    ),
-                    cell(amount(item['limit'].toString())),
-                    cell(amount(item['spent'].toString())),
-                    cell(amount(item['remaining'].toString())),
-                  ],
-                ),
-            ],
-          ),
-        ],
         pw.SizedBox(height: 18),
         text(report['rateNote'].toString(), size: 9, color: muted),
         if (details.isEmpty)
@@ -561,13 +511,6 @@ Future<Uint8List> renderBudgetPdf(Map<String, dynamic> report) async {
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           text(row['category'].toString(), size: 9),
-                          if ((row['budgetItemName']?.toString() ?? '')
-                              .isNotEmpty)
-                            text(
-                              row['budgetItemName'].toString(),
-                              size: 8,
-                              color: accent,
-                            ),
                           if (row['description'].toString().isNotEmpty) ...[
                             pw.SizedBox(height: 3),
                             text(

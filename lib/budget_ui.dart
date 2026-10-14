@@ -308,7 +308,6 @@ class _BudgetPageState extends State<BudgetPage>
       plan['period'].toString(),
       plan['periodType'].toString(),
       selectedCategories: limits.keys.toSet(),
-      items: items,
     );
     final planned = limits.values.fold<double>(0, moneyAdd);
     final remaining = moneySubtract(planned, spending.total);
@@ -411,7 +410,7 @@ class _BudgetPageState extends State<BudgetPage>
       ),
       if (items.isEmpty)
         EmptyCard(theme: t, text: 'No hay categor\u00edas en el plan'),
-      for (final category in ranked) ...[
+      for (final category in ranked)
         BudgetCategoryTile(
           app: app,
           category: category,
@@ -419,33 +418,6 @@ class _BudgetPageState extends State<BudgetPage>
           spent: spending.categories[category] ?? 0,
           onTap: () => editPlan(plan: plan, step: 2),
         ),
-        for (final item in items.where((item) => item['category'] == category))
-          if (item['currency'] != 'USD' ||
-              (item['name']?.toString().isNotEmpty ?? false))
-            Padding(
-              padding: const EdgeInsets.only(left: 16),
-              child: BudgetCategoryTile(
-                app: app,
-                category: category,
-                title: budgetItemName(item),
-                currency: item['currency']?.toString() ?? 'USD',
-                limit: numberValue(item['limit']),
-                spent: spending.itemCurrencies[item['id']] ?? 0,
-                onTap: () => editPlan(plan: plan, step: 2),
-              ),
-            ),
-        if ((spending.unassigned[category] ?? 0) > 0)
-          Padding(
-            padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
-            child: DebtDetailRow(
-              theme: t,
-              label: 'Sin partida',
-              value: app.secureMoney(spending.unassigned[category]!, 'USD'),
-              fitValue: true,
-              bottom: false,
-            ),
-          ),
-      ],
       const SizedBox(height: 18),
       BudgetDisclosure(
         theme: t,
@@ -630,108 +602,103 @@ class BudgetCategoryTile extends StatelessWidget {
     required this.onTap,
     this.title,
     this.currency = 'USD',
+    this.editing = false,
   });
   final _RialAppState app;
-  final String category;
+  final String category, currency;
   final String? title;
-  final String currency;
   final double limit, spent;
+  final bool editing;
   final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
-    final t = app.theme, color = budgetCategoryColor(category, app.theme);
-    final ratio = limit > 0 ? spent / limit : 0.0;
+    final t = app.theme;
+    final exceeded = !editing && spent > limit;
     return CupertinoButton(
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(vertical: 14),
       onPressed: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: t.border)),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 42,
-              height: 42,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned.fill(
-                    child: material.CircularProgressIndicator(
-                      value: ratio.clamp(0, 1),
-                      strokeWidth: 3,
-                      color: spent > limit ? t.red : color,
-                      backgroundColor: t.field,
-                    ),
-                  ),
-                  Icon(
-                    categoryIcon(category, context: context),
-                    size: 19,
-                    color: color,
-                  ),
-                ],
-              ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: Icon(
+              categoryIcon(category, context: context),
+              size: 22,
+              color: budgetCategoryColor(category, t),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title ?? category,
-                    style: TextStyle(
-                      color: t.ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title ?? category,
+                        style: TextStyle(
+                          color: t.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'de ' + app.secureMoney(limit, currency),
-                    style: TextStyle(color: t.muted, fontSize: 12),
-                  ),
-                  if (spent > limit)
-                    Text(
-                      'Excedido: ' +
-                          app.secureMoney(
-                            moneySubtract(spent, limit),
-                            currency,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            app.secureMoney(editing ? limit : spent, currency),
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              color: exceeded ? t.red : t.ink,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                      style: TextStyle(color: t.red, fontSize: 11),
+                        ),
+                      ),
                     ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    app.secureMoney(spent, currency),
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: spent > limit ? t.red : t.ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    app.hideAmounts
-                        ? '\u2022\u2022\u2022'
-                        : (ratio * 100).round().toString() + '%',
-                    style: TextStyle(
-                      color: spent > limit ? t.red : color,
-                      fontSize: 12,
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  editing
+                      ? 'L\u00edmite del periodo'
+                      : 'de ${app.secureMoney(limit, currency)}',
+                  style: TextStyle(color: t.muted, fontSize: 12),
+                ),
+                if (!editing) ...[
+                  const SizedBox(height: 9),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: material.LinearProgressIndicator(
+                      value: limit > 0 ? (spent / limit).clamp(0, 1) : 0,
+                      minHeight: 3,
+                      backgroundColor: t.field,
+                      color: exceeded ? t.red : t.accent,
                     ),
                   ),
+                  if (exceeded)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 5),
+                      child: Text(
+                        'Excedido: ${app.secureMoney(moneySubtract(spent, limit), currency)}',
+                        style: TextStyle(color: t.red, fontSize: 12),
+                      ),
+                    ),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -852,7 +819,11 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
               'amount': numberValue(source['amount']),
             });
         }
-        for (final item in budgetPlanItems(app, plan['id'].toString())) {
+        for (final item in budgetCategoryLimits(
+          budgetPlanItems(app, plan['id'].toString()),
+          usdRate: app.rate,
+          eurRate: app.eurRate,
+        )) {
           final copy = Map<String, dynamic>.from(item);
           if (widget.copy) copy.remove('id');
           items.add(copy);
@@ -1032,19 +1003,6 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
       moneySubtract(salary, parseAmount(savings.text)),
       planned,
     );
-    final spending = step == 2
-        ? summarizeBudgetSpending(
-            app.maps('movements'),
-            period,
-            type,
-            usdRate: app.rate,
-            eurRate: app.eurRate,
-            items: items,
-            selectedCategories: items
-                .map((i) => i['category'].toString())
-                .toSet(),
-          )
-        : null;
     return BudgetFormScaffold(
       app: app,
       title: editing ? 'Editar presupuesto' : 'Crear presupuesto',
@@ -1230,24 +1188,10 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
         ],
         if (step == 2) ...[
           if (items.isNotEmpty)
-            RingSummary(
+            BudgetSummaryAmount(
               theme: t,
-              parts: [
-                for (final item in items)
-                  RatioPart(
-                    color: budgetCategoryColor(item['category'].toString(), t),
-                    value: budgetItemUsd(app, item),
-                  ),
-              ],
-              labels: [for (final item in items) budgetItemName(item)],
-              values: [
-                for (final item in items)
-                  app.secureMoney(
-                    numberValue(item['limit']),
-                    item['currency']?.toString() ?? 'USD',
-                  ),
-              ],
-              total: app.secureMoney(planned, 'USD'),
+              color: t.ink,
+              value: app.secureMoney(planned, 'USD'),
               label: 'Gastos planeados',
             ),
           if (incomeMode == 'fixed' && free < 0)
@@ -1262,17 +1206,17 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
                   child: BudgetCategoryTile(
                     app: app,
                     category: items[i]['category'].toString(),
-                    title: budgetItemLabel(items[i]),
                     currency: items[i]['currency']?.toString() ?? 'USD',
                     limit: numberValue(items[i]['limit']),
-                    spent: spending?.itemCurrencies[items[i]['id']] ?? 0,
+                    spent: 0,
+                    editing: true,
                     onTap: () => editCategory(i),
                   ),
                 ),
                 CircleTool(
                   theme: t,
                   icon: CupertinoIcons.xmark,
-                  label: 'Quitar partida',
+                  label: 'Quitar categor\u00eda',
                   onTap: () => setState(() => items.removeAt(i)),
                 ),
               ],
@@ -1280,7 +1224,7 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
           const SizedBox(height: 18),
           SecondaryActionButton(
             theme: t,
-            label: items.isEmpty ? 'Seleccionar egresos' : 'Agregar partida',
+            label: 'Agregar categor\u00eda',
             onPressed: () => editCategory(),
           ),
         ],
@@ -1535,7 +1479,6 @@ class BudgetCategoryEditorPage extends StatefulWidget {
 
 class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
   final amount = MoneyEditingController();
-  final name = TextEditingController();
   late String category;
   late String currency;
   @override
@@ -1543,7 +1486,6 @@ class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
     super.initState();
     category = widget.item?['category']?.toString() ?? 'Otro';
     currency = widget.item?['currency']?.toString() ?? 'USD';
-    name.text = widget.item?['name']?.toString() ?? '';
     if (widget.item != null)
       amount.text = plain(numberValue(widget.item!['limit']));
   }
@@ -1551,38 +1493,29 @@ class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
   @override
   void dispose() {
     amount.dispose();
-    name.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => BudgetFormScaffold(
     app: widget.app,
-    title: 'Partida del plan',
+    title: 'L\u00edmite por categor\u00eda',
     children: [
       OptionField(
         theme: widget.app.theme,
         label: 'Categor\u00eda',
         value: category.isEmpty ? 'Sin categor\u00edas disponibles' : category,
         icon: categoryIcon(category, context: context),
-        onTap: () => showModernActionSheet(
+        onTap: () => pickCategory(
           context,
-          title: 'Categor\u00eda',
-          actions: [
-            for (final value in categoryChoices(context, selected: category))
-              ModernSheetAction(
-                icon: categoryIcon(value, context: context),
-                title: value,
-                selected: value == category,
-                onPressed: () => setState(() => category = value),
-              ),
-          ],
+          category,
+          (value) {
+            if (mounted) setState(() => category = value);
+          },
+          excluded: widget.siblings
+              .map((item) => item['category'].toString())
+              .toSet(),
         ),
-      ),
-      RField(
-        theme: widget.app.theme,
-        controller: name,
-        placeholder: 'Nombre de la partida',
       ),
       OptionField(
         theme: widget.app.theme,
@@ -1639,23 +1572,18 @@ class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
     ],
     action: PrimaryActionButton(
       theme: widget.app.theme,
-      label: 'Guardar partida',
+      label: 'Guardar categor\u00eda',
       onPressed: () {
         final value = parseAmount(amount.text);
         if (category.isEmpty ||
-            widget.siblings.any(
-              (item) =>
-                  item['category'] == category &&
-                  (item['name']?.toString().trim().toLowerCase() ?? '') ==
-                      name.text.trim().toLowerCase(),
-            ) ||
+            widget.siblings.any((item) => item['category'] == category) ||
             !value.isFinite ||
             value <= 0 ||
             value > 999999999999) {
           showModernNotice(
             context,
             title: 'Revisa la categor\u00eda',
-            message: 'Usa un nombre distinto dentro de la categoria y un monto mayor a cero.',
+            message: 'Elige una categor\u00eda que no est\u00e9 en el plan y un monto mayor a cero.',
           );
           return;
         }
@@ -1671,7 +1599,7 @@ class _BudgetCategoryEditorPageState extends State<BudgetCategoryEditorPage> {
         }
         Navigator.pop(context, <String, dynamic>{
           'id': widget.item?['id'] ?? widget.app.id(),
-          'name': name.text.trim(),
+          'name': '',
           'category': category,
           'currency': currency,
           'limit': moneyRound(value),

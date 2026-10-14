@@ -44,6 +44,18 @@ class EurRateWidgetProvider : AppWidgetProvider() {
         manager.updateAppWidget(id, RateWidgetRenderer.buildViews(context, "EUR", options))
     }
 }
+class UsdtRateWidgetProvider : AppWidgetProvider() {
+    companion object {
+        fun updateAll(context: Context) = RateWidgetRenderer.updateAll(context, UsdtRateWidgetProvider::class.java, "USDT")
+    }
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        RateUpdateScheduler.refreshSoon(context)
+        ids.forEach { manager.updateAppWidget(it, RateWidgetRenderer.buildViews(context, "USDT", manager.getAppWidgetOptions(it))) }
+    }
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) {
+        manager.updateAppWidget(id, RateWidgetRenderer.buildViews(context, "USDT", options))
+    }
+}
 object RateWidgetRenderer {
     fun updateAll(context: Context, provider: Class<*>, currency: String) {
         val manager = AppWidgetManager.getInstance(context)
@@ -53,6 +65,7 @@ object RateWidgetRenderer {
     }
 
     fun history(state: JSONObject, currency: String): List<Double> {
+        if (currency == "USDT") return emptyList()
         val effective = state.optString(if (currency == "EUR") "eurRateEffectiveDate" else "rateEffectiveDate")
         if (effective.isBlank()) return emptyList()
         val quotes = BcvRatePolicy.saved(state)
@@ -74,7 +87,11 @@ object RateWidgetRenderer {
         views.setViewVisibility(R.id.rate_updated, if (tiny) View.GONE else View.VISIBLE)
         views.setInt(R.id.rate_root, "setBackgroundResource", theme.background)
         views.setViewVisibility(R.id.rate_icon, if (compact) View.GONE else View.VISIBLE)
-        views.setImageViewResource(R.id.rate_icon, if (currency == "EUR") R.drawable.widget_eu else R.drawable.widget_us)
+        views.setImageViewResource(R.id.rate_icon, when (currency) {
+            "USDT" -> R.drawable.app_logo
+            "EUR" -> R.drawable.widget_eu
+            else -> R.drawable.widget_us
+        })
         views.setTextColor(R.id.rate_value, theme.ink)
         views.setTextColor(R.id.rate_pair, theme.accent)
         views.setTextColor(R.id.rate_updated, theme.muted)
@@ -84,12 +101,12 @@ object RateWidgetRenderer {
             views.setTextViewTextSize(R.id.rate_pair, TypedValue.COMPLEX_UNIT_SP, 10f)
         }
         views.setInt(R.id.rate_updated, "setMaxLines", if (compact) 1 else 2)
-        val current = state.optDouble(if (currency == "EUR") "eurRate" else "rate", 0.0)
-        val previous = state.optDouble(if (currency == "EUR") "previousEurRate" else "previousRate", 0.0)
+        val current = state.optDouble(when (currency) { "USDT" -> "usdtRate"; "EUR" -> "eurRate"; else -> "rate" }, 0.0)
+        val previous = state.optDouble(when (currency) { "USDT" -> "previousUsdtRate"; "EUR" -> "previousEurRate"; else -> "previousRate" }, 0.0)
         val valid = current.isFinite() && current > 0
         val change = if (valid && previous.isFinite() && previous > 0) (current / previous - 1) * 100 else null
-        views.setTextViewText(R.id.rate_pair, "$currency / BCV")
-        val rateLabel = if (valid) "Bs " + WidgetAppearance.amount(floor(current * 100) / 100) else "Sin tasa"
+        views.setTextViewText(R.id.rate_pair, if (currency == "USDT") "USDT / VES" else "$currency / BCV")
+        val rateLabel = if (valid) "Bs. " + WidgetAppearance.amount(floor(current * 100) / 100) else "Sin tasa"
         views.setTextViewText(R.id.rate_value, rateLabel)
         views.setViewVisibility(R.id.rate_change, if (change == null) View.GONE else View.VISIBLE)
         views.setTextViewText(R.id.rate_change, change?.let {
@@ -98,8 +115,8 @@ object RateWidgetRenderer {
         views.setTextColor(R.id.rate_change, if ((change ?: 0.0) >= 0) theme.green else theme.red)
 
         val effective = state.optString(if (currency == "EUR") "eurRateEffectiveDate" else "rateEffectiveDate")
-        val status = state.optString(if (currency == "EUR") "eurRateFetchStatus" else "rateFetchStatus")
-        val millis = state.optLong(if (currency == "EUR") "eurLastRateMillis" else "lastRateMillis", 0L)
+        val status = state.optString(when (currency) { "USDT" -> "usdtRateFetchStatus"; "EUR" -> "eurRateFetchStatus"; else -> "rateFetchStatus" })
+        val millis = state.optLong(when (currency) { "USDT" -> "usdtLastRateMillis"; "EUR" -> "eurLastRateMillis"; else -> "lastRateMillis" }, 0L)
         val today = BcvRatePolicy.dateKey(System.currentTimeMillis())
         val stamp = if (millis > 0) SimpleDateFormat("dd/MM HH:mm", Locale.forLanguageTag("es-VE"))
             .apply { timeZone = BcvRatePolicy.zone }.format(Date(millis)) else ""
@@ -107,13 +124,14 @@ object RateWidgetRenderer {
             !valid -> "Sin tasa guardada"
             status == "offline" -> "Sin conexi\u00f3n"
             status == "error" -> "No se pudo actualizar"
+            currency == "USDT" -> if (stamp.isBlank()) "Tasa guardada" else "Actualizada $stamp"
             effective > today -> "Adelantada: $effective"
             effective.isNotBlank() && effective < today -> "\u00daltima publicada: $effective"
             effective.isNotBlank() -> "BCV $effective"
             else -> "Tasa guardada"
         }
-        views.setTextViewText(R.id.rate_updated, label + if (!compact && stamp.isNotBlank()) "\nConsulta $stamp" else "")
-        views.setContentDescription(R.id.rate_root, "$currency BCV. $rateLabel. $label")
+        views.setTextViewText(R.id.rate_updated, label + if (currency != "USDT" && !compact && stamp.isNotBlank()) "\nConsulta $stamp" else "")
+        views.setContentDescription(R.id.rate_root, "$currency ${if (currency == "USDT") "" else "BCV"}. $rateLabel. $label")
         val points = history(state, currency)
         val graph = valid && height >= 160 && points.size >= 2
         views.setViewVisibility(R.id.rate_chart, if (graph) View.VISIBLE else View.GONE)

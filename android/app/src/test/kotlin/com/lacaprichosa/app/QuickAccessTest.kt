@@ -19,6 +19,31 @@ class QuickAccessTest {
     private val context get() = RuntimeEnvironment.getApplication()
     @Before fun setup() { installTestCipher() }
 
+    @Test fun calculatorProjectionNeverExposesFinancialOrSecurityFields() {
+        val state = JSONObject().put("rate", 900).put("usdtRate", 1000)
+            .put("themeColor", "cyan").put("darkMode", true)
+            .put("pinHash", "secret").put("userName", "Private")
+            .put("accounts", org.json.JSONArray()).put("debts", org.json.JSONArray())
+            .put("movements", org.json.JSONArray()).put("biometricEnabled", true)
+        val projected = CalculatorAccess.project(state)
+        assertEquals(setOf("rate", "usdtRate", "themeColor", "darkMode"), projected.keys().asSequence().toSet())
+        for (method in listOf("readState", "readRateState", "writeState", "writeSplitState",
+            "verifyPin", "consumeScreenOff", "stateChanged", "exportBackup")) {
+            assertFalse(method, method in CalculatorAccess.allowedMethods)
+        }
+        assertTrue("openFullApp" in CalculatorAccess.allowedMethods)
+    }
+
+    @Test fun startupAppearanceTracksPersistedThemeWithoutReturningLedger() {
+        NativeJsonStore.writeState(context, """{"themeColor":"purple","darkMode":false,"accounts":[]}""")
+        val appearance = NativeJsonStore.appearance(context)
+        assertEquals("purple", appearance["themeColor"])
+        assertEquals(false, appearance["darkMode"])
+        assertEquals(2, appearance.size)
+        NativeJsonStore.writeState(context, """{"themeColor":"cyan","darkMode":true}""")
+        assertEquals("cyan", NativeJsonStore.appearance(context)["themeColor"])
+    }
+
     @Test fun quickIntentsAreExplicitImmutableAndDoNotOpenMainActivity() {
         for (action in listOf("income", "expense", "calculator")) {
             val pending = QuickAccessActivity.pendingIntent(context, action)

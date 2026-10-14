@@ -240,7 +240,7 @@ class _MonthlySpendingPageState extends State<MonthlySpendingPage> {
                           : 'Ingresos del mes',
                       key: const ValueKey('monthly-spending-income'),
                       value: app.secureMoney(_report.income.usd, 'USD'),
-                      valueColor: t.green,
+                      valueColor: t.income,
                       fitValue: true,
                     ),
                     DebtDetailRow(
@@ -250,7 +250,7 @@ class _MonthlySpendingPageState extends State<MonthlySpendingPage> {
                           : 'Total gastado',
                       key: const ValueKey('monthly-spending-total'),
                       value: app.secureMoney(_report.expenses.usd, 'USD'),
-                      valueColor: t.red,
+                      valueColor: t.expense,
                       fitValue: true,
                     ),
                     Text(

@@ -12,6 +12,7 @@ object WidgetPinning {
             "movement" -> MovementWidgetProvider::class.java
             "USD" -> UsdRateWidgetProvider::class.java
             "EUR" -> EurRateWidgetProvider::class.java
+            "USDT" -> UsdtRateWidgetProvider::class.java
             "calculator" -> CalculatorWidgetProvider::class.java
             else -> return false
         }

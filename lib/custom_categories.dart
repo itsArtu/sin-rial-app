@@ -170,9 +170,15 @@ class CategoriesPage extends StatelessWidget {
 }
 
 class CustomCategoryEditor extends StatefulWidget {
-  const CustomCategoryEditor({super.key, required this.app, this.entry});
+  const CustomCategoryEditor({
+    super.key,
+    required this.app,
+    this.entry,
+    this.onCreated,
+  });
   final _RialAppState app;
   final Map<String, dynamic>? entry;
+  final ValueChanged<String>? onCreated;
   @override
   State<CustomCategoryEditor> createState() => _CustomCategoryEditorState();
 }
@@ -258,6 +264,7 @@ class _CustomCategoryEditorState extends State<CustomCategoryEditor> {
                     'icon': selectedIcon,
                     'keywords': keywords.text.split(','),
                   }, editingId: widget.entry?['id']?.toString());
+                  widget.onCreated?.call(name.text.trim());
                   Navigator.pop(context);
                 } on FormatException catch (error) {
                   showModernNotice(

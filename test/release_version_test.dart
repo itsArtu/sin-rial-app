@@ -9,14 +9,24 @@ void main() {
     expect(compareVersionNames(version.version, '2.1.13'), greaterThan(0));
   });
 
-  test('Installed 3.2.0 does not offer itself or an older release', () {
-    const current = UpdateInfo(version: '3.2', build: 84, apkUrl: 'app.apk');
+  test('Installed 3.2.2 does not offer itself or an older release', () {
+    const current = UpdateInfo(version: '3.2.2', build: 89, apkUrl: 'app.apk');
     const previous = UpdateInfo(version: '2.2.3', build: 67, apkUrl: 'old.apk');
     const tested = UpdateInfo(version: '3.0', build: 73, apkUrl: 'tested.apk');
-    const next = UpdateInfo(version: '3.2.1', build: 85, apkUrl: 'next.apk');
+    const next = UpdateInfo(version: '3.2.3', build: 90, apkUrl: 'next.apk');
     expect(current.isNewer, isFalse);
     expect(previous.isNewer, isFalse);
     expect(tested.isNewer, isFalse);
+    expect(
+      const UpdateInfo(version: '3.2', build: 84, apkUrl: 'old.apk').isNewer,
+      isFalse,
+    );
+    for (final build in [85, 86, 87, 88]) {
+      expect(
+        UpdateInfo(version: '3.2.1', build: build, apkUrl: 'test.apk').isNewer,
+        isFalse,
+      );
+    }
     expect(
       const UpdateInfo(version: '3.1.3', build: 79, apkUrl: 'old.apk').isNewer,
       isFalse,
@@ -30,6 +40,21 @@ void main() {
       expect(compareVersionNames(current.version, '3.1.1'), greaterThan(0));
     }
     expect(next.isNewer, isTrue);
+  });
+
+  test('Published 3.2.2 tag upgrades public and local test builds', () {
+    final latest = parseReleaseVersion('v3.2.2+89');
+    expect(latest.version, '3.2.2');
+    expect(latest.build, 89);
+    expect(currentFeatureTour, '3.2.2+89');
+    for (final tag in ['v3.1.3+79', 'v3.2+84', 'v3.2.1+88']) {
+      final previous = parseReleaseVersion(tag);
+      expect(latest.build, greaterThan(previous.build));
+      expect(
+        compareVersionNames(latest.version, previous.version),
+        greaterThan(0),
+      );
+    }
   });
 
   test('Stable 3.1 tag is newer than published 2.x and 3.0 versions', () {

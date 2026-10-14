@@ -1,5 +1,7 @@
 part of 'main.dart';
 
+const currentFeatureTour = '$_appVersionName+$_appBuildNumber';
+
 const bankMaintenanceAmount = 684.0;
 const bankMaintenancePolicy = 'ves-current-2026-09';
 
@@ -118,7 +120,7 @@ class _ReleaseTourState extends State<ReleaseTour> {
     ),
     (
       'Tu plan mensual',
-      'Ingresos previstos, ahorro y l\u00edmites de gastos. Partidas con nombre para separar cada compromiso.',
+      'Ingresos previstos, ahorro y un l\u00edmite por categor\u00eda. Cada gasto se suma autom\u00e1ticamente a su categor\u00eda.',
       CupertinoIcons.chart_pie,
     ),
     (
@@ -134,29 +136,29 @@ class _ReleaseTourState extends State<ReleaseTour> {
   ];
   static const releasePages = [
     (
-      'Tu Sin Rial 3.2',
-      'Una nueva identidad, colores en el logo y un perfil m\u00e1s completo.',
-      CupertinoIcons.person_crop_circle,
+      'Un plan m\u00e1s simple',
+      'Un total y un l\u00edmite por categor\u00eda, sin subcategor\u00edas ni asignaciones adicionales. Tus gastos anteriores siguen incluidos.',
+      CupertinoIcons.chart_pie,
     ),
     (
-      'Cada cuenta, a tu medida',
-      'Distingue cuentas corrientes y de ahorro, Alimentaci\u00f3n e Integral. Las cuentas corrientes en bol\u00edvares registran su mantenimiento desde el pr\u00f3ximo mes.',
-      CupertinoIcons.creditcard,
+      'Categor\u00edas a tu medida',
+      'Crea una categor\u00eda desde el selector, incluso mientras buscas. Chucher\u00edas reconoce dulces y snacks; TDC selecciona Pago TDC.',
+      CupertinoIcons.tag,
     ),
     (
-      'Pendientes y pagados',
-      'Las deudas saldadas tienen su propia secci\u00f3n. En el inicio quedan solo los pagos pendientes, incluidos los abonos parciales.',
+      'Cuotas y pr\u00e9stamos',
+      'Elige la cuota que pagaste. Al recibir un pr\u00e9stamo puedes ingresar el dinero en una cuenta; no aplica a Cashea.',
       CupertinoIcons.check_mark_circled,
     ),
     (
-      'Movimientos con contexto',
-      'Hora por teclado, referencias bancarias opcionales y movimientos recurrentes por confirmar.',
-      CupertinoIcons.repeat,
+      'Herramientas desde el inicio',
+      'Nuevo widget de tasa USDT. La calculadora abre sin desbloquear, pero tus cuentas y movimientos siguen protegidos al entrar a la app.',
+      CupertinoIcons.square_grid_2x2,
     ),
     (
-      'T\u00fa eliges la seguridad',
-      'El PIN es opcional. Puedes activarlo desde Ajustes, junto con la biometr\u00eda. Tus datos siguen guardados localmente y cifrados.',
-      CupertinoIcons.lock_shield,
+      'Ajustes para el d\u00eda a d\u00eda',
+      'Colores de movimientos con muestras de montos, logos m\u00e1s claros y bloqueo sin saltos. Referencias opcionales para ingresos y gastos desde Ajustes. Toca la gr\u00e1fica USDT para consultar cada tasa.',
+      CupertinoIcons.paintbrush,
     ),
   ];
   List<(String, String, IconData)> get pages =>
@@ -175,7 +177,7 @@ class _ReleaseTourState extends State<ReleaseTour> {
     finished = true;
     widget.app.mutate(() {
       if (widget.introduction) widget.app.state['pendingAppTour'] = false;
-      widget.app.state['seenFeatureTour'] = '3.2';
+      widget.app.state['seenFeatureTour'] = currentFeatureTour;
     });
     widget.onDone?.call();
   }
@@ -213,7 +215,7 @@ class _ReleaseTourState extends State<ReleaseTour> {
                         child: Text(
                           widget.introduction
                               ? 'Conoce Sin Rial'
-                              : 'Novedades de 3.2',
+                              : 'Novedades de $_appVersionName',
                           style: TextStyle(color: t.muted),
                         ),
                       ),
@@ -231,13 +233,13 @@ class _ReleaseTourState extends State<ReleaseTour> {
                       duration: MediaQuery.disableAnimationsOf(context)
                           ? Duration.zero
                           : const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
                       child: Column(
                         key: ValueKey(step),
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          SinRialLogo(theme: t, color: t.accent, height: 56),
-                          const SizedBox(height: 40),
-                          Icon(page.$3, size: 64, color: t.accent),
+                          TourArtwork(theme: t, icon: page.$3),
                           const SizedBox(height: 24),
                           Text(
                             page.$1,
@@ -281,11 +283,15 @@ class _ReleaseTourState extends State<ReleaseTour> {
                             ? finish()
                             : setState(() => step++),
                       ),
-                      if (step > 0)
-                        CupertinoButton(
-                          onPressed: () => setState(() => step--),
-                          child: const Text('Anterior'),
-                        ),
+                      SizedBox(
+                        height: 48,
+                        child: step > 0
+                            ? CupertinoButton(
+                                onPressed: () => setState(() => step--),
+                                child: const Text('Anterior'),
+                              )
+                            : null,
+                      ),
                     ],
                   ),
                 ),
@@ -298,27 +304,156 @@ class _ReleaseTourState extends State<ReleaseTour> {
   }
 }
 
-Future<String?> promptExpenseReference(BuildContext context, RTheme theme) =>
-    showGeneralDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Sin referencia',
-      barrierColor: CupertinoColors.black.withValues(alpha: .4),
-      transitionDuration: MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 220),
-      transitionBuilder: softDialogTransition,
-      pageBuilder: (_, __, ___) => ExpenseReferenceDialog(theme: theme),
-    );
-
-class ExpenseReferenceDialog extends StatefulWidget {
-  const ExpenseReferenceDialog({super.key, required this.theme});
+class BrandEntrance extends StatelessWidget {
+  const BrandEntrance({super.key, required this.theme});
   final RTheme theme;
+
   @override
-  State<ExpenseReferenceDialog> createState() => _ExpenseReferenceDialogState();
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(
+      begin: MediaQuery.disableAnimationsOf(context) ? 1 : 0,
+      end: 1,
+    ),
+    duration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 420),
+    curve: Curves.easeOutCubic,
+    child: RepaintBoundary(
+      child: SinRialLogo(theme: theme, color: theme.accent, height: 56),
+    ),
+    builder: (_, value, child) => Opacity(
+      opacity: value,
+      child: Transform.translate(
+        offset: Offset(0, 6 * (1 - value)),
+        child: child,
+      ),
+    ),
+  );
 }
 
-class _ExpenseReferenceDialogState extends State<ExpenseReferenceDialog> {
+class TourArtwork extends StatelessWidget {
+  const TourArtwork({super.key, required this.theme, required this.icon});
+  final RTheme theme;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      SizedBox(height: 56, child: BrandEntrance(theme: theme)),
+      const SizedBox(height: 32),
+      TourFeatureIcon(theme: theme, icon: icon),
+    ],
+  );
+}
+
+class TourFeatureIcon extends StatefulWidget {
+  const TourFeatureIcon({super.key, required this.theme, required this.icon});
+  final RTheme theme;
+  final IconData icon;
+
+  @override
+  State<TourFeatureIcon> createState() => _TourFeatureIconState();
+}
+
+class _TourFeatureIconState extends State<TourFeatureIcon>
+    with SingleTickerProviderStateMixin {
+  late final controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+  bool? reducedMotion;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    if (reducedMotion == reduced) return;
+    reducedMotion = reduced;
+    if (reduced) {
+      controller.value = 1;
+    } else {
+      controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant TourFeatureIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.icon != widget.icon && reducedMotion == false) {
+      controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 88,
+    width: 88,
+    child: AnimatedBuilder(
+      animation: controller,
+      child: RepaintBoundary(
+        child: Icon(widget.icon, size: 64, color: widget.theme.accent),
+      ),
+      builder: (_, child) {
+        final progress = controller.value;
+        final enter = Curves.easeOutCubic.transform(
+          (progress / .65).clamp(0.0, 1.0),
+        );
+        final settle = math.sin(math.pi * progress);
+        return Opacity(
+          opacity: enter,
+          child: Transform.translate(
+            offset: Offset(0, 8 * (1 - enter)),
+            child: Transform.rotate(
+              angle: -.12 * (1 - enter),
+              child: Transform.scale(
+                scale: .82 + .18 * enter + .035 * settle,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+Future<String?> promptMovementReference(
+  BuildContext context,
+  RTheme theme, {
+  required bool income,
+}) => showGeneralDialog<String>(
+  context: context,
+  barrierDismissible: true,
+  barrierLabel: 'Sin referencia',
+  barrierColor: CupertinoColors.black.withValues(alpha: .4),
+  transitionDuration: MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : const Duration(milliseconds: 220),
+  transitionBuilder: softDialogTransition,
+  pageBuilder: (_, _, _) =>
+      MovementReferenceDialog(theme: theme, income: income),
+);
+
+class MovementReferenceDialog extends StatefulWidget {
+  const MovementReferenceDialog({
+    super.key,
+    required this.theme,
+    this.income = false,
+  });
+  final RTheme theme;
+  final bool income;
+  @override
+  State<MovementReferenceDialog> createState() =>
+      _MovementReferenceDialogState();
+}
+
+class _MovementReferenceDialogState extends State<MovementReferenceDialog> {
   final reference = TextEditingController();
   bool editing = false;
 
@@ -375,7 +510,7 @@ class _ExpenseReferenceDialogState extends State<ExpenseReferenceDialog> {
                   const SizedBox(height: 12),
                   PrimaryActionButton(
                     theme: t,
-                    label: 'Guardar gasto',
+                    label: widget.income ? 'Guardar ingreso' : 'Guardar gasto',
                     onPressed: () =>
                         Navigator.pop(context, reference.text.trim()),
                   ),

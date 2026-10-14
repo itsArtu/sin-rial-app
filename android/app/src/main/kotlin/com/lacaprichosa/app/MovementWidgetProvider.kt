@@ -27,8 +27,8 @@ class MovementWidgetProvider : AppWidgetProvider() {
             for (id in intArrayOf(R.id.widget_income, R.id.widget_expense)) {
                 views.setInt(id, "setBackgroundResource", theme.button)
             }
-            views.setTextColor(R.id.widget_income, theme.green)
-            views.setTextColor(R.id.widget_expense, theme.red)
+            views.setTextColor(R.id.widget_income, theme.income)
+            views.setTextColor(R.id.widget_expense, theme.expense)
             if (expanded) {
                 views.setTextColor(R.id.widget_caption, theme.muted)
                 views.setInt(R.id.widget_transfer, "setBackgroundResource", theme.button)

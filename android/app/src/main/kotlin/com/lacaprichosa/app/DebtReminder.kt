@@ -78,16 +78,31 @@ internal data class DebtReminder(val tag: String, val title: String, val kind: S
             val initial = minOf(amount, if (initialValue > 0 || !debt.optBoolean("initialPaid")) initialValue else paid)
             if (initial < 0) return null
             val principal = amount - initial
-            val paidInstallments = maxOf(0, paid - initial)
+            var paidInstallments = maxOf(0, paid - initial)
             val manual = cents(debt, "installmentAmount") ?: return null
             val automatic = debt.optString("installmentMode") == "auto" || manual <= 0
             var remaining = principal
-            var boundary = 0L
+            val portions = LongArray(count)
             for (index in 0 until count) {
                 val portion = if (index == count - 1) remaining else if (automatic) principal / count else minOf(manual, remaining)
                 remaining -= portion
-                boundary += portion
-                if (paidInstallments < boundary) return index
+                portions[index] = portion
+            }
+            val assigned = LongArray(count)
+            val payments = debt.optJSONObject("installmentPayments") ?: JSONObject()
+            for (key in payments.keys()) {
+                val payment = payments.optJSONObject(key) ?: continue
+                val index = payment.optInt("index", -1)
+                if (index !in 0 until count) continue
+                val value = minOf(paidInstallments, portions[index] - assigned[index], maxOf(0, cents(payment, "amount") ?: 0))
+                assigned[index] += value
+                paidInstallments -= value
+            }
+            for (index in 0 until count) {
+                val value = minOf(paidInstallments, portions[index] - assigned[index])
+                assigned[index] += value
+                paidInstallments -= value
+                if (assigned[index] < portions[index]) return index
             }
             return count - 1
         }

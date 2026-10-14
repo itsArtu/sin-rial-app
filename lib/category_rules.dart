@@ -16,6 +16,7 @@ const Map<String, List<String>> categoryKeywords = {
     'mantenimiento bancario',
   ],
   'Pago TDC': [
+    'tdc',
     'pago tdc',
     'pago de tdc',
     'pagar tdc',
@@ -36,6 +37,36 @@ const Map<String, List<String>> categoryKeywords = {
     'cancelar tdc',
     'cancelacion tdc',
     'deuda tdc',
+  ],
+  'Chucherías': [
+    'chucheria',
+    'chucherias',
+    'doritos',
+    'cheese tris',
+    'cheesetris',
+    'chocolate',
+    'chocolates',
+    'dulce',
+    'dulces',
+    'snack',
+    'snacks',
+    'golosina',
+    'golosinas',
+    'caramelo',
+    'caramelos',
+    'gomitas',
+    'galleta',
+    'galletas',
+    'cocosette',
+    'samba',
+    'toronto',
+    'ruffles',
+    'cheetos',
+    'cotufas',
+    'pringles',
+    'helado',
+    'helados',
+    'chupeta',
   ],
   'Deuda': [
     'cuota',
@@ -381,9 +412,6 @@ const Map<String, List<String>> categoryKeywords = {
     'tequenos',
     'refresco',
     'jugo',
-    'snack',
-    'dulces',
-    'helado',
     'agua mineral',
     'mcdonalds',
     'mcdonald s',
@@ -589,4 +617,5 @@ bool isBankCommissionCategory(String category) =>
 
 bool isFeeExemptCategory(String category) =>
     _categorySearchText(category) == 'recarga saldo' ||
+    _categorySearchText(category) == 'pago tdc' ||
     isBankCommissionCategory(category);

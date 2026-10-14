@@ -48,7 +48,7 @@ class WidgetDesignTest {
                 val view = RateWidgetRenderer.buildViews(context, "USD", options(height))
                     .apply(context, FrameLayout(context))
                 measure(view, 180, height)
-                assertEquals("Bs 852,42", view.findViewById<TextView>(R.id.rate_value).text.toString())
+                assertEquals("Bs. 852,42", view.findViewById<TextView>(R.id.rate_value).text.toString())
                 assertEquals(if (height >= 160) View.VISIBLE else View.GONE,
                     view.findViewById<View>(R.id.rate_chart).visibility)
                 assertEquals(WidgetAppearance(saved).ink,
@@ -72,7 +72,18 @@ class WidgetDesignTest {
         NativeJsonStore.writeState(context, state(true).put("rate", 1852.42999).toString())
         val view = RateWidgetRenderer.buildViews(context, "USD", options(170))
             .apply(context, FrameLayout(context))
-        assertEquals("Bs 1.852,42", view.findViewById<TextView>(R.id.rate_value).text.toString())
+        assertEquals("Bs. 1.852,42", view.findViewById<TextView>(R.id.rate_value).text.toString())
+    }
+
+    @Test fun usdtWidgetUsesItsOwnRateAndDoesNotPretendToBeBcv() {
+        NativeJsonStore.writeState(context, state(true).put("usdtRate", 1000.12).toString())
+        val view = RateWidgetRenderer.buildViews(context, "USDT", options(90))
+            .apply(context, FrameLayout(context))
+        measure(view, 180, 90)
+        assertEquals("Bs. 1.000,12", view.findViewById<TextView>(R.id.rate_value).text.toString())
+        assertTrue(RateWidgetRenderer.history(state(true), "USDT").isEmpty())
+        bounds(view, view)
+        screenshot(view, "usdt-dark")
     }
 
     @Test fun movementActionsRenderBothSizesAndThemes() {
@@ -92,7 +103,7 @@ class WidgetDesignTest {
     @Test fun providersDefaultToTwoColumnsAndOneRow() {
         val namespace = "http://schemas.android.com/apk/res/android"
         for (xml in listOf(R.xml.movement_widget_info, R.xml.usd_rate_widget_info,
-            R.xml.eur_rate_widget_info, R.xml.calculator_widget_info)) {
+            R.xml.eur_rate_widget_info, R.xml.usdt_rate_widget_info, R.xml.calculator_widget_info)) {
             context.resources.getXml(xml).use { parser ->
                 while (parser.next() != org.xmlpull.v1.XmlPullParser.START_TAG) {}
                 assertEquals(2, parser.getAttributeIntValue(namespace, "targetCellWidth", 0))
@@ -108,6 +119,29 @@ class WidgetDesignTest {
             measure(view, 160, 56)
             bounds(view, view)
             screenshot(view, "calculator-" + if (dark) "dark" else "light")
+        }
+    }
+
+    @Test fun financialColorsPersistAndReachBothWidgetSizesWithoutChangingStatusColors() {
+        for (dark in listOf(true, false)) {
+            val saved = state(dark).put("incomeColor", "indigo").put("expenseColor", "coral")
+            val defaults = WidgetAppearance(state(dark))
+            val custom = WidgetAppearance(saved)
+            assertEquals(android.graphics.Color.parseColor(if (dark) "#5B9AFF" else "#2463D4"), custom.income)
+            assertEquals(android.graphics.Color.parseColor(if (dark) "#F28A68" else "#C35C3E"), custom.expense)
+            assertEquals(defaults.red, custom.red)
+            assertEquals(defaults.green, custom.green)
+            NativeJsonStore.writeState(context, saved.toString())
+            assertEquals("indigo", NativeJsonStore.readMain(context).getString("incomeColor"))
+            for (height in listOf(56, 136)) {
+                val view = MovementWidgetProvider.buildViews(context, options(height))
+                    .apply(context, FrameLayout(context))
+                assertEquals(custom.income, view.findViewById<TextView>(R.id.widget_income).currentTextColor)
+                assertEquals(custom.expense, view.findViewById<TextView>(R.id.widget_expense).currentTextColor)
+            }
+            val invalid = WidgetAppearance(state(dark).put("incomeColor", "invalid").put("expenseColor", "invalid"))
+            assertEquals(defaults.income, invalid.income)
+            assertEquals(defaults.expense, invalid.expense)
         }
     }
 

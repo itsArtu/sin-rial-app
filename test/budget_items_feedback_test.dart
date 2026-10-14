@@ -191,7 +191,7 @@ void main() {
   );
 
   testWidgets(
-    'A movement selects the named item and preserves it when edited',
+    'Expenses use categories and preserve legacy metadata on unchanged edits',
     (tester) async {
       final dynamic app = await fixtures.fixture(tester);
       final period = currentMonthKey(),
@@ -220,28 +220,31 @@ void main() {
       final itemField = find.byWidgetPredicate(
         (w) => w is OptionField && w.label == 'Partida del presupuesto',
       );
-      await tester.ensureVisible(itemField);
-      await tester.tap(itemField);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Arturo'));
-      await tester.pumpAndSettle();
+      expect(itemField, findsNothing);
       await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       final movement = app.maps('movements').single as Map<String, dynamic>;
-      expect(movement['budgetItemId'], budgetPlanItems(app, planId).last['id']);
-      expect(movement['budgetItemName'], 'Arturo');
+      expect(movement['budgetItemId'], isNull);
+      expect(movement['category'], 'Deuda');
+      final legacy = <String, dynamic>{
+        ...movement,
+        'budgetItemId': budgetPlanItems(app, planId).last['id'],
+        'budgetPlanId': planId,
+        'budgetItemName': 'Arturo',
+      };
+      app.saveMovement(legacy, editingId: movement['id']);
       app.openMovementEditor(
         tester.element(find.byType(HomePage)),
-        movement: movement,
+        movement: app.movementById(movement['id']),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(itemField);
-      expect(find.text('Arturo'), findsOneWidget);
+      expect(itemField, findsNothing);
+      expect(find.text('Arturo'), findsNothing);
       final dynamic editor = tester.state(find.byType(MovementEditor));
+      expect(editor.budgetLinkFields()['budgetItemId'], legacy['budgetItemId']);
       final now = DateTime.now();
       editor.changeMovementDate(DateTime(now.year, now.month + 1, 1, 12));
       await tester.pumpAndSettle();
-      expect(editor.budgetItemId, isEmpty);
       expect(editor.budgetLinkFields(), isEmpty);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

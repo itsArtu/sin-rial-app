@@ -127,6 +127,7 @@ object RateUpdateScheduler {
             NativeJsonStore.updateRateFields(context, state)
             UsdRateWidgetProvider.updateAll(context)
             EurRateWidgetProvider.updateAll(context)
+            UsdtRateWidgetProvider.updateAll(context)
         }
     }
 
@@ -188,6 +189,7 @@ object RateUpdateService {
             NativeJsonStore.updateRateFields(context, failure)
             UsdRateWidgetProvider.updateAll(context)
             EurRateWidgetProvider.updateAll(context)
+            UsdtRateWidgetProvider.updateAll(context)
             return false
         }
         val history = fetchHistory()
@@ -225,6 +227,7 @@ object RateUpdateService {
         MovementWidgetProvider.updateAll(context)
         UsdRateWidgetProvider.updateAll(context)
         EurRateWidgetProvider.updateAll(context)
+        UsdtRateWidgetProvider.updateAll(context)
         checkReleaseUpdate(context)
         return true
     }
