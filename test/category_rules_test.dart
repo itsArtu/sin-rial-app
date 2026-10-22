@@ -188,7 +188,7 @@ void main() {
       expect(payments.option('Transferencia bancaria'), findsNothing);
       expect(manualFee, findsNothing);
       expect(find.text('Comisión estimada'), findsNothing);
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       final saved = app.maps('movements').single;
       expect(saved['category'], 'Comisiones bancarias');

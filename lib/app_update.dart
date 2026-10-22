@@ -225,14 +225,58 @@ class _AppUpdatePageState extends State<AppUpdatePage>
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                widget.update.notes,
-                style: TextStyle(color: t.muted, height: 1.5),
-              ),
+              ReleaseNotesBody(theme: t, notes: widget.update.notes),
             ],
           ],
         ),
       ),
     );
   }
+}
+
+class ReleaseNotesBody extends StatelessWidget {
+  const ReleaseNotesBody({super.key, required this.theme, required this.notes});
+  final RTheme theme;
+  final String notes;
+  @override
+  Widget build(BuildContext context) => markdown.MarkdownBody(
+    data: notes,
+    selectable: true,
+    // Release notes must not initiate remote image requests.
+    imageBuilder: (_, _, _) => const SizedBox.shrink(),
+    onTapLink: (_, href, _) {
+      final uri = Uri.tryParse(href ?? '');
+      if (uri != null && uri.scheme == 'https' && uri.host.isNotEmpty) {
+        unawaited(NativeStateStore.openUrl(uri.toString()));
+      }
+    },
+    styleSheet: markdown.MarkdownStyleSheet(
+      p: TextStyle(color: theme.muted, fontSize: 14, height: 1.5),
+      h1: TextStyle(
+        color: theme.ink,
+        fontSize: 21,
+        fontWeight: FontWeight.w700,
+      ),
+      h2: TextStyle(
+        color: theme.ink,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+      ),
+      h3: TextStyle(
+        color: theme.ink,
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+      ),
+      strong: TextStyle(color: theme.ink, fontWeight: FontWeight.w700),
+      a: TextStyle(color: theme.accent, decoration: TextDecoration.underline),
+      listBullet: TextStyle(color: theme.accent, fontSize: 14),
+      blockSpacing: 14,
+      listIndent: 20,
+      code: TextStyle(
+        color: theme.ink,
+        backgroundColor: theme.field,
+        fontSize: 13,
+      ),
+    ),
+  );
 }

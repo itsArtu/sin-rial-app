@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
@@ -351,7 +353,7 @@ void main() {
     dynamic editor = tester.state(find.byType(MovementEditor));
     editor.changeMovementDate(DateTime(2026, 9, 21, 12));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pumpAndSettle();
     final saved = app.maps('movements').single as Map<String, dynamic>;
     expect(saved['rate'], 100);
@@ -366,7 +368,7 @@ void main() {
     await tester.pumpAndSettle();
     editor = tester.state(find.byType(MovementEditor));
     editor.desc.text = 'Internet';
-    await tester.tap(find.text('Guardar cambios'));
+    await tester.tap(composer.saveChanges());
     await tester.pumpAndSettle();
     expect(app.maps('movements').single['bcvUsdRate'], 100);
     app.openMovementEditor(
@@ -377,7 +379,7 @@ void main() {
     editor = tester.state(find.byType(MovementEditor));
     editor.changeMovementDate(DateTime(2026, 9, 22, 12));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Guardar cambios'));
+    await tester.tap(composer.saveChanges());
     await tester.pumpAndSettle();
     expect(app.maps('movements').single['bcvUsdRate'], 110);
     expect(app.accountById('cash')['balance'], 9000);
@@ -398,7 +400,7 @@ void main() {
       await tester.pumpAndSettle();
       final historicalRate = currency == 'USD' ? 100.0 : 120.0;
       expect(parseAmount(editor.amount.text as String), 5 * historicalRate);
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.maps('movements').single['debtExchangeRate'], historicalRate);
       expect(app.debtById('debt')['paidAmount'], 5);
@@ -413,7 +415,7 @@ void main() {
     final dynamic editor = tester.state(find.byType(MovementEditor));
     editor.changeMovementDate(DateTime(1980, 1, 1, 12));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pumpAndSettle();
     expect(find.text('Tasa de la fecha no disponible'), findsOneWidget);
     expect(app.maps('movements'), isEmpty);
@@ -427,7 +429,7 @@ void main() {
     editor.amount.text = '1000';
     editor.changeMovementDate(DateTime(2026, 9, 21, 12));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pumpAndSettle();
     final saved = app.maps('movements').single;
     expect(saved['bcvUsdRate'], 100);
@@ -436,17 +438,17 @@ void main() {
     expect(app.debtById('debt')['paidAmount'], 5);
   });
 
-  testWidgets('Transfer custom rate is distinct from historical BCV', (
+  testWidgets('Transfer derived rate is distinct from historical BCV', (
     tester,
   ) async {
     final dynamic app = await openDatedEditor(tester);
     final dynamic editor = tester.state(find.byType(MovementEditor));
     editor.type = 'transfer';
     editor.targetId = 'usd';
-    editor.rate.text = '200';
+    editor.receivedAmount.text = '5';
     editor.changeMovementDate(DateTime(2026, 9, 21, 12));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pumpAndSettle();
     final saved = app.maps('movements').single;
     expect(saved['bcvUsdRate'], 100);

@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,9 +56,16 @@ void main() {
         final save = find.byKey(editorSaveKey);
         final selectorRect = tester.getRect(selector);
         final saveRect = tester.getRect(save);
-        expect(find.text('Guardar movimiento').hitTestable(), findsOneWidget);
+        final keypadBottom = tester.getRect(find.byType(ComposerKeypad)).bottom;
+        expect(
+          find.byKey(const ValueKey('movement-editor-save')).hitTestable(),
+          findsOneWidget,
+        );
         expect(tester.getRect(fields).bottom, lessThanOrEqualTo(saveRect.top));
-        await tester.drag(fields, const Offset(0, -1400));
+        await tester.dragFrom(
+          tester.getTopLeft(fields) + const Offset(2, 4),
+          const Offset(0, -1400),
+        );
         await tester.pumpAndSettle();
         expect(tester.getRect(selector), selectorRect);
         expect(tester.getRect(save), saveRect);
@@ -66,13 +75,26 @@ void main() {
           'Transferir': 'transfer',
           'Gasto': 'expense',
         }.entries) {
-          await tester.tap(
-            find.descendant(of: selector, matching: find.text(item.key)),
+          await composer.chooseType(tester, item.key);
+          await tester.pumpAndSettle();
+          expect(
+            (tester.state(find.byType(MovementEditor)) as dynamic).type,
+            item.value,
+          );
+          expect(tester.getRect(selector).right, selectorRect.right);
+          expect(tester.getRect(selector).top, selectorRect.top);
+          expect(
+            tester.getRect(find.byType(ComposerKeypad)).bottom,
+            keypadBottom,
+          );
+          expect(save.hitTestable(), findsOneWidget);
+          final modeSaveRect = tester.getRect(save);
+          await tester.dragFrom(
+            tester.getTopLeft(fields) + const Offset(2, 4),
+            const Offset(0, -1000),
           );
           await tester.pumpAndSettle();
-          expect(tester.widget<KindSelector>(selector).value, item.value);
-          expect(tester.getRect(selector), selectorRect);
-          expect(tester.getRect(save), saveRect);
+          expect(tester.getRect(save), modeSaveRect);
         }
 
         final description = find.byWidgetPredicate(
@@ -96,9 +118,12 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.getRect(selector), selectorRect);
         expect(tester.getRect(save), keyboardSaveRect);
-        expect(find.text('Guardar movimiento').hitTestable(), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('movement-editor-save')).hitTestable(),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
-        await tester.tap(find.text('Guardar movimiento'));
+        await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
         await tester.pumpAndSettle();
         expect(app.maps('movements').single['description'], 'Prueba fija');
         expect(app.maps('movements').single['amount'], 100.0);

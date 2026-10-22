@@ -58,7 +58,8 @@ Future<void> expectCurrencyOptions(
 Finder input(String placeholder) => find.byWidgetPredicate(
   (widget) =>
       widget is CupertinoTextField &&
-      (widget.placeholder == placeholder ||
+      ((widget.placeholder == placeholder ||
+              widget.key == ValueKey('amount-input-${placeholder}')) ||
           (placeholder == 'Monto' && widget.placeholder == '0,00')),
 );
 

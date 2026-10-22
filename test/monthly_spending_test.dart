@@ -235,8 +235,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Movimientos').last);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Resumen mensual'));
-    await tester.tap(find.text('Resumen mensual'));
+    await tester.ensureVisible(find.byTooltip('Resumen mensual'));
+    await tester.tap(find.byTooltip('Resumen mensual'));
     await tester.pumpAndSettle();
     expect(find.byType(MonthlySpendingPage), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -280,6 +280,15 @@ void main() {
         await tester.tap(action);
         await tester.pumpAndSettle();
         expect(tester.widget<DebtDetailRow>(total).value, r'$90,00');
+        expect(find.text('Gastos de la cuenta'), findsOneWidget);
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(const ValueKey('monthly-spending-balance')),
+              )
+              .data,
+          r'$90,00',
+        );
         expect(find.text('30,0% de los ingresos del mes'), findsOneWidget);
         await tester.tap(find.text('Cuentas').last);
         await tester.pumpAndSettle();

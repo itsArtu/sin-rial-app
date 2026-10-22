@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,13 +79,10 @@ void main() {
           expect(before[i].size, Size.square(size));
           expect(tester.getRect(find.byKey(ValueKey(size))), before[i]);
         }
-        for (final indicator
-            in tester.widgetList<material.CircularProgressIndicator>(
-              find.byType(material.CircularProgressIndicator),
-            )) {
+        for (final indicator in tester.widgetList<RialLoadingIndicator>(
+          find.byType(RialLoadingIndicator),
+        )) {
           expect(indicator.color, theme.accent);
-          expect(indicator.strokeCap, StrokeCap.round);
-          expect(indicator.value, isNull);
         }
         expect(find.byType(CupertinoActivityIndicator), findsNothing);
         expect(tester.takeException(), isNull);
@@ -115,14 +111,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(
-          tester
-              .widget<material.CircularProgressIndicator>(
-                find.byType(material.CircularProgressIndicator),
-              )
-              .value,
-          .7,
-        );
+        expect(find.byType(RialLoadingIndicator), findsOneWidget);
         final node = tester.getSemantics(
           find.bySemanticsLabel('Creando presupuesto'),
         );

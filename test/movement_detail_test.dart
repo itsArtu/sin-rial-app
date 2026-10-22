@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
@@ -182,10 +184,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MovementEditor), findsOneWidget);
     final amount = find.byWidgetPredicate(
-      (widget) => widget is CupertinoTextField && widget.placeholder == 'Monto',
+      (widget) =>
+          widget is CupertinoTextField &&
+          (widget.placeholder == 'Monto' ||
+              widget.key == ValueKey('amount-input-Monto')),
     );
     await tester.enterText(amount, '60');
-    final save = find.text('Guardar cambios');
+    final save = composer.saveChanges();
     await tester.ensureVisible(save);
     await tester.tap(save);
     await tester.pumpAndSettle();

@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -55,7 +57,7 @@ void main() {
       defaultAmount: 10.0,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pumpAndSettle();
     return app;
   }
@@ -105,7 +107,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.enterText(field('Referencia (opcional)'), '000123');
-      await tester.tap(find.text('Guardar cambios'));
+      await tester.tap(composer.saveChanges());
       await tester.pumpAndSettle();
       expect(find.byType(MovementReferenceDialog), findsNothing);
       expect(app.maps('movements').length, 1);

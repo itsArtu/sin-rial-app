@@ -87,8 +87,17 @@ class DailyReminderReceiver : BroadcastReceiver() {
         } else {
             Notification.Builder(context)
         }
-        return builder.setSmallIcon(R.mipmap.ic_launcher)
+        val publicBuilder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(context, DailyReminderScheduler.CHANNEL_ID)
+        } else Notification.Builder(context)
+        val publicNotice = publicBuilder.setSmallIcon(R.drawable.app_logo_monochrome_mask)
+            .setContentTitle("Sin Rial").setContentText("Tienes un recordatorio pendiente.")
+            .setContentIntent(contentIntent).setAutoCancel(true).build()
+        return builder.setSmallIcon(R.drawable.app_logo_monochrome_mask)
             .setContentTitle(title).setContentText(text).setContentIntent(contentIntent)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setCategory(Notification.CATEGORY_REMINDER).setOnlyAlertOnce(true)
+            .setPublicVersion(publicNotice)
             .setExtras(Bundle().apply { putString(ReminderNotifications.SIGNATURE, signature) })
             .setVisibility(Notification.VISIBILITY_PRIVATE).setAutoCancel(true).build()
     }

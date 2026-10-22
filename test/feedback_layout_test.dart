@@ -127,21 +127,24 @@ void main() {
           app.debtById('d'),
         );
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Editar registro'));
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('debt-partial-payment')),
+        );
         final pay = tester.getRect(
           find.widgetWithText(PrimaryActionButton, 'Registrar pago'),
         );
         final partial = tester.getRect(
           find.byKey(const ValueKey('debt-partial-payment')),
         );
-        expect(partial.top - pay.bottom, greaterThanOrEqualTo(12));
+        expect(partial.top - pay.bottom, greaterThanOrEqualTo(0));
         if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
           await expectLater(
             find.byType(RialApp),
             matchesGoldenFile('../build/feedback-qa/debt-$width-$dark.png'),
           );
         }
-        await tester.ensureVisible(find.text('Marcar como pagado'));
+        await tester.tap(find.byKey(const ValueKey('debt-more-actions')));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Marcar como pagado'));
         await tester.pumpAndSettle();
         expect(find.text('Liquidar toda la deuda'), findsOneWidget);

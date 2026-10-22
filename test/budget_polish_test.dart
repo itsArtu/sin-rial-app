@@ -157,11 +157,8 @@ void main() {
       expect(find.text('Te queda en este periodo'), findsOneWidget);
       await tester.tap(find.text('2da quincena'));
       await tester.pumpAndSettle();
-      expect(find.text('S\u00ed, crear plan'), findsNothing);
-      expect(
-        find.text('No hay un plan guardado para este periodo'),
-        findsOneWidget,
-      );
+      expect(find.text('Comenzar a planificar'), findsNothing);
+      expect(find.text('Sin presupuesto'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
     },

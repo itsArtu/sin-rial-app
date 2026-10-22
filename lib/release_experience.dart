@@ -105,6 +105,25 @@ class ReleaseTour extends StatefulWidget {
 
 class _ReleaseTourState extends State<ReleaseTour> {
   int step = 0;
+  final pageController = PageController();
+  void moveTo(int index) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      pageController.jumpToPage(index);
+    } else {
+      pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    pageController.dispose();
+    super.dispose();
+  }
+
   bool leaving = false;
   bool finished = false;
   static const introductionPages = [
@@ -136,29 +155,29 @@ class _ReleaseTourState extends State<ReleaseTour> {
   ];
   static const releasePages = [
     (
-      'Un plan m\u00e1s simple',
-      'Un total y un l\u00edmite por categor\u00eda, sin subcategor\u00edas ni asignaciones adicionales. Tus gastos anteriores siguen incluidos.',
-      CupertinoIcons.chart_pie,
+      'Sin Rial 3.5',
+      'Tus cuentas, movimientos y preferencias siguen contigo. Descubre las novedades de esta actualización.',
+      CupertinoIcons.sparkles,
     ),
     (
-      'Categor\u00edas a tu medida',
-      'Crea una categor\u00eda desde el selector, incluso mientras buscas. Chucher\u00edas reconoce dulces y snacks; TDC selecciona Pago TDC.',
-      CupertinoIcons.tag,
+      'Movimientos al instante',
+      'La moneda se adapta a tu cuenta. Fecha, hora, categoría, comisiones y totales permanecen visibles, con un teclado más cómodo.',
+      CupertinoIcons.calendar,
     ),
     (
-      'Cuotas y pr\u00e9stamos',
-      'Elige la cuota que pagaste. Al recibir un pr\u00e9stamo puedes ingresar el dinero en una cuenta; no aplica a Cashea.',
-      CupertinoIcons.check_mark_circled,
+      'Transferencias más simples',
+      'Monto enviado y recibido, detalles siempre visibles y tasa automática entre dólares y bolívares. Tus balances se actualizan al guardar.',
+      CupertinoIcons.arrow_right_arrow_left,
     ),
     (
-      'Herramientas desde el inicio',
-      'Nuevo widget de tasa USDT. La calculadora abre sin desbloquear, pero tus cuentas y movimientos siguen protegidos al entrar a la app.',
+      'Todo en su lugar',
+      'Categorías renovadas, logos en tus cuentas y títulos más claros. Tus planes, deudas y movimientos siguen conectados.',
       CupertinoIcons.square_grid_2x2,
     ),
     (
-      'Ajustes para el d\u00eda a d\u00eda',
-      'Colores de movimientos con muestras de montos, logos m\u00e1s claros y bloqueo sin saltos. Referencias opcionales para ingresos y gastos desde Ajustes. Toca la gr\u00e1fica USDT para consultar cada tasa.',
-      CupertinoIcons.paintbrush,
+      'Tu mes, más claro',
+      'Toca la gráfica, una categoría o una cuenta para consultar sus movimientos. Porcentajes, comisiones y totales se mantienen al día.',
+      CupertinoIcons.chart_pie,
     ),
   ];
   List<(String, String, IconData)> get pages =>
@@ -195,7 +214,6 @@ class _ReleaseTourState extends State<ReleaseTour> {
 
   Widget buildPage(BuildContext context) {
     final t = widget.app.theme;
-    final page = pages[step];
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       child: SafeArea(
@@ -205,10 +223,7 @@ class _ReleaseTourState extends State<ReleaseTour> {
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 8,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(24, 16, 16, 8),
                   child: Row(
                     children: [
                       Expanded(
@@ -216,7 +231,7 @@ class _ReleaseTourState extends State<ReleaseTour> {
                           widget.introduction
                               ? 'Conoce Sin Rial'
                               : 'Novedades de $_appVersionName',
-                          style: TextStyle(color: t.muted),
+                          style: TextStyle(color: t.muted, fontSize: 13),
                         ),
                       ),
                       CupertinoButton(
@@ -227,70 +242,104 @@ class _ReleaseTourState extends State<ReleaseTour> {
                   ),
                 ),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: AnimatedSwitcher(
-                      duration: MediaQuery.disableAnimationsOf(context)
-                          ? Duration.zero
-                          : const Duration(milliseconds: 220),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      child: Column(
-                        key: ValueKey(step),
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TourArtwork(theme: t, icon: page.$3),
-                          const SizedBox(height: 24),
-                          Text(
-                            page.$1,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: t.ink,
-                              fontSize: 25,
-                              fontWeight: FontWeight.w700,
+                  child: PageView.builder(
+                    key: const ValueKey('release-pages'),
+                    controller: pageController,
+                    itemCount: pages.length,
+                    onPageChanged: (value) => setState(() => step = value),
+                    itemBuilder: (context, index) {
+                      final page = pages[index];
+                      return SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(28, 20, 28, 16),
+                        child: Column(
+                          children: [
+                            RepaintBoundary(
+                              child: TourArtwork(theme: t, icon: page.$3),
                             ),
-                          ),
-                          const SizedBox(height: 18),
-                          Text(
-                            page.$2,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: t.muted,
-                              fontSize: 16,
-                              height: 1.6,
+                            const SizedBox(height: 28),
+                            Text(
+                              page.$1,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: t.ink,
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
+                            const SizedBox(height: 16),
+                            Text(
+                              page.$2,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: t.muted,
+                                fontSize: 15,
+                                height: 1.6,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
                   child: Column(
                     children: [
-                      Text(
-                        '${step + 1} / ${pages.length}',
-                        style: TextStyle(color: t.muted),
+                      Semantics(
+                        label: 'Página ${step + 1} de ${pages.length}',
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            for (var index = 0; index < pages.length; index++)
+                              AnimatedContainer(
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
+                                width: index == step ? 24 : 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: index == step ? t.accent : t.field,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 16),
-                      PrimaryActionButton(
-                        theme: t,
-                        label: step == pages.length - 1
-                            ? 'Empezar'
-                            : 'Siguiente',
-                        onPressed: () => step == pages.length - 1
-                            ? finish()
-                            : setState(() => step++),
-                      ),
-                      SizedBox(
-                        height: 48,
-                        child: step > 0
-                            ? CupertinoButton(
-                                onPressed: () => setState(() => step--),
-                                child: const Text('Anterior'),
-                              )
-                            : null,
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: step > 0
+                                ? CircleTool(
+                                    theme: t,
+                                    icon: CupertinoIcons.chevron_left,
+                                    label: 'Anterior',
+                                    onTap: () => moveTo(step - 1),
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: PrimaryActionButton(
+                              theme: t,
+                              label: step == pages.length - 1
+                                  ? 'Empezar'
+                                  : 'Siguiente',
+                              onPressed: () => step == pages.length - 1
+                                  ? finish()
+                                  : moveTo(step + 1),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

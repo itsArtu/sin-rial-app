@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -195,7 +197,7 @@ void main() {
     expect(editor.debtExchangeRate.text, '1.0');
     expect(editor.amount.text, '10,00');
     expect(calculator.input('Tasa USDT/USD'), findsNothing);
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pumpAndSettle();
     expect(app.accountById('wallet')['balance'], 90.0);
     expect(app.debtById('usdt')['status'], 'paid');
@@ -275,7 +277,7 @@ void main() {
           expect(editor.accountId, 'b');
           expect(parseAmount(editor.amount.text), moneyConvert(10, rate));
           expect(calculator.input('Tasa $currency/VES'), findsNothing);
-          await tester.tap(find.text('Guardar movimiento'));
+          await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
           await tester.pumpAndSettle();
           final movement = app.maps('movements').last as Map<String, dynamic>;
           expect(movement['debtExchangeRate'], rate);
@@ -288,7 +290,7 @@ void main() {
           app.openMovementEditor(context, movement: movement);
           await tester.pumpAndSettle();
           expect(calculator.input('Tasa $currency/VES'), findsNothing);
-          await tester.tap(find.text('Guardar cambios'));
+          await tester.tap(composer.saveChanges());
           await tester.pumpAndSettle();
           expect(app.maps('movements').last['debtExchangeRate'], rate);
           expect(app.debtById('automatic')['paidAmount'], 10);
@@ -322,7 +324,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(editor.amount.text, '9.801,23');
       expect(find.text('Tasa EUR/VES no disponible'), findsNothing);
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.debtById('d')['status'], 'paid');
       await tester.pumpWidget(const SizedBox.shrink());
@@ -445,7 +447,7 @@ void main() {
         '19.602,47',
       );
       expect(calculator.input('Tasa EUR/VES'), findsNothing);
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.debtById('eur')['status'], 'paid');
       expect(app.maps('movements').last['type'], 'income');
@@ -459,7 +461,7 @@ void main() {
       await tester.pumpAndSettle();
       final dynamic editor = tester.state(find.byType(MovementEditor));
       expect(editor.amount.text, '10.005,68');
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.debtById('usdt')['status'], 'paid');
       expect(app.maps('movements').last['debtExchangeRate'], 1000.5678);

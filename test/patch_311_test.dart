@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -221,7 +223,7 @@ void main() {
         movement: app.movementById('legacy'),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Guardar cambios'));
+      await tester.tap(composer.saveChanges());
       await tester.pumpAndSettle();
       expect(app.maps('movements').single['feeAmount'], legacyFee);
       expect(app.accountById('usd')['balance'], 900 - legacyFee);
@@ -346,7 +348,7 @@ void main() {
     await tester.pumpAndSettle();
     await payment.choose(tester, 'Forma de pago', 'Pago');
     expect(payment.option('Comisión'), findsNothing);
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pumpAndSettle();
     expect(app.maps('movements').single['feeAmount'], 0);
     expect(app.maps('movements').single['paymentMethod'], 'wallet_payment');

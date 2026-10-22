@@ -9,7 +9,10 @@ import 'payment_method_test.dart' as payments;
 import 'finance_workflow_test.dart' as fixtures;
 
 Finder field(String placeholder) => find.byWidgetPredicate(
-  (w) => w is CupertinoTextField && w.placeholder == placeholder,
+  (w) =>
+      w is CupertinoTextField &&
+      (w.placeholder == placeholder ||
+          w.key == ValueKey('amount-input-${placeholder}')),
 );
 
 void main() {
@@ -111,7 +114,7 @@ void main() {
         'Automática',
       );
       await payments.choose(tester, 'Transferencia bancaria', 'Mismo banco');
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.maps('movements').single['feeAmount'], 0);
       expect(app.maps('movements').single['feeMode'], 'none');
@@ -165,7 +168,7 @@ void main() {
         provider == 'BINANCE' ? 'Binance Pay' : 'Pago',
       );
       expect(payments.option('Comisión'), findsNothing);
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.accountById('wallet')['balance'], 70);
       expect(
@@ -237,7 +240,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.maps('movements').last['category'], 'Cine local');
       final updated =

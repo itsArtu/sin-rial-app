@@ -418,9 +418,9 @@ class RecurringTile extends StatelessWidget {
     final t = app.theme;
     final income = rule['type'] == 'income';
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       child: CupertinoButton(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         color: t.card,
         borderRadius: BorderRadius.circular(8),
         onPressed: onTap,
@@ -442,7 +442,7 @@ class RecurringTile extends StatelessWidget {
                     rule['name'].toString(),
                     style: TextStyle(
                       color: t.ink,
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -459,7 +459,7 @@ class RecurringTile extends StatelessWidget {
                     ),
                     style: TextStyle(
                       color: income ? t.income : t.expense,
-                      fontSize: 18,
+                      fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

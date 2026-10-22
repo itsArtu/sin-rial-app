@@ -31,7 +31,7 @@ void main() {
 
   for (final width in [320.0, 390.0]) {
     for (final scale in [1.0, 1.8]) {
-      testWidgets('Balance cards have compact spacing at $width / $scale', (
+      testWidgets('Balance cards restore readable size at $width / $scale', (
         tester,
       ) async {
         final dynamic app = await fixtures.fixture(tester);
@@ -58,8 +58,8 @@ void main() {
           expect(card.width, lessThanOrEqualTo(width - 32));
           expect(amount.right, lessThanOrEqualTo(card.right - 15));
           if (scale == 1) {
-            expect(card.height, lessThan(150));
-            expect(card.width, lessThanOrEqualTo(200));
+            expect(card.height, inInclusiveRange(164, 190));
+            expect(card.width, inInclusiveRange(224, 264));
             expect(card.width / card.height, lessThan(1.5));
           }
         }

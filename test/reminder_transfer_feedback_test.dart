@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,7 +68,7 @@ void main() {
 
   for (final width in [320.0, 390.0]) {
     testWidgets(
-      'Movement tabs keep spacing and dimensions during rapid switching at $width',
+      'Movement type selector stays aligned and transfer uses an icon at $width',
       (tester) async {
         final dynamic app = await bank.fixture(tester, width: width);
         app.openMovementEditor(
@@ -75,29 +77,24 @@ void main() {
         );
         await tester.pumpAndSettle();
         final selector = find.byKey(const ValueKey('movement-editor-type'));
-        final initial = tester.getRect(selector);
-        final buttons = find.descendant(
-          of: selector,
-          matching: find.byType(CupertinoButton),
-        );
-        expect(buttons, findsNWidgets(3));
-        for (var i = 1; i < 3; i++) {
-          expect(
-            tester.getRect(buttons.at(i)).left -
-                tester.getRect(buttons.at(i - 1)).right,
-            closeTo(8, .01),
-          );
-        }
+        final initialRect = tester.getRect(selector);
+        expect(initialRect.width, 64);
+        expect(initialRect.height, 44);
         for (final label in ['Ingreso', 'Transferir', 'Gasto', 'Transferir']) {
-          await tester.tap(
+          await composer.chooseType(tester, label);
+          expect(tester.getRect(selector).top, initialRect.top);
+          expect(tester.getRect(selector).right, initialRect.right);
+          expect(tester.getRect(selector).width, 64);
+          expect(
             find.descendant(of: selector, matching: find.text(label)),
+            findsNothing,
           );
-          await tester.pump(const Duration(milliseconds: 60));
-          expect(tester.getRect(selector), initial);
           expect(tester.takeException(), isNull);
         }
-        await tester.pumpAndSettle();
-        expect(tester.widget<KindSelector>(selector).value, 'transfer');
+        expect(
+          (tester.state(find.byType(MovementEditor)) as dynamic).type,
+          'transfer',
+        );
         await bank.closeFixture(tester);
       },
     );

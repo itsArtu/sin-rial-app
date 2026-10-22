@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,7 +9,10 @@ import 'finance_workflow_test.dart' as fixtures;
 import 'payment_method_test.dart' as payments;
 
 Finder field(String placeholder) => find.byWidgetPredicate(
-  (w) => w is CupertinoTextField && w.placeholder == placeholder,
+  (w) =>
+      w is CupertinoTextField &&
+      (w.placeholder == placeholder ||
+          w.key == ValueKey('amount-input-${placeholder}')),
 );
 
 void main() {
@@ -88,7 +93,7 @@ void main() {
     expect(find.byType(ReleaseTour), findsOneWidget);
     await tester.tap(find.text('Siguiente'));
     await tester.pumpAndSettle();
-    expect(find.text('Categor\u00edas a tu medida'), findsOneWidget);
+    expect(find.text('Movimientos al instante'), findsOneWidget);
     await tester.tap(find.text('Omitir'));
     await tester.pumpAndSettle();
     expect(find.byType(HomePage), findsOneWidget);
@@ -105,7 +110,7 @@ void main() {
       defaultAmount: 10.0,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
     return app;
@@ -155,7 +160,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.enterText(field('Referencia (opcional)'), '009876');
-    await tester.tap(find.text('Guardar cambios'));
+    await tester.tap(composer.saveChanges());
     await tester.pumpAndSettle();
     expect(find.byType(MovementReferenceDialog), findsNothing);
     expect(app.maps('movements').single['reference'], '009876');

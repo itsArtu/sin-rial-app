@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -164,8 +166,8 @@ void main() {
         movement: movement,
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Fecha'));
-      await tester.tap(find.text('Fecha'));
+      await tester.ensureVisible(find.byKey(const ValueKey('composer-date')));
+      await tester.tap(find.byKey(const ValueKey('composer-date')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Guardar'));
       await tester.pumpAndSettle();
@@ -174,7 +176,7 @@ void main() {
       await tester.tap(find.text('PM'));
       await tester.tap(find.text('Guardar'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Guardar cambios'));
+      await tester.tap(composer.saveChanges());
       await tester.pumpAndSettle();
       final saved = parseMovementDate(app.movementById('m')['date'] as String);
       expect(

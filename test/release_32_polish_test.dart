@@ -52,30 +52,34 @@ void main() {
       (_) => DebtsPage(app: app),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(DebtTile), findsOneWidget);
+    expect(find.byType(DebtProgressCard), findsOneWidget);
     expect(
-      tester.widget<KindSelector>(find.byType(KindSelector)).value,
-      'unpaid',
+      tester
+          .widget<AppPillSelector>(
+            find.byKey(const ValueKey('debt-status-selector')),
+          )
+          .value,
+      'pending',
     );
     app.saveMovement(fixtures.movement('expense', amount: 5)..['debtId'] = 'd');
     await tester.pumpAndSettle();
-    expect(find.byType(DebtTile), findsOneWidget);
+    expect(find.byType(DebtProgressCard), findsOneWidget);
     expect(upcomingDebtItems(app.maps('debts')), hasLength(1));
     app.saveMovement(
       fixtures.movement('expense', id: 'finish', amount: 5)..['debtId'] = 'd',
     );
     await tester.pumpAndSettle();
-    expect(find.byType(DebtTile), findsNothing);
+    expect(find.byType(DebtProgressCard), findsNothing);
     expect(upcomingDebtItems(app.maps('debts')), isEmpty);
     await tester.tap(find.text('Pagados'));
     await tester.pumpAndSettle();
-    expect(find.byType(DebtTile), findsOneWidget);
+    expect(find.byType(DebtProgressCard), findsOneWidget);
     app.undoLastOperation();
     await tester.pumpAndSettle();
-    expect(find.byType(DebtTile), findsNothing);
+    expect(find.byType(DebtProgressCard), findsNothing);
     await tester.tap(find.text('No pagados'));
     await tester.pumpAndSettle();
-    expect(find.byType(DebtTile), findsOneWidget);
+    expect(find.byType(DebtProgressCard), findsOneWidget);
     expect(upcomingDebtItems(app.maps('debts')), hasLength(1));
     await tester.pumpWidget(const SizedBox.shrink());
   });

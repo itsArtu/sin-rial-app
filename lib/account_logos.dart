@@ -30,7 +30,18 @@ class LogoBadge extends StatelessWidget {
         ? material.Icons.account_balance_outlined
         : material.Icons.account_balance_wallet_outlined;
     final color = benefit ? theme.amber : theme.accent;
-    final radius = BorderRadius.circular(size * .22);
+    final fullBleed = const {
+      'CASHEA',
+      'KRECE',
+      'OKX',
+      'ZINLI',
+      'UBII',
+    }.contains(code);
+    final inset = fullBleed
+        ? 0.0
+        : benefit
+        ? .06
+        : .14;
     final label = benefit && benefitType != null
         ? 'Cestaticket ${benefitType == 'integral' ? 'Integral' : 'Alimentaci\u00f3n'}'
         : cash
@@ -59,10 +70,12 @@ class LogoBadge extends StatelessWidget {
                   color: asset == null
                       ? color.withValues(alpha: theme.dark ? .15 : .09)
                       : CupertinoColors.white,
-                  borderRadius: radius,
-                  border: Border.all(color: theme.border, width: .7),
+                  shape: BoxShape.circle,
+                  border: fullBleed
+                      ? null
+                      : Border.all(color: theme.border, width: .5),
                 ),
-                padding: EdgeInsets.all(size * (benefit ? .04 : .09)),
+                padding: EdgeInsets.all(size * inset),
                 child: asset == null
                     ? fallback
                     : Image.asset(

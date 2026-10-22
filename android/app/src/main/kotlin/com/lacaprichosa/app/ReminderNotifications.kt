@@ -46,7 +46,9 @@ internal object ReminderNotifications {
 
     fun debts(state: JSONObject): List<DebtReminder> {
         val debts = state.optJSONArray("debts") ?: return emptyList()
-        return (0 until debts.length()).mapNotNull { index -> debts.optJSONObject(index)?.let(DebtReminder::from) }
+        return (0 until debts.length()).mapNotNull { index ->
+            debts.optJSONObject(index)?.let { DebtReminder.from(it, state.optBoolean("hideAmounts")) }
+        }
     }
 
     fun reconcile(context: Context, debts: List<DebtReminder>, movementsEnabled: Boolean, now: Long = System.currentTimeMillis()) {

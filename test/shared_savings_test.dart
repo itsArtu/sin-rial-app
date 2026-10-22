@@ -61,7 +61,10 @@ void circlePayment(
 );
 
 Finder field(String placeholder) => find.byWidgetPredicate(
-  (w) => w is CupertinoTextField && w.placeholder == placeholder,
+  (w) =>
+      w is CupertinoTextField &&
+      (w.placeholder == placeholder ||
+          w.key == ValueKey('amount-input-${placeholder}')),
 );
 
 void main() {
@@ -138,8 +141,9 @@ void main() {
     expect(raw.containsKey('sharedSavings'), isFalse);
     expect(raw.containsKey('savingsCircles'), isFalse);
     expect(
-      (jsonDecode(parts['sharedSavings'] as String) as List)
-          .single['history'].length,
+      (jsonDecode(
+        parts['sharedSavings'] as String,
+      ) as List).single['history'].length,
       1,
     );
     expect(

@@ -99,67 +99,226 @@ void saveCustomCategory(
   });
 }
 
-class CategoriesPage extends StatelessWidget {
+class CategoriesPage extends StatefulWidget {
   const CategoriesPage({super.key, required this.app});
   final _RialAppState app;
 
   @override
+  State<CategoriesPage> createState() => _CategoriesPageState();
+}
+
+class _CategoriesPageState extends State<CategoriesPage> {
+  String query = '';
+  _RialAppState get app => widget.app;
+
+  @override
   Widget build(BuildContext context) {
     final t = app.theme;
-    final entries = app.maps('customCategories');
+    final all = app.maps('customCategories');
+    bool matches(String name) =>
+        _categorySearchText(name).contains(_categorySearchText(query));
+    final entries = all
+        .where((entry) => matches(entry['name'].toString()))
+        .toList();
+    final general = budgetCategories.where(matches).toList();
+    void create() =>
+        app.pushPage(context, (_) => CustomCategoryEditor(app: app));
+    Widget heading(String title, int count) => Padding(
+      padding: const EdgeInsets.only(top: 22, bottom: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                color: t.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Text('$count', style: TextStyle(color: t.muted, fontSize: 12)),
+        ],
+      ),
+    );
+    Widget tile(
+      String name,
+      IconData icon, {
+      VoidCallback? onTap,
+      bool archived = false,
+    }) {
+      final color = archived ? t.muted : budgetCategoryColor(name, t);
+      final content = Container(
+        constraints: const BoxConstraints(minHeight: 66),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color.withValues(alpha: .13),
+              ),
+              child: Icon(icon, color: color, size: 18),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      color: t.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (archived)
+                    Text(
+                      'Archivada',
+                      style: TextStyle(color: t.muted, fontSize: 11),
+                    ),
+                ],
+              ),
+            ),
+            if (onTap != null) ...[
+              const SizedBox(width: 4),
+              Icon(CupertinoIcons.chevron_right, color: t.muted, size: 12),
+            ],
+          ],
+        ),
+      );
+      return onTap == null
+          ? content
+          : Semantics(
+              button: true,
+              child: PressFeedback(onTap: onTap, child: content),
+            );
+    }
+
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
+        backgroundColor: t.bg,
+        border: null,
         middle: const Text('Categorías'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () =>
-              app.pushPage(context, (_) => CustomCategoryEditor(app: app)),
-          child: const Icon(
-            CupertinoIcons.add,
-            semanticLabel: 'Nueva categoría',
+        trailing: material.Tooltip(
+          message: 'Nueva categoría',
+          child: CupertinoButton(
+            key: const ValueKey('create-category'),
+            padding: EdgeInsets.zero,
+            onPressed: create,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: t.accent,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                CupertinoIcons.add,
+                color: foregroundOn(t.accent),
+                size: 23,
+                semanticLabel: 'Nueva categoría',
+              ),
+            ),
           ),
         ),
       ),
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(18),
+          key: const ValueKey('categories-list'),
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
           children: [
-            SectionHeader(theme: t, title: 'Personalizadas'),
-            if (entries.isEmpty)
+            CupertinoSearchTextField(
+              key: const ValueKey('categories-search'),
+              placeholder: 'Buscar categorías',
+              backgroundColor: t.card,
+              borderRadius: BorderRadius.circular(24),
+              itemColor: t.muted,
+              style: TextStyle(color: t.ink, fontSize: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              onChanged: (value) => setState(() => query = value),
+            ),
+            if (query.isEmpty || entries.isNotEmpty)
+              heading('Personalizadas', entries.length),
+            if (all.isEmpty && query.isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Text(
-                  'Sin categorías personalizadas',
-                  style: TextStyle(color: t.muted),
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Sin categorías personalizadas',
+                        style: TextStyle(color: t.muted, fontSize: 12),
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      onPressed: create,
+                      child: Text(
+                        'Crear',
+                        style: TextStyle(
+                          color: t.accent,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             for (final entry in entries)
-              OptionField(
-                theme: t,
-                label: entry['archived'] == true
-                    ? 'Archivada'
-                    : 'Personalizada',
-                value: entry['name'].toString(),
-                icon: customCategoryIcons[entry['icon']] ?? CupertinoIcons.tag,
-                onTap: () => app.pushPage(
-                  context,
-                  (_) => CustomCategoryEditor(app: app, entry: entry),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: tile(
+                  entry['name'].toString(),
+                  customCategoryIcons[entry['icon']] ?? CupertinoIcons.tag,
+                  archived: entry['archived'] == true,
+                  onTap: () => app.pushPage(
+                    context,
+                    (_) => CustomCategoryEditor(app: app, entry: entry),
+                  ),
                 ),
               ),
-            SectionHeader(theme: t, title: 'Generales'),
-            for (final category in budgetCategories)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Row(
+            if (general.isNotEmpty) heading('Generales', general.length),
+            LayoutBuilder(
+              builder: (_, constraints) {
+                final columns =
+                    constraints.maxWidth < 330 ||
+                        MediaQuery.textScalerOf(context).scale(13) > 18
+                    ? 1
+                    : 2;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Icon(categoryIcon(category), color: t.accent, size: 22),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Text(category, style: TextStyle(color: t.ink)),
-                    ),
+                    for (final category in general)
+                      SizedBox(
+                        width:
+                            (constraints.maxWidth - 8 * (columns - 1)) /
+                            columns,
+                        child: tile(category, categoryIcon(category)),
+                      ),
                   ],
+                );
+              },
+            ),
+            if (query.isNotEmpty && entries.isEmpty && general.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 28),
+                child: Text(
+                  'Sin resultados',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: t.muted),
                 ),
               ),
           ],
@@ -238,7 +397,7 @@ class _CustomCategoryEditorState extends State<CustomCategoryEditor> {
                         color: selectedIcon == entry.key
                             ? t.accent.withOpacity(.2)
                             : t.card,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(48),
                         padding: EdgeInsets.zero,
                         onPressed: () =>
                             setState(() => selectedIcon = entry.key),

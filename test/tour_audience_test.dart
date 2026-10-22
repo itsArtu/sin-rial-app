@@ -31,7 +31,6 @@ void main() {
         app.completeOnboarding('Nueva persona', addAccount: false);
         await tester.pumpAndSettle();
         expect(find.text('Conoce Sin Rial'), findsOneWidget);
-        expect(find.text('Novedades de 3.2.2'), findsNothing);
         expect(
           tester.widget<ReleaseTour>(find.byType(ReleaseTour)).introduction,
           true,
@@ -58,26 +57,32 @@ void main() {
     );
   }
 
-  testWidgets('Older version gets only release news, once', (tester) async {
-    final state = defaultState()
-      ..['onboardingComplete'] = true
-      ..['securitySetupComplete'] = true;
-    state.remove('seenFeatureTour');
-    state.remove('pendingAppTour');
-    await tester.pumpWidget(RialApp(initialState: withDefaults(state)));
-    await tester.pumpAndSettle();
-    expect(find.text('Novedades de 3.2.2'), findsOneWidget);
-    expect(find.text('Conoce Sin Rial'), findsNothing);
-    await tester.tap(find.text('Omitir'));
-    await tester.pumpAndSettle();
-    final dynamic app = tester.state(find.byType(RialApp));
-    final saved = withDefaults(Map<String, dynamic>.from(app.state));
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(RialApp(initialState: saved));
-    await tester.pumpAndSettle();
-    expect(find.byType(ReleaseTour), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  for (final previous in [null, '3.5.0+95', '3.5.0+96']) {
+    testWidgets('Older version $previous gets only release news, once', (
+      tester,
+    ) async {
+      final state = defaultState()
+        ..['onboardingComplete'] = true
+        ..['securitySetupComplete'] = true;
+      state.remove('seenFeatureTour');
+      if (previous != null) state['seenFeatureTour'] = previous;
+      state.remove('pendingAppTour');
+      await tester.pumpWidget(RialApp(initialState: withDefaults(state)));
+      await tester.pumpAndSettle();
+      expect(find.text('Novedades de 3.5.0'), findsOneWidget);
+      expect(find.byType(ReleaseTour), findsOneWidget);
+      expect(find.text('Conoce Sin Rial'), findsNothing);
+      await tester.tap(find.text('Omitir'));
+      await tester.pumpAndSettle();
+      final dynamic app = tester.state(find.byType(RialApp));
+      final saved = withDefaults(Map<String, dynamic>.from(app.state));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(RialApp(initialState: saved));
+      await tester.pumpAndSettle();
+      expect(find.byType(ReleaseTour), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets('Completing release news returns home without a general tour', (
     tester,

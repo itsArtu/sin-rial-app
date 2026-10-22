@@ -3,6 +3,49 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rial_flutter/main.dart';
 
 void main() {
+  testWidgets('Press feedback settles, cancels and respects reduced motion', (
+    tester,
+  ) async {
+    var taps = 0;
+    for (final reduced in [false, true]) {
+      await tester.pumpWidget(
+        CupertinoApp(
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: reduced),
+            child: Center(
+              child: PressFeedback(
+                onTap: () => taps++,
+                child: const SizedBox(
+                  width: 100,
+                  height: 48,
+                  child: Text('Acción'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(PressFeedback)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<AnimatedScale>(find.byType(AnimatedScale)).scale,
+        reduced ? 1 : .985,
+      );
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(taps, 0);
+      expect(tester.widget<AnimatedScale>(find.byType(AnimatedScale)).scale, 1);
+      expect(tester.binding.transientCallbackCount, 0);
+    }
+    await tester.tap(find.byType(PressFeedback));
+    await tester.pumpAndSettle();
+    expect(taps, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Transition ticks reuse the page and release their controller', (
     tester,
   ) async {

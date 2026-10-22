@@ -51,7 +51,8 @@ class _BalanceTrendState extends State<BalanceTrend> {
       ],
       color: t.accent,
       barWidth: 2,
-      isCurved: false,
+      isCurved: true,
+      preventCurveOverShooting: true,
       dotData: const charts.FlDotData(show: false),
       showingIndicators: [if (selected != null) index],
       belowBarData: charts.BarAreaData(
@@ -60,7 +61,7 @@ class _BalanceTrendState extends State<BalanceTrend> {
       ),
     );
     return SizedBox(
-      height: 56,
+      height: 68,
       width: double.infinity,
       child: widget.hidden || points.length < 2
           ? Center(
@@ -85,58 +86,67 @@ class _BalanceTrendState extends State<BalanceTrend> {
               onDecrease: () => setState(
                 () => selected = (index - 1).clamp(0, points.length - 1),
               ),
-              child: RepaintBoundary(
-                child: charts.LineChart(
-                  charts.LineChartData(
-                    minY: low - margin,
-                    maxY: high + margin,
-                    minX: 0,
-                    maxX: math.max(1, points.length - 1).toDouble(),
-                    titlesData: const charts.FlTitlesData(show: false),
-                    gridData: const charts.FlGridData(show: false),
-                    borderData: charts.FlBorderData(show: false),
-                    lineBarsData: [line],
-                    showingTooltipIndicators: [
-                      if (selected != null)
-                        charts.ShowingTooltipIndicators([
-                          charts.LineBarSpot(line, 0, line.spots[index]),
-                        ]),
-                    ],
-                    lineTouchData: charts.LineTouchData(
-                      handleBuiltInTouches: false,
-                      touchSpotThreshold: 36,
-                      touchTooltipData: charts.LineTouchTooltipData(
-                        fitInsideHorizontally: true,
-                        fitInsideVertically: true,
-                        maxContentWidth: 220,
-                        tooltipPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+              child: ChartReveal(
+                key: ValueKey(
+                  '${widget.currency}:${widget.period}:${Object.hashAll(points.map((p) => Object.hash(p.date, p.amount)))}',
+                ),
+                child: RepaintBoundary(
+                  child: charts.LineChart(
+                    charts.LineChartData(
+                      minY: low - margin,
+                      maxY: high + margin,
+                      minX: 0,
+                      maxX: math.max(1, points.length - 1).toDouble(),
+                      titlesData: const charts.FlTitlesData(show: false),
+                      gridData: const charts.FlGridData(show: false),
+                      borderData: charts.FlBorderData(show: false),
+                      lineBarsData: [line],
+                      showingTooltipIndicators: [
+                        if (selected != null)
+                          charts.ShowingTooltipIndicators([
+                            charts.LineBarSpot(line, 0, line.spots[index]),
+                          ]),
+                      ],
+                      lineTouchData: charts.LineTouchData(
+                        handleBuiltInTouches: false,
+                        touchSpotThreshold: 36,
+                        touchTooltipData: charts.LineTouchTooltipData(
+                          fitInsideHorizontally: true,
+                          fitInsideVertically: true,
+                          maxContentWidth: 220,
+                          tooltipPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          tooltipMargin: 4,
+                          tooltipBorder: BorderSide(color: t.border),
+                          getTooltipColor: (_) => t.card,
+                          getTooltipItems: (spots) => spots
+                              .map(
+                                (spot) => charts.LineTooltipItem(
+                                  describe(points[spot.spotIndex]),
+                                  TextStyle(color: t.ink, fontSize: 12),
+                                ),
+                              )
+                              .toList(),
                         ),
-                        tooltipMargin: 4,
-                        tooltipBorder: BorderSide(color: t.border),
-                        getTooltipColor: (_) => t.card,
-                        getTooltipItems: (spots) => spots
-                            .map(
-                              (spot) => charts.LineTooltipItem(
-                                describe(points[spot.spotIndex]),
-                                TextStyle(color: t.ink, fontSize: 12),
-                              ),
-                            )
-                            .toList(),
+                        touchCallback: (event, response) {
+                          final spots = response?.lineBarSpots;
+                          if (event.isInterestedForInteractions &&
+                              spots != null &&
+                              spots.isNotEmpty) {
+                            final next = spots.first.spotIndex;
+                            if (next != selected)
+                              setState(() => selected = next);
+                          }
+                        },
                       ),
-                      touchCallback: (event, response) {
-                        final spots = response?.lineBarSpots;
-                        if (event.isInterestedForInteractions &&
-                            spots != null &&
-                            spots.isNotEmpty) {
-                          final next = spots.first.spotIndex;
-                          if (next != selected) setState(() => selected = next);
-                        }
-                      },
                     ),
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 400),
+                    curve: Curves.easeOutCubic,
                   ),
-                  duration: Duration.zero,
                 ),
               ),
             ),

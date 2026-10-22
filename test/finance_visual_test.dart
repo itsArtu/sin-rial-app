@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -70,7 +72,7 @@ void main() {
 
         app.setTab(1);
         await capture('budget-empty');
-        await tester.tap(find.text('S\u00ed, crear plan'));
+        await tester.tap(find.text('Comenzar a planificar'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Quincenal'));
         await capture('budget-period');
@@ -387,7 +389,7 @@ void main() {
           );
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
-          expect(find.text('Guardar cambios').hitTestable(), findsOneWidget);
+          expect(composer.saveChanges().hitTestable(), findsOneWidget);
           if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
             await expectLater(
               find.byType(RialApp),
@@ -493,7 +495,10 @@ void main() {
           const Offset(0, -1200),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Guardar movimiento').hitTestable(), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('movement-editor-save')).hitTestable(),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
         if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
           await expectLater(

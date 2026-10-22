@@ -218,12 +218,28 @@ void main() {
             .value,
         '5.6%',
       );
+      await tester.scrollUntilVisible(
+        detail('Total a debitar'),
+        150,
+        scrollable: find
+            .descendant(
+              of: find.byType(MovementEditor),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable &&
+                    widget.axisDirection == AxisDirection.down,
+              ),
+            )
+            .first,
+      );
       expect(
         tester.widget<DebtDetailRow>(detail('Total a debitar')).value,
         r'$382,00',
       );
       expect(
-        tester.widget<DebtDetailRow>(detail('Llega a destino')).value,
+        tester
+            .widget<Text>(find.byKey(const ValueKey('transfer-received-value')))
+            .data,
         r'$360,61',
       );
       final field = find.byKey(const ValueKey('commission-value'));
@@ -249,7 +265,7 @@ void main() {
       tester.view.resetViewInsets();
       await tester.pumpAndSettle();
       expect(tester.widget<OptionField>(field).value, '5.6%');
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.accountById('usd')['balance'], 618);
       expect(app.accountById('target')['balance'], 360.61);

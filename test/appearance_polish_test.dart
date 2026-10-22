@@ -195,13 +195,16 @@ void main() {
     await tester.pumpAndSettle();
     final logo = find.byKey(const ValueKey('lock-logo-size'));
     final before = tester.getRect(logo);
+    expect(before.top, greaterThan(150));
+    await capture(tester, find.byType(RialApp), 'lock-centered');
     for (final height in [280.0, 0.0, 310.0]) {
       tester.view.viewInsets = FakeViewPadding(bottom: height);
       await tester.pumpAndSettle();
-      expect(tester.getRect(logo), before);
+      expect(tester.getRect(logo).size, before.size);
+      final positioned = tester.getRect(logo);
       await tester.enterText(find.byKey(security.lockKey), '12');
       await tester.pumpAndSettle();
-      expect(tester.getRect(logo), before);
+      expect(tester.getRect(logo), positioned);
       expect(tester.takeException(), isNull);
     }
     await capture(tester, find.byType(RialApp), 'lock-keyboard');

@@ -31,7 +31,9 @@ Map<String, dynamic> confirmation(
   'date': formatDateTime(DateTime.now()),
 };
 Finder field(String name) => find.byWidgetPredicate(
-  (w) => w is CupertinoTextField && w.placeholder == name,
+  (w) =>
+      w is CupertinoTextField &&
+      (w.placeholder == name || w.key == ValueKey('amount-input-${name}')),
 );
 
 void main() {
@@ -292,8 +294,10 @@ void main() {
           );
           expect(input, findsOneWidget);
           await tester.enterText(input, '15');
-          await tester.ensureVisible(find.text('Guardar movimiento'));
-          await tester.tap(find.text('Guardar movimiento'));
+          await tester.ensureVisible(
+            find.byKey(const ValueKey('movement-editor-save')),
+          );
+          await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
           await tester.pumpAndSettle();
           expect(app.accountById('a')['balance'], 85);
           expect(recurringPendingItems(app), isEmpty);

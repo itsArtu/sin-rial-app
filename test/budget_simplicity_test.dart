@@ -220,7 +220,14 @@ void main() {
     await tester.pumpAndSettle();
     for (var page = 0; page < 5; page++) {
       expect(find.text('Omitir').hitTestable(), findsOneWidget);
-      expect(find.text('${page + 1} / 5'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics &&
+              widget.properties.label == 'Página ${page + 1} de 5',
+        ),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
       if (page < 4) {
         await tester.tap(find.text('Siguiente'));

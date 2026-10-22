@@ -51,7 +51,9 @@ Map<String, dynamic> expense(
 };
 
 Finder field(String hint) => find.byWidgetPredicate(
-  (w) => w is CupertinoTextField && w.placeholder == hint,
+  (w) =>
+      w is CupertinoTextField &&
+      (w.placeholder == hint || w.key == ValueKey('amount-input-${hint}')),
 );
 
 void main() {
@@ -331,13 +333,10 @@ void main() {
         (_) => BudgetPage(app: app),
       );
       await tester.pumpAndSettle();
-      expect(
-        find.text('\u00bfQuieres crear un plan de presupuestos?'),
-        findsOneWidget,
-      );
+      expect(find.text('Sin presupuesto'), findsOneWidget);
       expect(find.text('Ingreso del periodo'), findsNothing);
-      expect(find.text('Mes'), findsNothing);
-      await tester.tap(find.text('S\u00ed, crear plan'));
+      expect(find.text('Mes'), findsOneWidget);
+      await tester.tap(find.text('Comenzar a planificar'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Quincenal'));
       await tester.pumpAndSettle();

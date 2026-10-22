@@ -1,6 +1,81 @@
 part of 'main.dart';
 
-class RialLoadingIndicator extends StatelessWidget {
+class AppPillSelector extends StatelessWidget {
+  const AppPillSelector({
+    super.key,
+    required this.theme,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    this.showIcons = true,
+  });
+  final RTheme theme;
+  final String value;
+  final List<KindSelectorItem> items;
+  final ValueChanged<String> onChanged;
+  final bool showIcons;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    spacing: 8,
+    children: [
+      for (final item in items)
+        Expanded(
+          child: Semantics(
+            selected: value == item.value,
+            child: PressFeedback(
+              onTap: () => onChanged(item.value),
+              child: AnimatedContainer(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                constraints: const BoxConstraints(minHeight: 44),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: value == item.value ? theme.accent : theme.card,
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (showIcons) ...[
+                      Icon(
+                        item.icon,
+                        size: 18,
+                        color: value == item.value
+                            ? theme.onAccent
+                            : theme.muted,
+                      ),
+                      const SizedBox(width: 7),
+                    ],
+                    Flexible(
+                      child: Text(
+                        item.label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: value == item.value
+                              ? theme.onAccent
+                              : theme.muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+class RialLoadingIndicator extends StatefulWidget {
   const RialLoadingIndicator({
     super.key,
     required this.color,
@@ -13,26 +88,87 @@ class RialLoadingIndicator extends StatelessWidget {
   final String? semanticsLabel;
 
   @override
+  State<RialLoadingIndicator> createState() => _RialLoadingIndicatorState();
+}
+
+class _RialLoadingIndicatorState extends State<RialLoadingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController motion = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled) {
+      motion.stop();
+    } else if (!motion.isAnimating) {
+      motion.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    motion.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => Semantics(
-    label: semanticsLabel,
+    label: widget.semanticsLabel,
     excludeSemantics: true,
     child: SizedBox.square(
-      dimension: size,
+      dimension: widget.size,
       child: RepaintBoundary(
-        child: material.CircularProgressIndicator(
-          // A static arc respects reduced motion without announcing a fake percentage.
-          value: MediaQuery.disableAnimationsOf(context) ? .7 : null,
-          color: color,
-          backgroundColor: color.withValues(alpha: .16),
-          strokeWidth: (size / 12).clamp(2.0, 4.0),
-          strokeCap: StrokeCap.round,
-          strokeAlign: material.CircularProgressIndicator.strokeAlignInside,
-          padding: EdgeInsets.zero,
-          constraints: BoxConstraints.tightFor(width: size, height: size),
-        ),
+        child: CustomPaint(painter: _LoadingArcPainter(widget.color, motion)),
       ),
     ),
   );
+}
+
+class _LoadingArcPainter extends CustomPainter {
+  _LoadingArcPainter(this.color, this.motion) : super(repaint: motion);
+  final Color color;
+  final Animation<double> motion;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final width = (size.shortestSide / 11).clamp(2.0, 4.0);
+    final center = size.center(Offset.zero);
+    final radius = (size.shortestSide - width) / 2;
+    final ring = Rect.fromCircle(center: center, radius: radius);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(
+      center,
+      radius,
+      paint..color = color.withValues(alpha: .1),
+    );
+    final phase = motion.value * math.pi * 2;
+    final sweep = math.pi * (1.05 + .45 * math.sin(phase));
+    canvas.drawArc(
+      ring,
+      phase - math.pi / 2,
+      sweep,
+      false,
+      paint..color = color,
+    );
+    canvas.drawArc(
+      ring,
+      phase + sweep - math.pi / 2 + .5,
+      .32,
+      false,
+      paint..color = color.withValues(alpha: .4),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LoadingArcPainter old) =>
+      color != old.color || motion != old.motion;
 }
 
 Color homeHeaderColor(RTheme theme) =>
@@ -415,10 +551,9 @@ class IconGrid extends StatelessWidget {
           for (final item in items)
             SizedBox(
               width: width,
-              height: 112,
-              child: CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: item.onTap,
+              height: 102,
+              child: PressFeedback(
+                onTap: item.onTap,
                 child: Column(
                   children: [
                     Container(
@@ -427,7 +562,7 @@ class IconGrid extends StatelessWidget {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: theme.card,
-                        borderRadius: BorderRadius.circular(18),
+                        shape: BoxShape.circle,
                         border: Border.all(color: theme.border),
                       ),
                       child: Icon(item.icon, color: theme.ink, size: 26),
@@ -464,7 +599,11 @@ class ModernMenu extends StatelessWidget {
       title: 'Men\u00fa',
       theme: app.theme,
       children: [
-        SectionHeader(theme: app.theme, title: 'Gesti\u00f3n financiera'),
+        SectionHeader(
+          theme: app.theme,
+          title: 'Gesti\u00f3n financiera',
+          prominent: true,
+        ),
         IconGrid(
           theme: app.theme,
           items: [
@@ -500,7 +639,7 @@ class ModernMenu extends StatelessWidget {
             ),
           ],
         ),
-        SectionHeader(theme: app.theme, title: 'Herramientas'),
+        SectionHeader(theme: app.theme, title: 'Herramientas', prominent: true),
         IconGrid(
           theme: app.theme,
           items: [
@@ -531,7 +670,11 @@ class ModernMenu extends StatelessWidget {
             ),
           ],
         ),
-        SectionHeader(theme: app.theme, title: 'Personalizaci\u00f3n'),
+        SectionHeader(
+          theme: app.theme,
+          title: 'Personalizaci\u00f3n',
+          prominent: true,
+        ),
         IconGrid(
           theme: app.theme,
           items: [

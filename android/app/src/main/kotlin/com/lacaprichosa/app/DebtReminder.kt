@@ -5,13 +5,18 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
 import java.text.ParsePosition
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
-internal data class DebtReminder(val tag: String, val title: String, val kind: String, val due: Calendar) {
+internal data class DebtReminder(
+    val tag: String, val title: String, val kind: String, val due: Calendar,
+    val totalCents: Long = 0, val paidCents: Long = 0,
+    val currency: String = "USD", val hideAmounts: Boolean = false
+) {
     fun daysLeft(now: Long): Long = dayNumber(due) - dayNumber(Calendar.getInstance().apply { timeInMillis = now })
 
     fun isDue(now: Long): Boolean = daysLeft(now).let { it < 0 || it in setOf(0L, 1L, 3L, 5L, 7L) }
@@ -24,10 +29,19 @@ internal data class DebtReminder(val tag: String, val title: String, val kind: S
             days == 0L -> "vence hoy"
             else -> "est\u00e1 atrasado ${-days} d\u00eda(s)"
         }
-        return "$title $time."
+        if (hideAmounts) return "Tienes un $kind que $time. Abre Sin Rial para ver el detalle."
+        val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("es-VE")).apply {
+            minimumFractionDigits = 2
+            maximumFractionDigits = 2
+        }
+        fun money(cents: Long): String {
+            val symbol = when (currency) { "VES" -> "Bs."; "USD" -> "$"; "EUR" -> "EUR"; else -> currency }
+            return "$symbol ${formatter.format(BigDecimal.valueOf(cents, 2))}"
+        }
+        return "$title $time.\n${if (kind == "cobro") "Cobrado" else "Abonado"}: ${money(paidCents)} de ${money(totalCents)}. Pendiente: ${money(totalCents - paidCents)}."
     }
 
-    fun signature(now: Long) = digest("$kind:${dayNumber(due)}:${text(now)}")
+    fun signature(now: Long) = digest("$kind:${dayNumber(due)}:$totalCents:$paidCents:$currency:$hideAmounts:${text(now)}")
 
     companion object {
         const val TAG_PREFIX = "sin_rial_debt:"
@@ -43,7 +57,7 @@ internal data class DebtReminder(val tag: String, val title: String, val kind: S
             }.timeInMillis
         )
 
-        fun from(debt: JSONObject): DebtReminder? {
+        fun from(debt: JSONObject, hideAmounts: Boolean = false): DebtReminder? {
             if (!debt.optBoolean("hasDueDate", true) || !debt.optBoolean("notifyDueDate", true)) return null
             val amount = cents(debt, "amount") ?: return null
             val paid = cents(debt, "paidAmount") ?: return null
@@ -67,7 +81,8 @@ internal data class DebtReminder(val tag: String, val title: String, val kind: S
                 // Older imports may lack an id; never use the mutable array position.
                 digest("$kind:$title:${debt.optString("dueDate")}:$amount")
             }
-            return DebtReminder(TAG_PREFIX + id, title, kind, due)
+            return DebtReminder(TAG_PREFIX + id, title, kind, due, amount, paid,
+                debt.optString("currency", "USD").takeIf { it in setOf("USD", "VES", "EUR", "USDT") } ?: "USD", hideAmounts)
         }
 
         private fun installmentIndex(debt: JSONObject, amount: Long, paid: Long): Int? {

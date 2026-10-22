@@ -150,7 +150,7 @@ void main() {
       await tester.ensureVisible(option('Comisi\u00f3n'));
       expect(
         tester.getTopLeft(option('Forma de pago')).dy,
-        lessThan(tester.getTopLeft(option('Comisi\u00f3n')).dy),
+        tester.getTopLeft(option('Comisi\u00f3n')).dy,
       );
       await choose(tester, 'Comisi\u00f3n', 'Manual');
       final manualFee = option('Comisi\u00f3n manual');
@@ -160,7 +160,7 @@ void main() {
       expect(option('Comisi\u00f3n'), findsNothing);
       expect(manualFee, findsNothing);
       expect(find.text('Comisi\u00f3n estimada'), findsNothing);
-      final save = find.text('Guardar movimiento');
+      final save = find.byKey(const ValueKey('movement-editor-save'));
       await tester.ensureVisible(save);
       await tester.tap(save);
       await tester.pumpAndSettle();
@@ -184,7 +184,7 @@ void main() {
     await choose(tester, 'Forma de pago', 'Tarjeta - Biopago');
     await choose(tester, 'Forma de pago', 'Pago m\u00f3vil');
     expect(option('Comisi\u00f3n'), findsOneWidget);
-    final save = find.text('Guardar movimiento');
+    final save = find.byKey(const ValueKey('movement-editor-save'));
     await tester.scrollUntilVisible(
       save,
       250,

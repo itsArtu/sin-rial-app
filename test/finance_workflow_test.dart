@@ -237,7 +237,12 @@ void main() {
         matching: find.byType(AnimatedContainer),
       ),
     );
-    expect(search.decoration, selector.decoration);
+    expect(
+      (search.decoration as BoxDecoration).borderRadius,
+      (selector.decoration as BoxDecoration).borderRadius,
+    );
+    expect((search.decoration as BoxDecoration).color, app.theme.field);
+    expect((selector.decoration as BoxDecoration).color, app.theme.card);
     expect(search.style?.fontSize, 13);
     await tester.enterText(
       find.byType(CupertinoSearchTextField),

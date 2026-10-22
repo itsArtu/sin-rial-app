@@ -59,6 +59,7 @@ class _BudgetPageState extends State<BudgetPage>
     Map<String, dynamic>? plan,
     bool copy = false,
     int step = 0,
+    String? targetPeriod,
   }) async {
     final app = widget.app;
     final type =
@@ -72,10 +73,12 @@ class _BudgetPageState extends State<BudgetPage>
                 )
             ? 'biweekly'
             : 'monthly');
-    final period = copy
-        ? nextBudgetPeriod(plan!['period'].toString(), type)
-        : plan?['period']?.toString() ??
-              (type == 'biweekly' ? '$month-H$half' : month);
+    final period =
+        targetPeriod ??
+        (copy
+            ? nextBudgetPeriod(plan!['period'].toString(), type)
+            : plan?['period']?.toString() ??
+                  (type == 'biweekly' ? '$month-H$half' : month));
     final result = await app.pushPage<String>(
       context,
       (_) => BudgetPlanEditorPage(
@@ -114,7 +117,7 @@ class _BudgetPageState extends State<BudgetPage>
     final previousMonth = adjacentBudgetMonth(plans, month, -1);
     final canCreate = canCreateBudgetInMonth(month);
     final widgets = <Widget>[];
-    if (plans.isNotEmpty) {
+    {
       widgets.add(
         Row(
           children: [
@@ -192,43 +195,95 @@ class _BudgetPageState extends State<BudgetPage>
         );
     }
     if (plan == null) {
-      widgets.addAll([
-        const SizedBox(height: 28),
-        Icon(CupertinoIcons.chart_pie, size: 48, color: t.accent),
-        const SizedBox(height: 18),
-        Text(
-          canCreate
-              ? '\u00bfQuieres crear un plan de presupuestos?'
-              : 'No hay un plan guardado para este periodo',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: t.ink,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
+      final monthDate = DateTime.parse('$month-01');
+      final previousKey =
+          '${DateTime(monthDate.year, monthDate.month - 1).year}-${DateTime(monthDate.year, monthDate.month - 1).month.toString().padLeft(2, '0')}';
+      final previousPlans = plans
+          .where((p) => p['period'].toString().startsWith(previousKey))
+          .toList();
+      final preferredPeriod = selectedType == 'biweekly'
+          ? '$previousKey-H$half'
+          : previousKey;
+      final previous =
+          previousPlans
+              .where((p) => p['period'] == preferredPeriod)
+              .firstOrNull ??
+          previousPlans
+              .where((p) => p['period'] == '$previousKey-H$half')
+              .firstOrNull ??
+          previousPlans.firstOrNull;
+      widgets.add(
+        RevealMotion(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28),
+            child: Column(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: t.accent.withValues(alpha: .10),
+                  ),
+                  child: Icon(
+                    CupertinoIcons.chart_pie,
+                    size: 32,
+                    color: t.accent,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  'Sin presupuesto',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: t.ink,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Aún no hay un presupuesto para ${monthLabelForKey(month).toLowerCase()}.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: t.muted, fontSize: 15, height: 1.5),
+                ),
+                const SizedBox(height: 28),
+                if (canCreate)
+                  PrimaryActionButton(
+                    theme: t,
+                    label: 'Comenzar a planificar',
+                    onPressed: () => editPlan(),
+                  ),
+                if (canCreate)
+                  CupertinoButton(
+                    onPressed: previous == null
+                        ? null
+                        : () => editPlan(
+                            plan: previous,
+                            copy: true,
+                            targetPeriod: previous['periodType'] == 'biweekly'
+                                ? '$month-H$half'
+                                : month,
+                          ),
+                    child: Text(
+                      'Copiar del mes anterior',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: previous == null ? t.muted : t.accent,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
-        if (plans.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text(
-            budgetPeriodLabel(period, fortnightly ? 'biweekly' : 'monthly'),
-            textAlign: TextAlign.center,
-            style: TextStyle(color: t.muted),
-          ),
-        ],
-        const SizedBox(height: 24),
-        if (canCreate)
-          PrimaryActionButton(
-            theme: t,
-            label: 'S\u00ed, crear plan',
-            onPressed: () => editPlan(),
-          ),
-      ]);
+      );
     } else {
       widgets.addAll(planWidgets(plan));
     }
     widgets.add(const SizedBox(height: 110));
     return AppScroll(
-      title: 'Presupuesto',
+      title: 'Presupuestos',
       theme: t,
       trailing: plan == null
           ? null
@@ -539,7 +594,7 @@ class BudgetSummaryAmount extends StatelessWidget {
           style: TextStyle(
             color: color,
             fontSize: 26,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),

@@ -8,7 +8,9 @@ import 'package:rial_flutter/main.dart';
 import 'finance_workflow_test.dart' as fixtures;
 
 Finder field(String hint) => find.byWidgetPredicate(
-  (w) => w is CupertinoTextField && w.placeholder == hint,
+  (w) =>
+      w is CupertinoTextField &&
+      (w.placeholder == hint || w.key == ValueKey('amount-input-${hint}')),
 );
 
 void main() {

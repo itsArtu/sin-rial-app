@@ -1,9 +1,9 @@
 {
-  "version": "3.2.2",
-  "build": 89,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.2.2%2B89/sin-rial-3.2.2-build89.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.2.2%2B89",
-  "sha256": "1c798758538d6a63d521d5845ed34b77b595485a692a47680da863366b7f4838",
-  "size": 66014419,
-  "notes": "Sin Rial 3.2.2: presupuesto simple por categorias, creacion de categorias desde el selector y Chucherias. Cuotas seleccionables e ingreso opcional de prestamos. Widget USDT y calculadora independiente con acceso protegido a la app completa. Referencias opcionales para ingresos y gastos, grafica USDT interactiva, colores de movimientos independientes, logos y animaciones mejorados. Recorrido de novedades con opcion Omitir. Actualiza sin desinstalar ni borrar datos."
+  "version": "3.5.0",
+  "build": 97,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.5.0%2B97/sin-rial-3.5.0-build97.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.5.0%2B97",
+  "sha256": "447c81da19eceff5659e3f5ba99487263ef3ac79f4672dc6c535210329228a92",
+  "size": 69734623,
+  "notes": "Sin Rial 3.5.0: interfaz renovada, controles redondeados, animaciones y carga mas fluidas. Ingresos, gastos y transferencias adaptables, con moneda automatica por cuenta, detalles visibles y teclado mas comodo. Resumen mensual con graficas interactivas y movimientos por categoria o cuenta. Catalogo de categorias renovado, mejoras en presupuestos, cobros y pagos. Grafica del balance con cada cambio de saldo y actualizaciones coordinadas entre pantallas. Pantalla de novedades solo al actualizar. Instala sobre la version existente, sin desinstalar ni borrar datos."
 }

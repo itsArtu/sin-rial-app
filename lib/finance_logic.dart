@@ -1,5 +1,17 @@
 part of 'main.dart';
 
+bool isDollarBolivarExchange(Object? source, Object? target) =>
+    (source == 'USD' && target == 'VES') ||
+    (source == 'VES' && target == 'USD');
+
+// Rates always use Bs. per dollar, regardless of the transfer direction.
+double receivedTransferRate(Object? source, double sent, double received) {
+  if (!sent.isFinite || !received.isFinite || sent <= 0 || received <= 0) {
+    return 0;
+  }
+  return source == 'VES' ? sent / received : received / sent;
+}
+
 class HomeLedgerSnapshot {
   HomeLedgerSnapshot(_RialAppState app, DateTime now) {
     accounts = app.maps('accounts');
@@ -199,11 +211,16 @@ List<BalancePoint> buildBalanceTrend({
   }
 
   final accountNet = <String, double>{};
-  void accountEvent(String id, double delta, DateTime date) {
+  final firstActivity = <String, DateTime>{};
+  double accountDelta(String id, double delta, DateTime date) {
     final account = byId[id];
-    if (account == null) return;
+    if (account == null) return 0;
     accountNet[id] = moneyAdd(accountNet[id] ?? 0, delta);
-    add(date, convertValue(delta, account['currency']?.toString() ?? 'USD'));
+    if (date.millisecondsSinceEpoch != 0 &&
+        (firstActivity[id] == null || date.isBefore(firstActivity[id]!))) {
+      firstActivity[id] = date;
+    }
+    return convertValue(delta, account['currency']?.toString() ?? 'USD');
   }
 
   for (final m in movements) {
@@ -211,26 +228,33 @@ List<BalancePoint> buildBalanceTrend({
     final amount = numberValue(m['amount']);
     final fee = numberValue(m['feeAmount']);
     final income = m['type'] == 'income';
-    accountEvent(
+    var delta = accountDelta(
       m['accountId']?.toString() ?? '',
       income ? moneySubtract(amount, fee) : -movementDebitAmount(m),
       date,
     );
     if (m['type'] == 'transfer') {
-      accountEvent(
+      delta += accountDelta(
         m['targetAccountId']?.toString() ?? '',
         numberValue(m['targetAmount']),
         date,
       );
     }
+    // Both legs of a transfer are one balance event, never an artificial dip.
+    add(date, delta);
   }
   for (final a in adjustments) {
-    accountEvent(
-      a['accountId']?.toString() ?? '',
-      numberValue(a['amount']),
-      parseMovementDate(a['date']?.toString()),
+    final date = parseMovementDate(a['date']?.toString());
+    add(
+      date,
+      accountDelta(
+        a['accountId']?.toString() ?? '',
+        numberValue(a['amount']),
+        date,
+      ),
     );
   }
+  final operationCount = events.length;
   for (final a in accounts) {
     final created = DateTime.tryParse(a['createdAt']?.toString() ?? '');
     if (created == null) continue;
@@ -238,9 +262,23 @@ List<BalancePoint> buildBalanceTrend({
       numberValue(a['balance']),
       accountNet[a['id']] ?? 0,
     );
-    add(created, convertValue(opening, a['currency']?.toString() ?? 'USD'));
+    final first = firstActivity[a['id']];
+    // Backdated or minute-rounded entries cannot precede their opening funds.
+    add(
+      first != null && first.isBefore(created) ? first : created,
+      convertValue(opening, a['currency']?.toString() ?? 'USD'),
+    );
   }
-  events.sort((a, b) => a.date.compareTo(b.date));
+  // Dates are stored to the minute. Preserve insertion order for ties.
+  final ordered = events.indexed.toList()
+    ..sort((a, b) {
+      final date = a.$2.date.compareTo(b.$2.date);
+      if (date != 0) return date;
+      final opening = (a.$1 >= operationCount ? 0 : 1).compareTo(
+        b.$1 >= operationCount ? 0 : 1,
+      );
+      return opening != 0 ? opening : a.$1.compareTo(b.$1);
+    });
   var balance = current - events.fold<double>(0, (sum, e) => sum + e.amount);
   final points = <BalancePoint>[BalancePoint(start, moneyRound(balance))];
   var eventIndex = 0;
@@ -249,11 +287,17 @@ List<BalancePoint> buildBalanceTrend({
       : DateTime(start.year, start.month, start.day + 1);
   while (true) {
     final boundary = end.isAfter(now) ? now : end;
-    while (eventIndex < events.length &&
-        !events[eventIndex].date.isAfter(boundary)) {
-      balance += events[eventIndex++].amount;
+    while (eventIndex < ordered.length &&
+        !ordered[eventIndex].$2.date.isAfter(boundary)) {
+      final event = ordered[eventIndex++].$2;
+      balance += event.amount;
+      if (moneyRound(balance) != points.last.amount) {
+        points.add(BalancePoint(event.date, moneyRound(balance)));
+      }
     }
-    points.add(BalancePoint(boundary, moneyRound(balance)));
+    if (points.last.date != boundary) {
+      points.add(BalancePoint(boundary, moneyRound(balance)));
+    }
     if (!boundary.isBefore(now)) break;
     end = period == 'day'
         ? end.add(const Duration(hours: 1))

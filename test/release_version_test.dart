@@ -9,11 +9,11 @@ void main() {
     expect(compareVersionNames(version.version, '2.1.13'), greaterThan(0));
   });
 
-  test('Installed 3.2.2 does not offer itself or an older release', () {
-    const current = UpdateInfo(version: '3.2.2', build: 89, apkUrl: 'app.apk');
+  test('Installed 3.5 does not offer itself or an older release', () {
+    const current = UpdateInfo(version: '3.5.0', build: 97, apkUrl: 'app.apk');
     const previous = UpdateInfo(version: '2.2.3', build: 67, apkUrl: 'old.apk');
     const tested = UpdateInfo(version: '3.0', build: 73, apkUrl: 'tested.apk');
-    const next = UpdateInfo(version: '3.2.3', build: 90, apkUrl: 'next.apk');
+    const next = UpdateInfo(version: '3.5.1', build: 98, apkUrl: 'next.apk');
     expect(current.isNewer, isFalse);
     expect(previous.isNewer, isFalse);
     expect(tested.isNewer, isFalse);
@@ -46,7 +46,7 @@ void main() {
     final latest = parseReleaseVersion('v3.2.2+89');
     expect(latest.version, '3.2.2');
     expect(latest.build, 89);
-    expect(currentFeatureTour, '3.2.2+89');
+    expect(currentFeatureTour, '3.5.0+97');
     for (final tag in ['v3.1.3+79', 'v3.2+84', 'v3.2.1+88']) {
       final previous = parseReleaseVersion(tag);
       expect(latest.build, greaterThan(previous.build));

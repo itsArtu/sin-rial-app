@@ -1,3 +1,5 @@
+import 'composer_test_helpers.dart' as composer;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -237,18 +239,13 @@ void main() {
     await payment.choose(tester, 'Comisi\u00f3n', 'Manual');
     final manualFee = payment.option('Comisi\u00f3n manual');
     await payment.editFee(tester, '75');
-    await tester.tap(
-      find.descendant(
-        of: find.byType(KindSelector),
-        matching: find.text('Ingreso'),
-      ),
-    );
+    await composer.chooseType(tester, 'Ingreso');
     await tester.pumpAndSettle();
     expect(payment.option('Comisi\u00f3n'), findsNothing);
     expect(manualFee, findsNothing);
     expect(find.text('Comisi\u00f3n estimada'), findsNothing);
     expect(row('Comisi\u00f3n aplicada'), findsNothing);
-    await tester.tap(find.text('Guardar movimiento'));
+    await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
     await tester.pumpAndSettle();
     expect(app.maps('movements').single['feeAmount'], 0);
     expect(app.accountById('bank')['balance'], 30000);
@@ -281,7 +278,7 @@ void main() {
         tester.widget<DebtDetailRow>(row('Ingreso neto')).value,
         'Bs. 10.000,00',
       );
-      await tester.tap(find.text('Guardar cambios'));
+      await tester.tap(composer.saveChanges());
       await tester.pumpAndSettle();
       expect(app.movementById('m')['feeAmount'], 0);
       expect(app.accountById('source')['balance'], 30000);
@@ -330,7 +327,9 @@ void main() {
         'Bs. 10.030,00',
       );
       expect(
-        tester.widget<DebtDetailRow>(row('Llega a destino')).value,
+        tester
+            .widget<Text>(find.byKey(const ValueKey('transfer-received-value')))
+            .data,
         'Bs. 10.000,00',
       );
       await payment.choose(tester, 'Cuenta destino', 'Mismo banco');
@@ -367,7 +366,7 @@ void main() {
         tester.widget<DebtDetailRow>(row('Comisi\u00f3n aplicada')).value,
         'Bs. 30,00',
       );
-      await tester.tap(find.text('Guardar movimiento'));
+      await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.maps('movements').single['feeAmount'], 30);
       expect(app.accountById('source')['balance'], 9970);

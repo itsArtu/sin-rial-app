@@ -8,7 +8,10 @@ import 'package:rial_flutter/main.dart';
 import 'finance_workflow_test.dart' as fixtures;
 
 Finder field(String placeholder) => find.byWidgetPredicate(
-  (widget) => widget is CupertinoTextField && widget.placeholder == placeholder,
+  (widget) =>
+      widget is CupertinoTextField &&
+      (widget.placeholder == placeholder ||
+          widget.key == ValueKey('amount-input-${placeholder}')),
 );
 
 void main() {
@@ -56,7 +59,14 @@ void main() {
         expect(debtRemainingAmount(app.debtById('d')), 70);
         expect(debtHasInstallments(app.debtById('d')), isFalse);
         expect(app.accountById('a')['balance'], kind == 'payable' ? 70 : 130);
-        expect(find.textContaining('Abonado parcialmente'), findsWidgets);
+        expect(
+          find.descendant(
+            of: find.byType(DebtSettlementChart),
+            matching: find.text('\$70,00'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('30%'), findsOneWidget);
         final movement = Map<String, dynamic>.from(
           app.maps('movements').single,
         );

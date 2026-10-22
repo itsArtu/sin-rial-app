@@ -1,5 +1,24 @@
 part of 'main.dart';
 
+List<String> debtScheduleDates(Map<String, dynamic> debt) {
+  if (debt['hasDueDate'] == false) return const [];
+  final stored = debtInstallmentDates(debt);
+  final base = parseDateOnly(debt['dueDate']?.toString());
+  return [
+    for (var i = 0; i < debtInstallmentCount(debt); i++)
+      if (i < stored.length)
+        stored[i]
+      else if (base.year != 9999)
+        formatDate(
+          addDebtFrequency(
+            base,
+            debt['paymentFrequency']?.toString() ?? 'Mensual',
+            i,
+          ),
+        ),
+  ];
+}
+
 // Explicit payments keep their chosen installment; older/general payments fill
 // the oldest outstanding installment without changing recorded ledger amounts.
 List<double> debtInstallmentPaidAmounts(Map<String, dynamic> debt) {
@@ -126,8 +145,9 @@ void chooseLoanAccount(
   BuildContext context,
   _RialAppState app,
   Map<String, dynamic> debt,
-  ValueChanged<String> onSelect,
-) {
+  ValueChanged<String> onSelect, {
+  bool outgoing = false,
+}) {
   final accounts = app
       .usableAccounts()
       .where((account) => loanAccountMatches(debt, account))
@@ -137,13 +157,13 @@ void chooseLoanAccount(
       context,
       title: 'Cuenta para el préstamo',
       message:
-          'Agrega una cuenta en ${displayCurrency(debt['currency']?.toString() ?? 'USD')} para registrar el ingreso.',
+          'Agrega una cuenta en ${displayCurrency(debt['currency']?.toString() ?? 'USD')} para registrar el préstamo.',
     );
     return;
   }
   showModernActionSheet(
     context,
-    title: 'Recibir en cuenta',
+    title: outgoing ? 'Cuenta de origen' : 'Recibir en cuenta',
     actions: [
       for (final account in accounts)
         ModernSheetAction(

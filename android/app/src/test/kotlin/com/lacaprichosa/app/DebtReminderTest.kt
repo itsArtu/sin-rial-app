@@ -95,6 +95,8 @@ class DebtReminderTest {
         deliver()
         assertEquals(1, manager.activeNotifications.size)
         save(d.put("paidAmount", 50))
+        assertTrue(manager.activeNotifications.isEmpty())
+        deliver()
         assertEquals(1, manager.activeNotifications.size)
         save(d.put("paidAmount", 100))
         assertTrue(manager.activeNotifications.isEmpty())
@@ -116,6 +118,24 @@ class DebtReminderTest {
         assertEquals(Calendar.NOVEMBER, DebtReminder.from(d)!!.due.get(Calendar.MONTH))
         d.put("installmentPayments", JSONObject())
         assertEquals(Calendar.DECEMBER, DebtReminder.from(d)!!.due.get(Calendar.MONTH))
+    }
+
+    @Test fun partialPaymentRefreshesContentAndLockScreenHidesPrivateDetails() {
+        val d = debt().put("currency", "VES")
+        save(d)
+        deliver()
+        val before = manager.activeNotifications.single().notification
+        save(d.put("paidAmount", 25))
+        assertTrue(manager.activeNotifications.isEmpty())
+        deliver()
+        val after = manager.activeNotifications.single().notification
+        assertNotEquals(before.extras.getString(ReminderNotifications.SIGNATURE), after.extras.getString(ReminderNotifications.SIGNATURE))
+        assertTrue(after.extras.getString(Notification.EXTRA_BIG_TEXT)!!.contains("Pendiente: Bs. 75,00"))
+        assertEquals(Notification.VISIBILITY_PRIVATE, after.visibility)
+        assertFalse(after.publicVersion.extras.getString(Notification.EXTRA_TEXT)!!.contains("Prueba"))
+        val hidden = DebtReminder.from(d, hideAmounts = true)!!
+        assertFalse(hidden.text(System.currentTimeMillis()).contains("25"))
+        assertFalse(hidden.text(System.currentTimeMillis()).contains("Prueba"))
     }
 
     @Test fun scheduleMatchesInitialManualCustomAndMonthEndInstallments() {
