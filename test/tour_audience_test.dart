@@ -57,7 +57,7 @@ void main() {
     );
   }
 
-  for (final previous in [null, '3.5.0+95', '3.5.0+96']) {
+  for (final previous in [null, '3.2.2+89', '3.5.0+95', '3.5.0+96', '3.5.0+97']) {
     testWidgets('Older version $previous gets only release news, once', (
       tester,
     ) async {

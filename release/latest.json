@@ -1,9 +1,9 @@
 {
   "version": "3.5.0",
-  "build": 97,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.5.0%2B97/sin-rial-3.5.0-build97.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.5.0%2B97",
-  "sha256": "447c81da19eceff5659e3f5ba99487263ef3ac79f4672dc6c535210329228a92",
+  "build": 98,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.5.0%2B98/sin-rial-3.5.0-build98.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.5.0%2B98",
+  "sha256": "74820d3badb064b63daa60e42b76913bf3d0946d6da18925f00910b8951e58a7",
   "size": 69734623,
-  "notes": "Sin Rial 3.5.0: interfaz renovada, controles redondeados, animaciones y carga mas fluidas. Ingresos, gastos y transferencias adaptables, con moneda automatica por cuenta, detalles visibles y teclado mas comodo. Resumen mensual con graficas interactivas y movimientos por categoria o cuenta. Catalogo de categorias renovado, mejoras en presupuestos, cobros y pagos. Grafica del balance con cada cambio de saldo y actualizaciones coordinadas entre pantallas. Pantalla de novedades solo al actualizar. Instala sobre la version existente, sin desinstalar ni borrar datos."
+  "notes": "## Sin Rial 3.5.0 - Build 98\n\n**Una experiencia mas clara y fluida.**\n\n- Diseno renovado, controles redondeados y animaciones mas suaves.\n- Movimientos y transferencias adaptables, moneda automatica por cuenta y detalles siempre visibles.\n- Resumen mensual con graficas interactivas y movimientos por categoria o cuenta.\n- Categorias, presupuestos, cobros y pagos mejorados.\n- Grafica del balance con cada variacion y actualizaciones coordinadas entre pantallas.\n- Novedades dedicadas, una sola vez al actualizar.\n\n**Actualizacion desde 3.2.2 o la build 97.** Instala sobre la app existente, sin desinstalar ni borrar datos."
 }
