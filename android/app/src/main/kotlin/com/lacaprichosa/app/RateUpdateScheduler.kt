@@ -173,7 +173,6 @@ class RateUpdateReceiver : BroadcastReceiver() {
 
 object RateUpdateService {
     private const val ENDPOINT = "https://bcv.today/api/v1/rate.json"
-    private const val ALCAMBIO_ENDPOINT = "https://api.alcambio.app/graphql"
     private const val UPDATE_ENDPOINT = "https://api.github.com/repos/itsArtu/sin-rial-app/releases/latest"
     private const val UPDATE_NOTIFICATION_ID = 2601
 
@@ -185,7 +184,7 @@ object RateUpdateService {
             val status = if (hasNetwork(context)) "error" else "offline"
             val failure = JSONObject().put("rateLastAttemptMillis", System.currentTimeMillis())
                 .put("rateLastFetchAttemptMillis", System.currentTimeMillis())
-            for (key in listOf("rateFetchStatus", "eurRateFetchStatus", "usdtRateFetchStatus")) failure.put(key, status)
+            for (key in listOf("rateFetchStatus", "eurRateFetchStatus")) failure.put(key, status)
             NativeJsonStore.updateRateFields(context, failure)
             UsdRateWidgetProvider.updateAll(context)
             EurRateWidgetProvider.updateAll(context)
@@ -193,7 +192,6 @@ object RateUpdateService {
             return false
         }
         val history = fetchHistory()
-        val usdt = fetchUsdtRate()
         val effectiveDate = data.optString("effective_date").ifBlank {
             data.optString("date").ifBlank { currentIsoDate() }
         }
@@ -204,25 +202,15 @@ object RateUpdateService {
             JSONArray().put(JSONObject().put("USD", usd).put("EUR", eur)
                 .put("effective_date", effectiveDate).put("updated_at", updatedAt))))
         BcvRatePolicy.apply(state, System.currentTimeMillis())
-        val oldUsdt = state.optDouble("usdtRate", 0.0)
-        if (usdt > 0.0 && oldUsdt > 0.0 && abs(oldUsdt - usdt) > 0.0001) {
-            state.put("previousUsdtRate", oldUsdt)
-        }
-
-        if (usdt > 0.0) {
-            state.put("usdtRate", usdt)
-            state.put("usdtRateUpdatedAt", currentIsoDate())
-        }
         state.put("lastRateMillis", System.currentTimeMillis())
         state.put("rateLastAttemptMillis", System.currentTimeMillis())
         state.put("rateLastFetchAttemptMillis", System.currentTimeMillis())
         state.put("rateCheckedDate", BcvRatePolicy.dateKey(System.currentTimeMillis()))
         state.put("rateFetchStatus", "ok")
         state.put("eurRateFetchStatus", if (eur > 0.0) "ok" else "error")
-        state.put("usdtRateFetchStatus", if (usdt > 0.0) "ok" else if (hasNetwork(context)) "error" else "offline")
         if (eur > 0.0) state.put("eurLastRateMillis", System.currentTimeMillis())
-        if (usdt > 0.0) state.put("usdtLastRateMillis", System.currentTimeMillis())
-
+        // USDT belongs to foreground app openings, never periodic background work.
+        NativeJsonStore.rateKeys.filter { it.contains("usdt", ignoreCase = true) }.forEach { state.remove(it) }
         NativeJsonStore.updateRateFields(context, state)
         MovementWidgetProvider.updateAll(context)
         UsdRateWidgetProvider.updateAll(context)
@@ -265,44 +253,6 @@ object RateUpdateService {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val capabilities = manager.getNetworkCapabilities(manager.activeNetwork)
         return capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-    }
-
-    private fun fetchUsdtRate(): Double {
-        val connection = (URL(ALCAMBIO_ENDPOINT).openConnection() as? HttpURLConnection) ?: return 0.0
-        return try {
-            connection.connectTimeout = 8000
-            connection.readTimeout = 10000
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.setRequestProperty("Accept", "application/json")
-            connection.setRequestProperty("Content-Type", "application/json")
-            val payload = JSONObject()
-                .put(
-                    "query",
-                    "query getBinanceP2PAverages { getBinanceP2PAverages { sellAverage buyAverage updatedAt } }"
-                )
-                .toString()
-            connection.outputStream.use { stream ->
-                stream.write(payload.toByteArray(Charsets.UTF_8))
-            }
-            if (connection.responseCode !in 200..299) return 0.0
-            val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            val averages = JSONObject(body)
-                .optJSONObject("data")
-                ?.optJSONObject("getBinanceP2PAverages")
-                ?: return 0.0
-            val sell = numberValue(averages.opt("sellAverage"))
-            val buy = numberValue(averages.opt("buyAverage"))
-            if (sell > 0.0 && buy > 0.0) {
-                (sell + buy) / 2.0
-            } else {
-                maxOf(sell, buy)
-            }
-        } catch (_: Exception) {
-            0.0
-        } finally {
-            connection.disconnect()
-        }
     }
 
     private fun extractUsdRate(data: JSONObject): Double {

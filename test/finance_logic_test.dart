@@ -11,7 +11,7 @@ void main() {
       expect(balance, 10);
       expect(moneyAdd(.1, .2), .3);
       expect(moneySubtract(.3, .2), .1);
-      expect(moneyRound(1.005), 1.01);
+      expect(moneyRound(1.005), 1.00);
       expect(moneyConvert(100, .003), .3);
       expect(moneyConvert(2, 842.2067), 1684.41);
       expect(parseAmount('842.2067'), 842.2067);

@@ -601,7 +601,7 @@ void main() {
         await tester.pumpAndSettle();
         app.mutate(() => app.state['seenFeatureTour'] = 'older');
         await capture(tester, 'tour-profile-$width-$dark');
-        for (var step = 0; step < 4; step++) {
+        for (var step = 0; step < 6; step++) {
           await tester.tap(find.text('Siguiente'));
           await capture(tester, 'tour-${step + 2}-$width-$dark');
         }

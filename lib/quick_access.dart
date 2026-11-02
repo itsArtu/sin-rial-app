@@ -71,6 +71,7 @@ extension _QuickAccessApp on _RialAppState {
   bool get isCalculatorAccess => widget.quickAction == 'calculator';
 
   Future<void> reloadExternalChanges() async {
+    if (_restoringBackup) return;
     if (isCalculatorAccess) {
       try {
         final fresh = await loadCalculatorState();

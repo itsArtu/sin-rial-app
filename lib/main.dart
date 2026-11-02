@@ -18,6 +18,8 @@ import 'package:flutter/foundation.dart' show compute;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import 'portable_backup.dart';
+
 part 'finance_logic.dart';
 part 'balance_trend.dart';
 part 'movement_filters.dart';
@@ -48,6 +50,7 @@ part 'debt_overview.dart';
 part 'quick_action_menu.dart';
 part 'movement_composer.dart';
 part 'clock_picker.dart';
+part 'backup_ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,11 +63,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.5.0',
+  defaultValue: '3.5.1',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 98,
+  defaultValue: 100,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -867,7 +870,6 @@ class BcvRateResult {
   const BcvRateResult({
     required this.rate,
     required this.eurRate,
-    required this.usdtRate,
     required this.effectiveDate,
     required this.updatedAt,
     this.snapshots = const [],
@@ -876,7 +878,6 @@ class BcvRateResult {
 
   final double rate;
   final double eurRate;
-  final double usdtRate;
   final String effectiveDate;
   final String updatedAt;
   final List<Map<String, dynamic>> snapshots;
@@ -891,7 +892,6 @@ class BcvRateService {
 
   static Future<BcvRateResult?> fetch() async {
     lastFailure = 'error';
-    usdtFailure = 'error';
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.getUrl(Uri.parse(_endpoint));
@@ -915,11 +915,9 @@ class BcvRateService {
       if (!eurRate.isFinite || eurRate <= 0) return null;
       final history = await _fetchHistory(client);
       final snapshots = bcvSnapshots([data, ...history]);
-      final usdtRate = await _fetchUsdtRate(client);
       return BcvRateResult(
         rate: rate,
         eurRate: eurRate,
-        usdtRate: usdtRate,
         effectiveDate:
             data['effective_date']?.toString().trim().isNotEmpty == true
             ? data['effective_date'].toString()
@@ -958,7 +956,9 @@ class BcvRateService {
     }
   }
 
-  static Future<double> _fetchUsdtRate(HttpClient client) async {
+  static Future<double> fetchUsdtRate() async {
+    usdtFailure = 'error';
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final request = await client.postUrl(Uri.parse(_alcambioEndpoint));
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
@@ -994,6 +994,8 @@ class BcvRateService {
       return 0;
     } catch (_) {
       return 0;
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -1242,7 +1244,6 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   void _setViewState(VoidCallback action) => setState(action);
   late Map<String, dynamic> state;
   int tab = 0;
-  late final PageController _pageController;
   final GlobalKey<NavigatorState> rootNavigatorKey =
       GlobalKey<NavigatorState>();
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
@@ -1254,6 +1255,10 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   Timer? _dayBoundaryTimer;
   bool openAccountAfterOnboarding = false;
   bool rateLoading = false;
+  bool usdtLoading = false;
+  bool _restoringBackup = false;
+  bool _internalDocumentOpen = false;
+  bool _usdtNeedsRefresh = true;
   bool updateChecking = false;
   bool updatePromptVisible = false;
   bool locked = false;
@@ -1363,13 +1368,13 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (isCalculatorAccess) state = calculatorOnlyState(state);
     locked = stateHasSecurity(state);
     WidgetsBinding.instance.addObserver(this);
-    _pageController = PageController();
     _scheduleDayBoundary();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (!isCalculatorAccess) scheduleDailyReminderFromState();
       unawaited(NativeStateStore.scheduleRateUpdate());
       if (!isQuickAccess || widget.quickAction == 'calculator') {
+        unawaited(refreshUsdtOnOpen());
         unawaited(refreshRateIfNeeded(checkForUpdates: !isQuickAccess));
       }
       if (!isQuickAccess) unawaited(checkNativeLaunchAction());
@@ -1388,7 +1393,6 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     rateBoundaryTimer?.cancel();
     _dayBoundaryTimer?.cancel();
     _undoTimer?.cancel();
-    _pageController.dispose();
     revision.dispose();
     super.dispose();
   }
@@ -1438,6 +1442,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (lifecycleState == AppLifecycleState.paused ||
         lifecycleState == AppLifecycleState.hidden ||
         lifecycleState == AppLifecycleState.inactive) {
+      if (lifecycleState != AppLifecycleState.inactive &&
+          !_internalDocumentOpen)
+        _usdtNeedsRefresh = true;
       setState(() {
         _privacySuspended = true;
         _checkingResumeSecurity = false;
@@ -1477,6 +1484,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     });
     _updateScreenPrivacy();
     if (!mounted || locked) return;
+    unawaited(refreshUsdtOnOpen());
     if (!isQuickAccess || widget.quickAction == 'calculator')
       await refreshRateIfNeeded();
   }
@@ -1488,6 +1496,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     setState(() => _privacySuspended = false);
     _updateScreenPrivacy();
     backgroundedAt = null;
+    unawaited(refreshUsdtOnOpen());
     if (!isCalculatorAccess) {
       unawaited(NativeStateStore.consumeScreenOff());
       unawaited(checkNativeLaunchAction());
@@ -1631,11 +1640,15 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   }
 
   void mutate(VoidCallback action) {
+    if (_restoringBackup) return;
     setState(action);
     revision.value++;
     if (!_deferPersistence && !isCalculatorAccess)
       unawaited(NativeStateStore.save(state));
   }
+
+  Future<void> restoreBackup(Map<String, dynamic> imported) =>
+      _restorePortableState(imported);
 
   void scheduleDailyReminderFromState() {
     unawaited(
@@ -1665,19 +1678,6 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   void setTab(int index) {
     if (index == tab) return;
     setState(() => tab = index);
-    if (_pageController.hasClients) {
-      if (MediaQuery.disableAnimationsOf(rootNavigatorKey.currentContext!)) {
-        _pageController.jumpToPage(index);
-        return;
-      }
-      unawaited(
-        _pageController.animateToPage(
-          index,
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeInOutCubic,
-        ),
-      );
-    }
   }
 
   Future<T?> pushPage<T>(BuildContext context, WidgetBuilder builder) {
@@ -1761,7 +1761,6 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       tab = 0;
     });
     revision.value++;
-    if (_pageController.hasClients) _pageController.jumpToPage(0);
     unawaited(NativeStateStore.save(state));
     unawaited(refreshRate(manual: false, force: true));
   }
@@ -1789,16 +1788,26 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       );
       if (raw != null && mounted) {
         final saved = jsonDecode(raw);
-        if (saved is Map &&
-            numberValue(saved['rateLastAttemptMillis']) >
-                numberValue(state['rateLastAttemptMillis'])) {
-          setState(() {
-            for (final entry in saved.entries) {
-              final key = entry.key.toString();
-              if (rateStateKeys.contains(key)) state[key] = entry.value;
-            }
-            revision.value++;
-          });
+        if (saved is Map) {
+          final newerBcv =
+              numberValue(saved['rateLastAttemptMillis']) >
+              numberValue(state['rateLastAttemptMillis']);
+          final newerUsdt =
+              numberValue(saved['usdtLastRateMillis']) >
+              numberValue(state['usdtLastRateMillis']);
+          if (newerBcv || newerUsdt)
+            setState(() {
+              for (final entry in saved.entries) {
+                final key = entry.key.toString();
+                final newer =
+                    key.startsWith('usdt') || key == 'previousUsdtRate'
+                    ? newerUsdt
+                    : newerBcv;
+                if (newer && rateStateKeys.contains(key))
+                  state[key] = entry.value;
+              }
+              revision.value++;
+            });
         }
       }
     } catch (_) {}
@@ -1849,46 +1858,54 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
           },
         ]);
         applyBcvSnapshot(state, DateTime.now());
-        final oldUsdtRate = numberValue(state['usdtRate']);
-        if (result.usdtRate > 0 &&
-            oldUsdtRate > 0 &&
-            (oldUsdtRate - result.usdtRate).abs() > .0001) {
-          state['previousUsdtRate'] = oldUsdtRate;
-        }
-        if (result.usdtRate > 0) {
-          state['usdtRate'] = result.usdtRate;
-          state['usdtRateUpdatedAt'] = DateTime.now().toUtc().toIso8601String();
-          rememberUsdtQuote(state, result.usdtRate, DateTime.now());
-        }
         state['lastRateMillis'] = DateTime.now().millisecondsSinceEpoch;
         state['rateLastAttemptMillis'] = DateTime.now().millisecondsSinceEpoch;
         state['rateLastFetchAttemptMillis'] = state['rateLastAttemptMillis'];
         state['rateCheckedDate'] = isoDate(caracasTime(DateTime.now()));
         state['rateFetchStatus'] = 'ok';
         state['eurRateFetchStatus'] = result.eurRate > 0 ? 'ok' : 'error';
-        state['usdtRateFetchStatus'] = result.usdtRate > 0
-            ? 'ok'
-            : BcvRateService.usdtFailure;
         if (result.eurRate > 0)
           state['eurLastRateMillis'] = state['lastRateMillis'];
-        if (result.usdtRate > 0)
-          state['usdtLastRateMillis'] = state['lastRateMillis'];
       });
     } else {
       mutate(() {
         state['rateLastAttemptMillis'] = DateTime.now().millisecondsSinceEpoch;
         state['rateLastFetchAttemptMillis'] = state['rateLastAttemptMillis'];
-        for (final key in [
-          'rateFetchStatus',
-          'eurRateFetchStatus',
-          'usdtRateFetchStatus',
-        ]) {
+        for (final key in ['rateFetchStatus', 'eurRateFetchStatus']) {
           state[key] = BcvRateService.lastFailure;
         }
       });
     }
     if (mounted) setState(() => rateLoading = false);
     if (result != null && checkForUpdates) queueForegroundUpdateCheck();
+  }
+
+  Future<void> refreshUsdtOnOpen() async {
+    if (!_usdtNeedsRefresh ||
+        _privacySuspended ||
+        usdtLoading ||
+        (isQuickAccess && !isCalculatorAccess))
+      return;
+    _usdtNeedsRefresh = false;
+    setState(() => usdtLoading = true);
+    final quote = await BcvRateService.fetchUsdtRate();
+    usdtLoading = false;
+    if (!mounted) return;
+    mutate(() {
+      state['usdtRateFetchStatus'] = quote > 0
+          ? 'ok'
+          : BcvRateService.usdtFailure;
+      if (quote > 0) {
+        final old = usdtRate;
+        if (old > 0 && old != quote) state['previousUsdtRate'] = old;
+        final now = DateTime.now();
+        state['usdtRate'] = quote;
+        state['usdtLastRateMillis'] = now.millisecondsSinceEpoch;
+        state['usdtRateUpdatedAt'] = now.toUtc().toIso8601String();
+        rememberUsdtQuote(state, quote, now);
+      }
+    });
+    if (_usdtNeedsRefresh && !_privacySuspended) unawaited(refreshUsdtOnOpen());
   }
 
   void queueForegroundUpdateCheck() {
@@ -2157,6 +2174,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   void unlockApp() {
     if (!mounted) return;
     setState(() => locked = false);
+    unawaited(refreshUsdtOnOpen());
     unawaited(refreshRateIfNeeded());
   }
 
@@ -2164,9 +2182,11 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (currency == 'USD' || currency == 'USDT') return amount;
     if (currency == 'EUR') {
       final eur = eurRate;
-      return eur > 0 && rate > 0 ? (amount * eur) / rate : amount;
+      return eur > 0 && rate > 0
+          ? _convertedDecimal(amount, eur, rate).toDouble()
+          : amount;
     }
-    return rate > 0 ? amount / rate : 0;
+    return rate > 0 ? _convertedDecimal(amount, 1, rate).toDouble() : 0;
   }
 
   double movementToUsd(Map<String, dynamic> movement, double amount) {
@@ -2180,10 +2200,12 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (currency == 'VES') return amount;
     if (currency == 'EUR') {
       final eur = eurRate;
-      return amount * (eur > 0 ? eur : rate);
+      return (_decimal(amount) * _decimal(eur > 0 ? eur : rate)).toDouble();
     }
-    if (currency == 'USDT') return amount * usdtRate;
-    return amount * rate;
+    if (currency == 'USDT') {
+      return (_decimal(amount) * _decimal(usdtRate)).toDouble();
+    }
+    return (_decimal(amount) * _decimal(rate)).toDouble();
   }
 
   double convertForHome(double amount, String from, String to) {
@@ -2195,13 +2217,15 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (to == 'VES') return ves;
     if (to == 'EUR') {
       final eur = eurRate;
-      return eur > 0 ? ves / eur : (rate > 0 ? ves / rate : 0);
+      return eur > 0
+          ? _convertedDecimal(ves, 1, eur).toDouble()
+          : (rate > 0 ? _convertedDecimal(ves, 1, rate).toDouble() : 0);
     }
     if (to == 'USDT') {
       final usdt = usdtRate;
-      return usdt > 0 ? ves / usdt : 0;
+      return usdt > 0 ? _convertedDecimal(ves, 1, usdt).toDouble() : 0;
     }
-    return rate > 0 ? ves / rate : 0;
+    return rate > 0 ? _convertedDecimal(ves, 1, rate).toDouble() : 0;
   }
 
   void applyMovement(Map<String, dynamic> movement, int direction) {
@@ -2260,7 +2284,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     final converted = movementCurrency == debtCurrency
         ? moneyRound(numberValue(movement['amount']))
         : savedQuote > 0
-        ? moneyConvert(numberValue(movement['amount']), 1, savedQuote)
+        ? debtCreditForPayment(numberValue(movement['amount']), savedQuote)
         : moneyRound(
             convert(
               numberValue(movement['amount']),
@@ -2495,28 +2519,51 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         movement['targetAccountId']?.toString() ?? '',
       );
       if (movement['type'] != 'transfer' ||
-          !isDollarBolivarExchange(
-            feeSource?['currency'],
-            destination?['currency'],
-          )) {
+          !(isDollarBolivarExchange(
+                feeSource?['currency'],
+                destination?['currency'],
+              ) ||
+              isDollarTransfer(
+                feeSource?['currency'],
+                destination?['currency'],
+              ))) {
         throw const FormatException(
-          'El monto recibido corresponde a una transferencia entre dólares y bolívares.',
+          'El monto recibido corresponde a una transferencia en dólares o entre dólares y bolívares.',
         );
       }
       movement['currency'] = feeSource!['currency'];
       movement['targetCurrency'] = destination!['currency'];
-      movement['rate'] = receivedTransferRate(
+      final dollarTransfer = isDollarTransfer(
         movement['currency'],
-        numberValue(movement['amount']),
-        numberValue(movement['targetAmount']),
+        movement['targetCurrency'],
       );
-      movement['feeAmount'] = 0.0;
-      movement['feeMode'] = 'none';
+      movement['rate'] = dollarTransfer
+          ? 1.0
+          : receivedTransferRate(
+              movement['currency'],
+              numberValue(movement['amount']),
+              numberValue(movement['targetAmount']),
+            );
+      movement['feeAmount'] = dollarTransfer
+          ? receivedDollarFee(
+              numberValue(movement['amount']),
+              numberValue(movement['targetAmount']),
+            )
+          : 0.0;
+      movement['feeMode'] = dollarTransfer ? 'auto' : 'none';
       movement['feeTreatment'] = 'deducted';
       movement['paymentMethod'] = '';
       movement['bankTransferScope'] = '';
       movement.remove('feeUnit');
       movement.remove('feePercent');
+      if (dollarTransfer) {
+        movement['feeUnit'] = 'amount';
+        movement['feePercent'] = moneyConvert(
+          numberValue(movement['feeAmount']),
+          100,
+          numberValue(movement['amount']),
+        );
+      }
     }
     if (movement['type'] == 'transfer' && isCestaticketFood(feeSource)) {
       throw const FormatException(
@@ -2564,6 +2611,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     }
     if (supportsTransferFees(feeSource) &&
         movement['type'] == 'transfer' &&
+        !receivedExchange &&
         movement['feeUnit'] != null) {
       if (movement['feeMode'] == 'auto' && movement['feePercent'] == null) {
         throw const FormatException('Confirma el porcentaje de comision');
@@ -3070,9 +3118,8 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
                     child: Stack(
                       children: [
                         Positioned.fill(
-                          child: PageView(
-                            controller: _pageController,
-                            physics: const NeverScrollableScrollPhysics(),
+                          child: RetainedTabTransition(
+                            index: tab,
                             children: [
                               RepaintBoundary(child: HomePage(app: this)),
                               RepaintBoundary(child: BudgetPage(app: this)),
@@ -6004,7 +6051,9 @@ class HomePage extends StatelessWidget {
                 changePeriod: app.homeBalanceChangePeriod,
                 trend: trend,
                 rateState: app.state,
-                loadingRate: app.rateLoading,
+                loadingRate: homeCurrency == 'USDT'
+                    ? app.usdtLoading
+                    : app.rateLoading,
                 onRefreshRate: () => app.refreshRate(manual: true, force: true),
                 onCurrencyChanged: (value) =>
                     app.mutate(() => app.state['homeBalanceCurrency'] = value),
@@ -6191,33 +6240,36 @@ class BalanceHero extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Semantics(
-                      label: loadingRate
-                          ? 'Actualizando tasas'
-                          : 'Actualizar tasas',
-                      child: CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(36, 36),
-                        onPressed: loadingRate ? null : onRefreshRate,
-                        child: SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: Center(
-                            child: loadingRate
-                                ? RialLoadingIndicator(
-                                    color: theme.accent,
-                                    size: 18,
-                                    semanticsLabel: null,
-                                  )
-                                : Icon(
-                                    CupertinoIcons.arrow_clockwise,
-                                    color: theme.muted,
-                                    size: 18,
-                                  ),
+                    if (currency != 'USDT' || loadingRate)
+                      Semantics(
+                        label: loadingRate
+                            ? 'Actualizando tasas'
+                            : 'Actualizar tasas',
+                        child: CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(36, 36),
+                          onPressed: loadingRate || currency == 'USDT'
+                              ? null
+                              : onRefreshRate,
+                          child: SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: Center(
+                              child: loadingRate
+                                  ? RialLoadingIndicator(
+                                      color: theme.accent,
+                                      size: 18,
+                                      semanticsLabel: null,
+                                    )
+                                  : Icon(
+                                      CupertinoIcons.arrow_clockwise,
+                                      color: theme.muted,
+                                      size: 18,
+                                    ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 if (rateState.isNotEmpty)
@@ -7310,16 +7362,19 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
       for (final movement in _filtered) {
         final type = movement['type'];
         if (type == 'income') {
-          _income += app.movementToUsd(movement, movementListAmount(movement));
+          _income = moneyAdd(
+            _income,
+            app.movementToUsd(movement, movementListAmount(movement)),
+          );
         } else if (isExpenseType(type?.toString())) {
-          _expenses += app.movementToUsd(
-            movement,
-            movementListAmount(movement),
+          _expenses = moneyAdd(
+            _expenses,
+            app.movementToUsd(movement, movementListAmount(movement)),
           );
         } else if (type == 'transfer') {
-          _expenses += app.movementToUsd(
-            movement,
-            numberValue(movement['feeAmount']),
+          _expenses = moneyAdd(
+            _expenses,
+            app.movementToUsd(movement, numberValue(movement['feeAmount'])),
           );
         }
       }
@@ -7384,6 +7439,7 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                             key: const ValueKey('movement-history-month'),
                             theme: t,
                             compact: true,
+                            roomy: true,
                             compactLabel: monthLabelForKey(selectedMonth),
                             label: 'Mes',
                             value: monthLabelForKey(selectedMonth),
@@ -7408,6 +7464,7 @@ class _MovementHistoryPageState extends State<MovementHistoryPage> {
                         CircleTool(
                           key: const ValueKey('movement-monthly-summary'),
                           theme: t,
+                          size: 56,
                           icon: CupertinoIcons.chart_pie,
                           label: 'Resumen mensual',
                           onTap: () => app.pushPage(
@@ -7644,7 +7701,7 @@ List<AccountDistributionEntry> accountDistribution(
     if (id.isEmpty) continue;
     final raw = movementListAmount(movement);
     if (raw <= 0) continue;
-    totals[id] = (totals[id] ?? 0) + app.movementToUsd(movement, raw);
+    totals[id] = moneyAdd(totals[id] ?? 0, app.movementToUsd(movement, raw));
   }
 
   final entries = <AccountDistributionEntry>[];
@@ -7703,13 +7760,13 @@ List<MonthlyMovementSummary> monthlyMovementSummaries(
     final raw = movementListAmount(movement);
     if (raw <= 0) continue;
     final amountUsd = app.movementToUsd(movement, raw);
-    totalsByMonth[month] = (totalsByMonth[month] ?? 0) + amountUsd;
+    totalsByMonth[month] = moneyAdd(totalsByMonth[month] ?? 0, amountUsd);
     final accountId = movement['accountId']?.toString() ?? '';
     final bucket = accountTotalsByMonth.putIfAbsent(
       month,
       () => <String, double>{},
     );
-    bucket[accountId] = (bucket[accountId] ?? 0) + amountUsd;
+    bucket[accountId] = moneyAdd(bucket[accountId] ?? 0, amountUsd);
   }
 
   final summaries = <MonthlyMovementSummary>[];
@@ -7865,7 +7922,7 @@ class BalanceGroupCard extends StatelessWidget {
         .toList();
     final total = accounts.fold<double>(
       0,
-      (sum, account) => sum + numberValue(account['balance']),
+      (sum, account) => moneyAdd(sum, numberValue(account['balance'])),
     );
     final secondary = currency == 'VES'
         ? '≈ ${app.secureMoney(app.convertForHome(total, 'VES', 'USD'), 'USD')}'
@@ -8869,7 +8926,9 @@ class _CalculatorPageState extends State<CalculatorPage> {
                       theme: t,
                       state: app.state,
                       currency: rateCurrency,
-                      loading: app.rateLoading,
+                      loading: rateCurrency == 'USDT'
+                          ? app.usdtLoading
+                          : app.rateLoading,
                     ),
                 ],
               ],
@@ -9448,11 +9507,11 @@ class SavingsPage extends StatelessWidget {
         .toList();
     final totalTarget = goals.fold<double>(
       0,
-      (sum, goal) => sum + numberValue(goal['target']),
+      (sum, goal) => moneyAdd(sum, numberValue(goal['target'])),
     );
     final totalSaved = goals.fold<double>(
       0,
-      (sum, goal) => sum + numberValue(goal['saved']),
+      (sum, goal) => moneyAdd(sum, numberValue(goal['saved'])),
     );
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
@@ -12009,6 +12068,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             SectionHeader(theme: t, title: 'Datos'),
+            OptionField(
+              theme: t,
+              label: 'Copias de seguridad',
+              value: 'Exportar o importar',
+              icon: CupertinoIcons.lock_shield,
+              onTap: () => app.pushPage(context, (_) => BackupPage(app: app)),
+            ),
             GestureDetector(
               onTap: () => confirmReset(context),
               child: RCard(
@@ -12331,13 +12397,17 @@ class _MovementEditorState extends State<MovementEditor> {
 
   bool get usesReceivedAmount =>
       type == 'transfer' &&
-      isDollarBolivarExchange(
-        widget.app.accountById(accountId)?['currency'],
-        widget.app.accountById(targetId)?['currency'],
-      ) &&
-      (widget.movement == null ||
-          widget.movement?['exchangeInput'] == 'received' ||
-          numberValue(widget.movement?['feeAmount']) == 0);
+      (isDollarTransfer(
+            widget.app.accountById(accountId)?['currency'],
+            widget.app.accountById(targetId)?['currency'],
+          ) ||
+          (isDollarBolivarExchange(
+                widget.app.accountById(accountId)?['currency'],
+                widget.app.accountById(targetId)?['currency'],
+              ) &&
+              (widget.movement == null ||
+                  widget.movement?['exchangeInput'] == 'received' ||
+                  numberValue(widget.movement?['feeAmount']) == 0)));
 
   Map<String, dynamic>? get bcvQuote {
     final previous = widget.movement;
@@ -12447,6 +12517,15 @@ class _MovementEditorState extends State<MovementEditor> {
     }
     widget.app.revision.addListener(syncMissingDebtQuote);
     if (m != null) feeTreatment = m['feeTreatment']?.toString() ?? 'added';
+    if (m != null &&
+        type == 'transfer' &&
+        isDollarTransfer(
+          widget.app.accountById(accountId)?['currency'],
+          widget.app.accountById(targetId)?['currency'],
+        )) {
+      amount.text = plain(movementDebitAmount(m));
+      feeTreatment = 'deducted';
+    }
     resetDollarFee(existing: m);
   }
 
@@ -12629,7 +12708,7 @@ class _MovementEditorState extends State<MovementEditor> {
     final applied = sourceCurrency == debtCurrency
         ? amount
         : savedQuote > 0
-        ? moneyConvert(amount, 1, savedQuote)
+        ? debtCreditForPayment(amount, savedQuote)
         : convert(
             amount,
             sourceCurrency,
@@ -12695,9 +12774,13 @@ class _MovementEditorState extends State<MovementEditor> {
     final sourceCurrency = source?['currency']?.toString() ?? 'USD';
     final targetCurrency = target?['currency']?.toString() ?? sourceCurrency;
     final receivedExchange = usesReceivedAmount;
+    final receivedDollars =
+        receivedExchange && isDollarTransfer(sourceCurrency, targetCurrency);
     final dollarFees =
         supportsTransferFees(source) && type == 'transfer' && !receivedExchange;
-    final enteredRate = receivedExchange
+    final enteredRate = receivedDollars
+        ? 1.0
+        : receivedExchange
         ? receivedTransferRate(
             sourceCurrency,
             moneyRound(parseAmount(amount.text)),
@@ -12733,7 +12816,9 @@ class _MovementEditorState extends State<MovementEditor> {
         ? bankTransferFee(source, target, moneyRound(parseAmount(amount.text)))
         : 0.0;
     final separateTransferFee = transferFeeMustBeAdded(source, target);
-    final effectiveTransferTreatment = separateTransferFee
+    final effectiveTransferTreatment = receivedExchange
+        ? 'deducted'
+        : separateTransferFee
         ? 'added'
         : feeTreatment;
     final selectedDebt = app.debtById(debtId);
@@ -12759,7 +12844,15 @@ class _MovementEditorState extends State<MovementEditor> {
         (hasLinkableDebt || selectedDebt != null);
     final previewAmount = moneyRound(parseAmount(amount.text));
     final previewFee = receivedExchange
-        ? 0.0
+        ? (receivedDollars && parseAmount(receivedAmount.text) > 0
+              ? math.max(
+                  0.0,
+                  moneySubtract(
+                    previewAmount,
+                    parseAmount(receivedAmount.text),
+                  ),
+                )
+              : 0.0)
         : dollarFees
         ? dollarFeePreview
         : type == 'transfer'
@@ -13024,7 +13117,10 @@ class _MovementEditorState extends State<MovementEditor> {
           icon: CupertinoIcons.money_dollar,
           onTap: () => editCommission(percent: false),
         ),
-      if (type == 'transfer' && previewFee > 0 && !separateTransferFee)
+      if (type == 'transfer' &&
+          !receivedExchange &&
+          previewFee > 0 &&
+          !separateTransferFee)
         OptionField(
           theme: t,
           label: 'Aplicar comisión',
@@ -13053,6 +13149,22 @@ class _MovementEditorState extends State<MovementEditor> {
               ? 'Tasa no disponible'
               : 'Bs. ${decimal(numberValue(bcvQuote!['USD']))} / USD',
         ),
+      if (receivedDollars) ...[
+        DebtDetailRow(
+          key: const ValueKey('transfer-auto-commission'),
+          theme: t,
+          label: 'Comisión automática',
+          value:
+              '${app.secureMoney(previewFee, sourceCurrency)} (${formatNumber(previewAmount > 0 ? moneyConvert(previewFee, 100, previewAmount) : 0)}%)',
+          fitValue: true,
+        ),
+        DebtDetailRow(
+          theme: t,
+          label: 'Total a debitar',
+          value: app.secureMoney(previewAmount, sourceCurrency),
+          valueColor: t.accent,
+        ),
+      ],
       if (!receivedExchange) ...[
         if (sourceCurrency == 'VES')
           DebtDetailRow(
@@ -13501,6 +13613,12 @@ class _MovementEditorState extends State<MovementEditor> {
           supportsTransferFees(source) &&
           type == 'transfer' &&
           !usesReceivedAmount;
+      final receivedDollars =
+          usesReceivedAmount &&
+          isDollarTransfer(source['currency'], targetCurrency);
+      final differenceFee = receivedDollars
+          ? receivedDollarFee(parseAmount(amount.text), targetAmount)
+          : 0.0;
       if (dollarFees && feeMode != 'none') {
         if ((feeMode == 'auto' || feeUnit == 'percent') &&
             feePercent.text.trim().isEmpty) {
@@ -13510,8 +13628,9 @@ class _MovementEditorState extends State<MovementEditor> {
         }
         dollarFeeForSave();
       }
-      final effectiveTransferTreatment =
-          transferFeeMustBeAdded(source, app.accountById(targetId))
+      final effectiveTransferTreatment = usesReceivedAmount
+          ? 'deducted'
+          : transferFeeMustBeAdded(source, app.accountById(targetId))
           ? 'added'
           : feeTreatment;
       if (type == 'transfer' && !usesReceivedAmount) {
@@ -13540,6 +13659,7 @@ class _MovementEditorState extends State<MovementEditor> {
         for (final key in [
           'maintenanceAccountId',
           'maintenanceMonth',
+          'maintenancePeriod',
           'loanDebtId',
         ])
           if (widget.movement?.containsKey(key) == true)
@@ -13554,9 +13674,19 @@ class _MovementEditorState extends State<MovementEditor> {
             ? paymentMethod
             : '',
         if (dollarFees) 'feeUnit': feeMode == 'auto' ? 'percent' : feeUnit,
+        if (receivedDollars) ...{
+          'feeUnit': 'amount',
+          'feePercent': moneyConvert(
+            differenceFee,
+            100,
+            parseAmount(amount.text),
+          ),
+        },
         if (dollarFees && (feeMode == 'auto' || feeUnit == 'percent'))
           'feePercent': parseAmount(feePercent.text),
-        'feeMode': dollarFees
+        'feeMode': receivedDollars
+            ? 'auto'
+            : dollarFees
             ? feeMode
             : type == 'expense' || type == 'income'
             ? canConfigureBankFee(
@@ -13581,7 +13711,7 @@ class _MovementEditorState extends State<MovementEditor> {
         'amount': parseAmount(amount.text),
         'currency': source['currency'] ?? 'USD',
         'feeAmount': usesReceivedAmount
-            ? 0.0
+            ? differenceFee
             : type == 'transfer'
             ? estimatedTransferFeeForSave(source)
             : type == 'expense' || type == 'income'
@@ -13604,11 +13734,13 @@ class _MovementEditorState extends State<MovementEditor> {
         'date': date,
         ...movementBcvFields(bcvQuote),
         'rate': usesReceivedAmount
-            ? receivedTransferRate(
-                source['currency'],
-                moneyRound(parseAmount(amount.text)),
-                targetAmount,
-              )
+            ? isDollarTransfer(source['currency'], targetCurrency)
+                  ? 1.0
+                  : receivedTransferRate(
+                      source['currency'],
+                      moneyRound(parseAmount(amount.text)),
+                      targetAmount,
+                    )
             : type == 'transfer' && parseAmount(rate.text) > 0
             ? parseAmount(rate.text)
             : numberValue(bcvQuote?['USD']),
@@ -13658,7 +13790,7 @@ class _AccountEditorState extends State<AccountEditor> {
   bool get automaticMaintenance =>
       kind == 'national' &&
       RegExp(r'^\d{4}$').hasMatch(provider) &&
-      bankAccountType == 'current' &&
+      const ['current', 'savings'].contains(bankAccountType) &&
       currency == 'VES';
 
   @override
@@ -13831,7 +13963,7 @@ class _AccountEditorState extends State<AccountEditor> {
                 value: 'Bs. 684,00',
               ),
               Text(
-                'Registro automático desde el próximo mes, el día 1. Importe basado en el máximo publicado para personas naturales; el cobro real puede variar por banco. Puedes editar o eliminar el movimiento.',
+                'Bs. 684,00 al cierre de cada mes: el día 31, o el día 1 del mes siguiente cuando no hay día 31. El cobro real puede variar por banco; el movimiento se puede editar o eliminar.',
                 style: TextStyle(color: t.muted, fontSize: 13, height: 1.5),
               ),
               CupertinoButton(
@@ -13924,7 +14056,10 @@ class _AccountEditorState extends State<AccountEditor> {
       'maintenancePolicy': enableMaintenance ? bankMaintenancePolicy : '',
       'maintenanceNextMonth':
           enableMaintenance &&
-              widget.account?['maintenancePolicy'] == bankMaintenancePolicy &&
+              [
+                bankMaintenancePolicy,
+                'ves-current-2026-09',
+              ].contains(widget.account?['maintenancePolicy']) &&
               widget.account?['currency'] == currency &&
               widget.account?['provider'] == providerCode
           ? (widget.account?['maintenanceNextMonth'] ?? nextMaintenanceMonth())
@@ -14205,6 +14340,8 @@ class RField extends StatelessWidget {
               ]
             : inputFormatters,
         obscureText: obscureText,
+        autocorrect: !obscureText,
+        enableSuggestions: !obscureText,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
         style: TextStyle(
           color: theme.ink,
@@ -15543,11 +15680,14 @@ double spentForCategory(
     } else if (monthKeyFromDate(m['date']?.toString()) != targetMonth) {
       continue;
     }
-    total += convert(
-      numberValue(m['amount']) + numberValue(m['feeAmount']),
-      m['currency']?.toString() ?? currency,
-      currency,
-      rate,
+    total = moneyAdd(
+      total,
+      convert(
+        moneyAdd(numberValue(m['amount']), numberValue(m['feeAmount'])),
+        m['currency']?.toString() ?? currency,
+        currency,
+        rate,
+      ),
     );
   }
   return total;
@@ -15580,7 +15720,7 @@ double? convertCurrencyAmount(
       fromRate <= 0 ||
       toRate <= 0)
     return null;
-  return amount * fromRate / toRate;
+  return _convertedDecimal(amount, fromRate, toRate).toDouble();
 }
 
 double numberValue(Object? value, {double fallback = 0}) {
@@ -15647,7 +15787,7 @@ List<int> versionParts(String value) {
 }
 
 String plain(double value) {
-  final text = value.toStringAsFixed(2);
+  final text = formatNumberTruncated(value, decimals: 2).replaceAll(',', '.');
   return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
 }
 
@@ -15702,16 +15842,16 @@ String decimal(double value) {
 }
 
 String formatNumberTruncated(double value, {int decimals = 2}) {
-  final factor = math.pow(10, decimals).toDouble();
-  final truncated = value >= 0
-      ? (value * factor).floor() / factor
-      : (value * factor).ceil() / factor;
-  return truncated.toStringAsFixed(decimals).replaceAll('.', ',');
+  if (!value.isFinite) return '0,00';
+  final truncated = _decimal(value).truncate(scale: decimals).toString();
+  final parts = truncated.split('.');
+  if (decimals == 0) return parts.first;
+  return '${parts.first},${(parts.length > 1 ? parts[1] : '').padRight(decimals, '0')}';
 }
 
 String formatNumber(double value) {
-  final fixed = value.abs().toStringAsFixed(2);
-  final pieces = fixed.split('.');
+  final fixed = formatNumberTruncated(value.abs());
+  final pieces = fixed.split(',');
   final chars = pieces.first.split('').reversed.toList();
   final grouped = <String>[];
   for (var i = 0; i < chars.length; i++) {

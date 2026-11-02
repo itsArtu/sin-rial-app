@@ -91,7 +91,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Movimientos al instante'), findsOneWidget);
         expect(tester.getRect(find.text('Siguiente')), nextRect);
-        for (var i = 0; i < 3; i++) {
+        for (var i = 0; i < 5; i++) {
           await tester.tap(find.text('Siguiente'));
           await tester.pumpAndSettle();
         }

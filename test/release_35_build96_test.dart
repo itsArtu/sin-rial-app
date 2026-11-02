@@ -172,11 +172,11 @@ void main() {
         expect(find.byKey(const ValueKey('composer-details')), findsNothing);
         if (targetCurrency == 'USD') {
           expect(find.text('Total a debitar'), findsOneWidget);
-          expect(find.text('Comisión aplicada'), findsOneWidget);
+          expect(find.text('Comisión automática'), findsOneWidget);
         }
         final dynamic editor = tester.state(find.byType(MovementEditor));
         editor.desc.text = 'Entre mis cuentas';
-        if (targetCurrency == 'VES') editor.receivedAmount.text = '200';
+        editor.receivedAmount.text = targetCurrency == 'VES' ? '200' : '20';
         await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
         await tester.pumpAndSettle();
         expect(find.byType(MovementEditor), findsNothing);

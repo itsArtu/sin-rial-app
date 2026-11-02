@@ -1,9 +1,9 @@
 {
-  "version": "3.5.0",
-  "build": 98,
-  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.5.0%2B98/sin-rial-3.5.0-build98.apk",
-  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.5.0%2B98",
-  "sha256": "74820d3badb064b63daa60e42b76913bf3d0946d6da18925f00910b8951e58a7",
-  "size": 69734623,
-  "notes": "## Sin Rial 3.5.0 - Build 98\n\n**Una experiencia mas clara y fluida.**\n\n- Diseno renovado, controles redondeados y animaciones mas suaves.\n- Movimientos y transferencias adaptables, moneda automatica por cuenta y detalles siempre visibles.\n- Resumen mensual con graficas interactivas y movimientos por categoria o cuenta.\n- Categorias, presupuestos, cobros y pagos mejorados.\n- Grafica del balance con cada variacion y actualizaciones coordinadas entre pantallas.\n- Novedades dedicadas, una sola vez al actualizar.\n\n**Actualizacion desde 3.2.2 o la build 97.** Instala sobre la app existente, sin desinstalar ni borrar datos."
+  "version": "3.5.1",
+  "build": 100,
+  "apk_url": "https://github.com/itsArtu/sin-rial-app/releases/download/v3.5.1%2B100/sin-rial-3.5.1-build100.apk",
+  "release_url": "https://github.com/itsArtu/sin-rial-app/releases/tag/v3.5.1%2B100",
+  "sha256": "6dc4fb18470e65254e817adf9d8285beabaa08f7c7477a4c851d6ec67f1eb4ab",
+  "size": 70292419,
+  "notes": "# Sin Rial 3.5.1\n\n### Tus datos van contigo\n\nExporta una copia protegida con una contraseña propia desde **Ajustes > Datos > Copias de seguridad**. Para restaurarla, selecciona el archivo, revisa su contenido y confirma el reemplazo de los datos actuales. El PIN y la biometría permanecen vinculados al dispositivo.\n\n### Importes consistentes\n\n- Dos decimales sin redondear hacia arriba en importes, conversiones y resultados copiados.\n- La tasa de la calculadora y el resultado usan el mismo criterio de presentación.\n\n### Menos esperas\n\n- Buscador de movimientos más amplio y filtros con mayor área táctil.\n- Menos trabajo repetido al cargar datos cifrados.\n- Actualizaciones de widgets y recordatorios fuera del camino crítico de guardado.\n- Consulta USDT al abrir o volver a la app, sin consultas periódicas ni al actualizar BCV.\n- Transición directa y suave entre Inicio, Plan y Menú, conservando la posición de cada vista.\n\n### Transferencias sin cálculos extra\n\nEn transferencias USD → USD, indica lo enviado y lo recibido. La diferencia se registra automáticamente como comisión, junto con su porcentaje. Si envías $100 y recibes $97,50, la comisión es $2,50 (2,50%) y el débito total sigue siendo $100.\n\n### Cada cierre, en orden\n\nLas cuentas bancarias corrientes y de ahorro en bolívares registran Bs. 684 de mantenimiento: el día 31 o el primer día siguiente en los meses sin día 31, incluido febrero bisiesto. El movimiento indica el mes cerrado, por ejemplo, **Comisión mantenimiento mensual noviembre**, registrado el 1 de diciembre. Se conservan los cargos existentes y no se recuperan meses antiguos omitidos.\n\n**Build 100.** Compatible como actualización de las builds 98 y 99; conserva los datos existentes. La restauración de una copia reemplaza datos, no los combina. Guarda la contraseña: no se puede recuperar."
 }

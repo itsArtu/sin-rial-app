@@ -210,7 +210,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('0 operaciones'), findsOneWidget);
-      await tester.tap(find.text('Limpiar'));
+      await tester.tap(find.bySemanticsLabel('Limpiar filtros'));
       await tester.pumpAndSettle();
       expect(find.text('$count operaciones'), findsOneWidget);
       final priorTotal = mode == MovementHistoryMode.all

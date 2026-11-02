@@ -3,11 +3,11 @@ part of 'main.dart';
 const currentFeatureTour = '$_appVersionName+$_appBuildNumber';
 
 const bankMaintenanceAmount = 684.0;
-const bankMaintenancePolicy = 'ves-current-2026-09';
+const bankMaintenancePolicy = 'ves-bank-close-2026-11';
 
 String nextMaintenanceMonth([DateTime? now]) {
-  final date = now ?? DateTime.now();
-  final next = DateTime(date.year, date.month + 1);
+  final date = caracasTime(now ?? DateTime.now());
+  final next = DateTime(date.year, date.month + (date.day == 31 ? 2 : 1));
   return '${next.year}-${next.month.toString().padLeft(2, '0')}';
 }
 
@@ -155,29 +155,39 @@ class _ReleaseTourState extends State<ReleaseTour> {
   ];
   static const releasePages = [
     (
-      'Sin Rial 3.5',
+      'Sin Rial $_appVersionName',
       'Tus cuentas, movimientos y preferencias siguen contigo. Descubre las novedades de esta actualización.',
       CupertinoIcons.sparkles,
     ),
     (
       'Movimientos al instante',
-      'La moneda se adapta a tu cuenta. Fecha, hora, categoría, comisiones y totales permanecen visibles, con un teclado más cómodo.',
+      'Buscador más amplio, filtros más cómodos y una transición suave y directa entre Inicio, Plan y Menú.',
       CupertinoIcons.calendar,
     ),
     (
-      'Transferencias más simples',
-      'Monto enviado y recibido, detalles siempre visibles y tasa automática entre dólares y bolívares. Tus balances se actualizan al guardar.',
+      'Tus datos van contigo',
+      'Exporta una copia protegida con contraseña e impórtala en otro dispositivo desde Ajustes. Tu PIN no se comparte con la copia.',
+      CupertinoIcons.lock_shield,
+    ),
+    (
+      'USDT al abrir',
+      'La cotización USDT se consulta al abrir la app. Entre aperturas se conserva la última disponible; BCV mantiene su actualización habitual.',
+      CupertinoIcons.arrow_clockwise,
+    ),
+    (
+      'Decimales consistentes',
+      'Importes y conversiones con dos decimales sin redondear hacia arriba, también al copiar desde la calculadora.',
+      CupertinoIcons.number,
+    ),
+    (
+      'Transferencias claras',
+      'En transferencias entre cuentas en dólares, ingresa lo enviado y lo recibido. La diferencia y su porcentaje se registran como comisión sin descontarla dos veces.',
       CupertinoIcons.arrow_right_arrow_left,
     ),
     (
-      'Todo en su lugar',
-      'Categorías renovadas, logos en tus cuentas y títulos más claros. Tus planes, deudas y movimientos siguen conectados.',
-      CupertinoIcons.square_grid_2x2,
-    ),
-    (
-      'Tu mes, más claro',
-      'Toca la gráfica, una categoría o una cuenta para consultar sus movimientos. Porcentajes, comisiones y totales se mantienen al día.',
-      CupertinoIcons.chart_pie,
+      'Mantenimiento al cierre',
+      'Bs. 684 para cuentas bancarias corrientes y de ahorro en bolívares. Se registra el día 31 o el 1 siguiente, con el nombre del mes que cerró.',
+      CupertinoIcons.calendar,
     ),
   ];
   List<(String, String, IconData)> get pages =>

@@ -27,14 +27,17 @@ class HomeLedgerSnapshot {
     expenses = 0;
     for (final account in accounts) {
       final amount = numberValue(account['balance']);
-      if (account['currency'] == 'USD') usd += amount;
-      if (account['currency'] == 'VES') ves += amount;
+      if (account['currency'] == 'USD') usd = moneyAdd(usd, amount);
+      if (account['currency'] == 'VES') ves = moneyAdd(ves, amount);
     }
     for (final account in balanceAccounts) {
       final amount = numberValue(account['balance']);
       final currency = account['currency']?.toString() ?? 'USD';
-      total += app.convertForHome(amount, currency, app.homeBalanceCurrency);
-      totalVes += app.toVes(amount, currency);
+      total = moneyAdd(
+        total,
+        app.convertForHome(amount, currency, app.homeBalanceCurrency),
+      );
+      totalVes = moneyAdd(totalVes, app.toVes(amount, currency));
     }
     for (final movement in movements) {
       final date = parseMovementDate(movement['date']?.toString());
@@ -42,11 +45,20 @@ class HomeLedgerSnapshot {
       final amount = numberValue(movement['amount']);
       final fee = numberValue(movement['feeAmount']);
       if (movement['type'] == 'income') {
-        income += app.movementToUsd(movement, math.max(0.0, amount - fee));
+        income = moneyAdd(
+          income,
+          app.movementToUsd(
+            movement,
+            math.max(0.0, moneySubtract(amount, fee)),
+          ),
+        );
       } else if (isExpenseType(movement['type']?.toString())) {
-        expenses += app.movementToUsd(movement, amount + fee);
+        expenses = moneyAdd(
+          expenses,
+          app.movementToUsd(movement, moneyAdd(amount, fee)),
+        );
       } else if (movement['type'] == 'transfer' && fee > 0) {
-        expenses += app.movementToUsd(movement, fee);
+        expenses = moneyAdd(expenses, app.movementToUsd(movement, fee));
       }
     }
     trend = buildBalanceTrend(
@@ -106,6 +118,7 @@ const rateStateKeys = {
   'previousUsdtRate',
   'usdtRateUpdatedAt',
   'usdtLastRateMillis',
+  'usdtRateHistory',
   'rateLastAttemptMillis',
   'rateFetchStatus',
   'eurRateFetchStatus',
@@ -118,20 +131,36 @@ Decimal _decimal(num value) {
 }
 
 int moneyCents(num value) =>
-    (_decimal(value).round(scale: 2) * Decimal.fromInt(100)).toBigInt().toInt();
+    (_decimal(value).truncate(scale: 2) * Decimal.fromInt(100))
+        .toBigInt()
+        .toInt();
 
 double moneyRound(num value) => moneyCents(value) / 100;
 double moneyAdd(num a, num b) => (moneyCents(a) + moneyCents(b)) / 100;
 double moneySubtract(num a, num b) => (moneyCents(a) - moneyCents(b)) / 100;
 
-double moneyConvert(num amount, num multiplier, [num divisor = 1]) {
+Decimal _convertedDecimal(num amount, num multiplier, num divisor) {
   if (!divisor.isFinite || divisor <= 0) {
     throw const FormatException('Tasa no valida');
   }
   return ((_decimal(amount) * _decimal(multiplier)) / _decimal(divisor))
-      .toDecimal(scaleOnInfinitePrecision: 12)
-      .round(scale: 2)
-      .toDouble();
+      .toDecimal(scaleOnInfinitePrecision: 12);
+}
+
+double moneyConvert(num amount, num multiplier, [num divisor = 1]) =>
+    _convertedDecimal(
+      amount,
+      multiplier,
+      divisor,
+    ).truncate(scale: 2).toDouble();
+
+double debtCreditForPayment(double amount, double quote) {
+  final credit = moneyConvert(amount, 1, quote);
+  final nextCent = moneyAdd(credit, .01);
+  // Recover the debt cents whose forward conversion was truncated to VES cents.
+  return quote >= 1 && moneyConvert(nextCent, quote) == moneyRound(amount)
+      ? nextCent
+      : credit;
 }
 
 List<double> splitInstallments(double amount, int count) {

@@ -1,5 +1,56 @@
 part of 'main.dart';
 
+class MovementFilterButton extends StatelessWidget {
+  const MovementFilterButton({
+    super.key,
+    required this.theme,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final RTheme theme;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    selected: selected,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48, maxWidth: 240),
+      child: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: selected ? theme.accent.withValues(alpha: .16) : theme.card,
+        borderRadius: BorderRadius.circular(24),
+        onPressed: onTap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? theme.accent : theme.ink,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              CupertinoIcons.chevron_down,
+              size: 14,
+              color: selected ? theme.accent : theme.muted,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class MovementFilterControls extends StatefulWidget {
   const MovementFilterControls({
     super.key,
@@ -20,6 +71,8 @@ class _MovementFilterControlsState extends State<MovementFilterControls> {
   String account = 'all', type = 'all', category = 'all', currency = 'all';
   DateTime? start, end;
   String dateLabel = 'Fechas';
+  int _categoryRevision = -1;
+  List<String> _categories = const [];
   @override
   void dispose() {
     debounce?.cancel();
@@ -90,16 +143,25 @@ class _MovementFilterControlsState extends State<MovementFilterControls> {
   Widget build(BuildContext context) {
     final t = widget.app.theme;
     final accounts = widget.app.maps('accounts');
-    final categories =
-        widget.app
-            .maps('movements')
-            .map((m) => m['category']?.toString() ?? '')
-            .where((c) => c.isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort();
+    if (_categoryRevision != widget.app.revision.value) {
+      _categoryRevision = widget.app.revision.value;
+      _categories =
+          widget.app
+              .maps('movements')
+              .map((m) => m['category']?.toString() ?? '')
+              .where((c) => c.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+    }
+    final categories = _categories;
     Widget chip(String label, bool active, VoidCallback action) =>
-        FilterChip(theme: t, label: label, selected: active, onTap: action);
+        MovementFilterButton(
+          theme: t,
+          label: label,
+          selected: active,
+          onTap: action,
+        );
     final hasFilters =
         query.text.isNotEmpty ||
         account != 'all' ||
@@ -118,21 +180,21 @@ class _MovementFilterControlsState extends State<MovementFilterControls> {
                 placeholder: 'Buscar movimientos',
                 style: TextStyle(
                   color: t.ink,
-                  fontSize: 13,
+                  fontSize: 16,
                   fontWeight: FontWeight.w500,
                 ),
                 placeholderStyle: TextStyle(
                   color: t.muted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
                 ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 6,
-                  vertical: 10,
+                  vertical: 18,
                 ),
                 prefixInsets: const EdgeInsetsDirectional.only(start: 14),
                 suffixInsets: const EdgeInsetsDirectional.only(end: 14),
-                itemSize: 18,
+                itemSize: 22,
                 itemColor: t.muted,
                 decoration: BoxDecoration(
                   color: t.field,
@@ -140,7 +202,8 @@ class _MovementFilterControlsState extends State<MovementFilterControls> {
                 ),
                 onChanged: (_) {
                   debounce?.cancel();
-                  debounce = Timer(const Duration(milliseconds: 220), emit);
+                  setState(() {});
+                  debounce = Timer(const Duration(milliseconds: 180), emit);
                 },
               ),
             ),
@@ -156,9 +219,13 @@ class _MovementFilterControlsState extends State<MovementFilterControls> {
                     dateLabel = 'Fechas';
                   });
                 },
-                child: Text(
-                  'Limpiar',
-                  style: TextStyle(fontSize: 12, color: t.accent),
+                child: Semantics(
+                  label: 'Limpiar filtros',
+                  child: Icon(
+                    CupertinoIcons.clear_circled,
+                    color: t.accent,
+                    size: 26,
+                  ),
                 ),
               ),
           ],
@@ -167,7 +234,7 @@ class _MovementFilterControlsState extends State<MovementFilterControls> {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
-            spacing: 6,
+            spacing: 8,
             children: [
               chip(
                 account == 'all'

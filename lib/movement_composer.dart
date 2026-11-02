@@ -435,7 +435,7 @@ extension _MovementComposer on _MovementEditorState {
                               ],
                             ),
                           ),
-                        if (receivedExchange)
+                        if (receivedExchange && currency != targetCurrency)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 2),
                             child: SizedBox(

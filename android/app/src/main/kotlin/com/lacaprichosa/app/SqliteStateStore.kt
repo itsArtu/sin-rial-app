@@ -47,6 +47,37 @@ internal class SqliteStateStore(private val context: Context, private val cipher
 
     fun readMain(): JSONObject = root().getJSONObject("main")
     fun uiRevision(): Long = root().optLong("uiRevision", 0L)
+    // One authenticated snapshot avoids a Keystore round trip for every row on startup.
+    fun readUiState(): JSONObject {
+        val root = root()
+        val cached = cachedUiState(root)
+        val collections = cached ?: fullState(root).also { cacheUiState(root, it) }
+        val state = JSONObject(root.getJSONObject("main").toString())
+        for (name in NativeJsonStore.partNames) {
+            if (collections.has(name)) state.put(name, collections.get(name))
+        }
+        return state
+    }
+
+    private fun cachedUiState(root: JSONObject): JSONObject? = runCatching {
+        val raw = db.rawQuery("SELECT payload FROM store_ui_cache WHERE id = 1", null).use {
+            if (!it.moveToFirst()) return null
+            it.getString(0)
+        }
+        val cached = JSONObject(cipher.decrypt("sqlite:v1:ui-cache", raw))
+        check(cached.getLong("revision") == root.optLong("uiRevision", 0L))
+        check(cached.getString("collections") == canonical(root.getJSONObject("collections")))
+        cached.getJSONObject("state")
+    }.getOrNull()
+
+    private fun cacheUiState(root: JSONObject, state: JSONObject) {
+        val cache = JSONObject().put("revision", root.optLong("uiRevision", 0L))
+            .put("collections", canonical(root.getJSONObject("collections"))).put("state", state)
+        db.insertWithOnConflict("store_ui_cache", null, ContentValues().apply {
+            put("id", 1)
+            put("payload", cipher.encrypt("sqlite:v1:ui-cache", cache.toString()))
+        }, SQLiteDatabase.CONFLICT_REPLACE).also { check(it != -1L) }
+    }
     fun readState(collections: Set<String> = NativeJsonStore.partNames.toSet()): JSONObject {
         require(collections.all { it in NativeJsonStore.partNames })
         return fullState(root(), collections)
@@ -62,11 +93,20 @@ internal class SqliteStateStore(private val context: Context, private val cipher
     fun write(main: JSONObject, parts: Map<String, Any>): Long {
         check(db.inTransaction())
         val root = root()
-        for ((name, value) in parts) replaceCollection(root, name, value)
+        val snapshot = cachedUiState(root)
+        for ((name, value) in parts) replaceCollection(root, name, value, snapshot?.opt(name))
         root.put("main", main)
         val revision = root.optLong("uiRevision", 0L) + 1L
         root.put("uiRevision", revision)
         saveRoot(root)
+        if (snapshot != null) {
+            val next = JSONObject(main.toString())
+            for (name in NativeJsonStore.partNames) {
+                val value = parts[name] ?: snapshot.opt(name)
+                if (value != null) next.put(name, value)
+            }
+            cacheUiState(root, next)
+        }
         return revision
     }
 
@@ -186,16 +226,28 @@ internal class SqliteStateStore(private val context: Context, private val cipher
         return state
     }
 
-    private fun replaceCollection(root: JSONObject, name: String, value: Any) {
+    private fun collectionEntries(name: String, value: Any): List<JSONObject> {
         require(name in NativeJsonStore.partNames)
-        val incoming = if (name == "savingsFunds") {
+        return if (name == "savingsFunds") {
             require(value is JSONObject) { "Invalid savings collection" }
             value.keys().asSequence().sorted().map { key -> JSONObject().put("key", key).put("value", value.get(key)) }.toList()
         } else {
             require(value is JSONArray) { "Invalid array collection" }
             (0 until value.length()).map { JSONObject().put("value", value.get(it)) }
         }
-        val previous = decode(name, rows(root, name))
+    }
+
+    private fun replaceCollection(root: JSONObject, name: String, value: Any, cached: Any? = null) {
+        val incoming = collectionEntries(name, value)
+        val verifiedRows = rows(root, name)
+        // Snapshot authentication binds values to the verified row digest and order.
+        val cachedEntries = cached?.let { collectionEntries(name, it) }
+        val previous = if (cachedEntries != null && cachedEntries.size == verifiedRows.size) {
+            verifiedRows.mapIndexed { index, row ->
+                val item = cachedEntries[index]
+                Decoded(row, canonical(item), item)
+            }
+        } else decode(name, verifiedRows)
         val available = mutableMapOf<String, ArrayDeque<Decoded>>()
         for (old in previous) available.getOrPut(identity(old.value)) { ArrayDeque() }.add(old)
         val retained = mutableSetOf<String>()
@@ -247,6 +299,10 @@ internal class SqliteStateStore(private val context: Context, private val cipher
         DatabaseErrorHandler { throw SQLiteDatabaseCorruptException("Protected database is corrupt; retained for recovery") }) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onConfigure(db: SQLiteDatabase) { db.execSQL("PRAGMA synchronous=FULL") }
+        override fun onOpen(db: SQLiteDatabase) {
+            super.onOpen(db)
+            db.execSQL("CREATE TABLE IF NOT EXISTS store_ui_cache (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)")
+        }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE store_meta (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)")
             for (name in NativeJsonStore.partNames) {

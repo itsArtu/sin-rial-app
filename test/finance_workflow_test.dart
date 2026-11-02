@@ -231,19 +231,19 @@ void main() {
     final search = tester.widget<CupertinoSearchTextField>(
       find.byType(CupertinoSearchTextField),
     );
-    final selector = tester.widget<AnimatedContainer>(
+    final selector = tester.widget<CupertinoButton>(
       find.descendant(
-        of: find.byType(FilterChip).first,
-        matching: find.byType(AnimatedContainer),
+        of: find.byType(MovementFilterButton).first,
+        matching: find.byType(CupertinoButton),
       ),
     );
     expect(
       (search.decoration as BoxDecoration).borderRadius,
-      (selector.decoration as BoxDecoration).borderRadius,
+      selector.borderRadius,
     );
     expect((search.decoration as BoxDecoration).color, app.theme.field);
-    expect((selector.decoration as BoxDecoration).color, app.theme.card);
-    expect(search.style?.fontSize, 13);
+    expect(selector.color, app.theme.card);
+    expect(search.style?.fontSize, 16);
     await tester.enterText(
       find.byType(CupertinoSearchTextField),
       'Compra 1999',
@@ -258,7 +258,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.tap(find.text('Limpiar'));
+    await tester.tap(find.bySemanticsLabel('Limpiar filtros'));
     await tester.pumpAndSettle();
     expect(find.text('2000 operaciones'), findsOneWidget);
     expect(app.maps('movements').length, 2000);

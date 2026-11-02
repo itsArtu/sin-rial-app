@@ -44,9 +44,9 @@ void main() {
         ),
   );
 
-  test('Maintenance activation is next calendar month including December', () {
-    expect(nextMaintenanceMonth(DateTime(2026, 10, 31)), '2026-11');
-    expect(nextMaintenanceMonth(DateTime(2026, 12, 31)), '2027-01');
+  test('Maintenance activation skips an already due closing day', () {
+    expect(nextMaintenanceMonth(DateTime.utc(2026, 10, 31, 16)), '2026-12');
+    expect(nextMaintenanceMonth(DateTime.utc(2026, 12, 31, 16)), '2027-02');
     final previous = defaultState()..['onboardingComplete'] = true;
     previous.remove('seenFeatureTour');
     expect(withDefaults(previous)['seenFeatureTour'], '');
@@ -239,50 +239,56 @@ void main() {
     expect(app.maps('movements').single['feeAmount'], 5);
     await tester.pumpWidget(const SizedBox.shrink());
   });
-  testWidgets('Current VES bank setup automatically schedules 684 next month', (
-    tester,
-  ) async {
-    final dynamic app = await fixtures.fixture(tester);
-    app.openAccountEditor(tester.element(find.byType(HomePage)));
-    await tester.pumpAndSettle();
-    await payments.choose(tester, 'Tipo de cuenta', 'Corriente');
-    await tester.enterText(field('Saldo'), '1000');
-    await tester.ensureVisible(find.text('Mantenimiento mensual'));
-    expect(find.text('Bs. 684,00'), findsOneWidget);
-    expect(field('Comisión mensual en Bs.'), findsNothing);
-    await tester.scrollUntilVisible(
-      find.text('Agregar cuenta'),
-      180,
-      scrollable: find
-          .descendant(
-            of: find.byType(AccountEditor),
-            matching: find.byType(Scrollable),
-          )
-          .first,
+  for (final bankType in ['Corriente', 'Ahorro']) {
+    testWidgets(
+      '$bankType VES bank setup automatically schedules 684 next close',
+      (tester) async {
+        final dynamic app = await fixtures.fixture(tester);
+        app.openAccountEditor(tester.element(find.byType(HomePage)));
+        await tester.pumpAndSettle();
+        await payments.choose(tester, 'Tipo de cuenta', bankType);
+        await tester.enterText(field('Saldo'), '1000');
+        await tester.ensureVisible(find.text('Mantenimiento mensual'));
+        expect(find.text('Bs. 684,00'), findsOneWidget);
+        expect(field('Comisión mensual en Bs.'), findsNothing);
+        await tester.scrollUntilVisible(
+          find.text('Agregar cuenta'),
+          180,
+          scrollable: find
+              .descendant(
+                of: find.byType(AccountEditor),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Agregar cuenta'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Agregar cuenta'));
+        await tester.pumpAndSettle();
+        final a = (app.maps('accounts') as List).singleWhere(
+          (a) => a['provider'] == '0102',
+        );
+        expect(a['maintenanceAmount'], 684);
+        expect(a['maintenancePolicy'], bankMaintenancePolicy);
+        expect(a['maintenanceEnabled'], true);
+        expect(a['maintenanceNextMonth'], nextMaintenanceMonth());
+        expect(app.maps('movements'), isEmpty);
+        app.saveAccount({
+          'id': a['id'],
+          'balance': 1000.0,
+          'name': 'Renamed',
+        }, editingId: a['id']);
+        expect(
+          app.accountById(a['id'])['maintenanceNextMonth'],
+          nextMaintenanceMonth(),
+        );
+        expect(
+          app.accountById(a['id'])['bankAccountType'],
+          bankType == 'Corriente' ? 'current' : 'savings',
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
     );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Agregar cuenta'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Agregar cuenta'));
-    await tester.pumpAndSettle();
-    final a = (app.maps('accounts') as List).singleWhere(
-      (a) => a['provider'] == '0102',
-    );
-    expect(a['maintenanceAmount'], 684);
-    expect(a['maintenancePolicy'], bankMaintenancePolicy);
-    expect(a['maintenanceEnabled'], true);
-    expect(a['maintenanceNextMonth'], nextMaintenanceMonth());
-    expect(app.maps('movements'), isEmpty);
-    app.saveAccount({
-      'id': a['id'],
-      'balance': 1000.0,
-      'name': 'Renamed',
-    }, editingId: a['id']);
-    expect(
-      app.accountById(a['id'])['maintenanceNextMonth'],
-      nextMaintenanceMonth(),
-    );
-    expect(app.accountById(a['id'])['bankAccountType'], 'current');
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  }
 }

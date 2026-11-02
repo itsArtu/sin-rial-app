@@ -1,5 +1,102 @@
 part of 'main.dart';
 
+class RetainedTabTransition extends StatefulWidget {
+  const RetainedTabTransition({
+    super.key,
+    required this.index,
+    required this.children,
+  });
+  final int index;
+  final List<Widget> children;
+  @override
+  State<RetainedTabTransition> createState() => _RetainedTabTransitionState();
+}
+
+class _RetainedTabTransitionState extends State<RetainedTabTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController motion =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 240),
+        value: 1,
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => previous = null);
+        }
+      });
+  final visited = <int>{};
+  int? previous;
+
+  @override
+  void initState() {
+    super.initState();
+    visited.add(widget.index);
+  }
+
+  @override
+  void didUpdateWidget(covariant RetainedTabTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index == widget.index) return;
+    visited.add(widget.index);
+    previous = oldWidget.index;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      motion.value = 1;
+      previous = null;
+    } else {
+      motion.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    motion.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: motion,
+    builder: (context, _) {
+      final progress = Curves.easeOutCubic.transform(motion.value);
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          for (var i = 0; i < widget.children.length; i++)
+            if (visited.contains(i))
+              Offstage(
+                key: ValueKey('retained-tab-$i'),
+                offstage: i != widget.index && i != previous,
+                child: TickerMode(
+                  enabled: i == widget.index,
+                  child: ExcludeFocus(
+                    excluding: i != widget.index,
+                    child: ExcludeSemantics(
+                      excluding: i != widget.index,
+                      child: IgnorePointer(
+                        ignoring: i != widget.index,
+                        child: Opacity(
+                          opacity: i == widget.index
+                              ? progress
+                              : (i == previous ? 1 - progress : 0),
+                          child: Transform.translate(
+                            offset: Offset(
+                              0,
+                              i == widget.index ? 5 * (1 - progress) : 0,
+                            ),
+                            child: widget.children[i],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+        ],
+      );
+    },
+  );
+}
+
 class AppPillSelector extends StatelessWidget {
   const AppPillSelector({
     super.key,
@@ -330,21 +427,23 @@ class CircleTool extends StatelessWidget {
     required this.icon,
     required this.label,
     this.onTap,
+    this.size = 40,
   });
   final RTheme theme;
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
+  final double size;
   @override
   Widget build(BuildContext context) => material.Tooltip(
     message: label,
     child: CupertinoButton(
       padding: EdgeInsets.zero,
-      minimumSize: const Size(44, 44),
+      minimumSize: Size(math.max(44, size), math.max(44, size)),
       onPressed: onTap,
       child: Container(
-        width: 40,
-        height: 40,
+        width: size,
+        height: size,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
@@ -353,7 +452,7 @@ class CircleTool extends StatelessWidget {
         ),
         child: Icon(
           icon,
-          size: 21,
+          size: size > 40 ? 24 : 21,
           color: onTap == null ? theme.muted : theme.ink,
         ),
       ),

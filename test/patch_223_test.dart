@@ -444,7 +444,7 @@ void main() {
             .widget<CupertinoTextField>(calculator.input('Monto'))
             .controller!
             .text,
-        '19.602,47',
+        '19.602,46',
       );
       expect(calculator.input('Tasa EUR/VES'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
@@ -460,7 +460,7 @@ void main() {
       await tester.enterText(rate, '1000.5678');
       await tester.pumpAndSettle();
       final dynamic editor = tester.state(find.byType(MovementEditor));
-      expect(editor.amount.text, '10.005,68');
+      expect(editor.amount.text, '10.005,67');
       await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.debtById('usdt')['status'], 'paid');

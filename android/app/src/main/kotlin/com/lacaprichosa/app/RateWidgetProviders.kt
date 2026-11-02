@@ -18,7 +18,6 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.floor
 
 class UsdRateWidgetProvider : AppWidgetProvider() {
     companion object {
@@ -106,7 +105,7 @@ object RateWidgetRenderer {
         val valid = current.isFinite() && current > 0
         val change = if (valid && previous.isFinite() && previous > 0) (current / previous - 1) * 100 else null
         views.setTextViewText(R.id.rate_pair, if (currency == "USDT") "USDT / VES" else "$currency / BCV")
-        val rateLabel = if (valid) "Bs. " + WidgetAppearance.amount(floor(current * 100) / 100) else "Sin tasa"
+        val rateLabel = if (valid) "Bs. " + WidgetAppearance.amount(current) else "Sin tasa"
         views.setTextViewText(R.id.rate_value, rateLabel)
         views.setViewVisibility(R.id.rate_change, if (change == null) View.GONE else View.VISIBLE)
         views.setTextViewText(R.id.rate_change, change?.let {

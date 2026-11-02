@@ -154,17 +154,20 @@ void main() {
     expect((zero['rows'] as List).first['excess'], r'$1,00');
   });
 
-  test('PDF converts combined fee and amount with the same cent rounding as the plan', () {
-    final result = budgetReport(
-      plan: plan,
-      items: items,
-      movements: [expense(1, 'Comida', .01, currency: 'VES', fee: .01)],
-      usdRate: 3,
-      eurRate: 4,
-    );
-    expect(result['spent'], r'$0,01');
-    expect((result['details'] as List).single['total'], r'$0,01');
-  });
+  test(
+    'PDF truncates combined fee and amount with the same cents as the plan',
+    () {
+      final result = budgetReport(
+        plan: plan,
+        items: items,
+        movements: [expense(1, 'Comida', .01, currency: 'VES', fee: .01)],
+        usdRate: 3,
+        eurRate: 4,
+      );
+      expect(result['spent'], r'$0,00');
+      expect((result['details'] as List).single['total'], r'$0,00');
+    },
+  );
 
   test('PDF renders a realistic summary, empty report and a multi-page movement ledger', () async {
     final font = await rootBundle.load('assets/fonts/Manrope-Medium.ttf');

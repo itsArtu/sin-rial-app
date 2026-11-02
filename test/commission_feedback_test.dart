@@ -198,16 +198,16 @@ void main() {
   );
 
   for (final width in [320.0, 390.0]) {
-    testWidgets('Transfer preview and commission dialog fit $width', (
+    testWidgets('Legacy conversion preview and commission dialog fit $width', (
       tester,
     ) async {
       final dynamic app = await fixtures.fixture(tester);
       tester.view.physicalSize = Size(width, 844);
+      app.mutate(() => app.accountById('target')['currency'] = 'VES');
+      app.saveMovement({...transfer(), 'targetCurrency': 'VES', 'rate': 100.0});
       app.openMovementEditor(
         tester.element(find.byType(HomePage)),
-        defaultType: 'transfer',
-        defaultAccountId: 'usd',
-        defaultAmount: 382.0,
+        movement: app.movementById('transfer'),
       );
       await tester.pumpAndSettle();
       await payment.choose(tester, 'Comisi\u00f3n', 'Manual');
@@ -240,7 +240,7 @@ void main() {
         tester
             .widget<Text>(find.byKey(const ValueKey('transfer-received-value')))
             .data,
-        r'$360,61',
+        'Bs. 36.061,00',
       );
       final field = find.byKey(const ValueKey('commission-value'));
       await tester.ensureVisible(field);
@@ -268,7 +268,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('movement-editor-save')));
       await tester.pumpAndSettle();
       expect(app.accountById('usd')['balance'], 618);
-      expect(app.accountById('target')['balance'], 360.61);
+      expect(app.accountById('target')['balance'], 36061);
       await fixtures.close(tester);
     });
   }

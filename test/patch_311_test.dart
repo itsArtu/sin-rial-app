@@ -85,7 +85,7 @@ void main() {
           unit: 'percent',
           value: 2.5,
         ),
-        3.13,
+        3.12,
       );
       expect(
         dollarOperationFee(

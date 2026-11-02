@@ -16,7 +16,7 @@ object NativeJsonStore {
     internal val rateKeys = listOf("bcvRateSnapshots", "bcvRateHistory", "rateCheckedDate", "rateLastFetchAttemptMillis",
         "rate", "previousRate", "lastRateDate", "rateEffectiveDate", "rateUpdatedAt", "lastRateMillis",
         "eurRate", "previousEurRate", "eurRateEffectiveDate", "eurRateUpdatedAt", "eurLastRateMillis",
-        "usdtRate", "previousUsdtRate", "usdtRateUpdatedAt", "usdtLastRateMillis",
+        "usdtRate", "previousUsdtRate", "usdtRateUpdatedAt", "usdtLastRateMillis", "usdtRateHistory",
         "rateLastAttemptMillis", "rateFetchStatus", "eurRateFetchStatus", "usdtRateFetchStatus")
 
     fun prefs(context: Context): SharedPreferences = context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
@@ -42,7 +42,7 @@ object NativeJsonStore {
     }
 
     @Synchronized fun readUiState(context: Context): Pair<String, Long> = SqliteStateStore(context, cipher).use { store ->
-        store.transaction { store.readState().toString() to store.uiRevision() }
+        store.transaction { store.readUiState().toString() to store.uiRevision() }
     }
 
     @Synchronized fun uiRevision(context: Context): Long = SqliteStateStore(context, cipher).use { store ->
@@ -73,7 +73,12 @@ object NativeJsonStore {
                 if (expectedRevision != null && expectedRevision != store.uiRevision()) throw StaleStateException()
                 val stored = store.readMain()
                 if (stored.optLong("rateLastAttemptMillis") > slim.optLong("rateLastAttemptMillis")) {
-                    for (key in rateKeys) if (stored.has(key)) slim.put(key, stored.get(key))
+                    for (key in rateKeys.filterNot { it.contains("usdt", ignoreCase = true) })
+                        if (stored.has(key)) slim.put(key, stored.get(key))
+                }
+                if (stored.optLong("usdtLastRateMillis") > slim.optLong("usdtLastRateMillis")) {
+                    for (key in rateKeys.filter { it.contains("usdt", ignoreCase = true) })
+                        if (stored.has(key)) slim.put(key, stored.get(key))
                 }
                 // Native authentication owns these fields, never a stale Flutter snapshot.
                 if (stored.optBoolean("nativeSecurityV1")) {

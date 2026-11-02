@@ -1,5 +1,21 @@
 part of 'main.dart';
 
+bool isDollarTransfer(Object? source, Object? target) =>
+    source == 'USD' && target == 'USD';
+
+double receivedDollarFee(double sent, double received) {
+  if (!sent.isFinite ||
+      !received.isFinite ||
+      sent <= 0 ||
+      received <= 0 ||
+      moneyCents(received) > moneyCents(sent)) {
+    throw const FormatException(
+      'El monto recibido debe ser mayor a cero y no superar el monto enviado.',
+    );
+  }
+  return moneySubtract(sent, received);
+}
+
 bool transferFeeMustBeAdded(
   Map<String, dynamic>? source,
   Map<String, dynamic>? target,

@@ -54,6 +54,72 @@ class SqliteStateStoreTest {
         db.rawQuery("SELECT COUNT(*) FROM $table", null).use { it.moveToFirst(); it.getInt(0) }
     }
 
+    @Test fun uiSnapshotKeepsLiveMainAndRemovesDeletedSecurityFields() {
+        NativeJsonStore.writeState(context, fixture().toString())
+        val first = JSONObject(NativeJsonStore.readUiState(context).first)
+        assertState(fixture(), first)
+        NativeJsonStore.updateMain(context) {
+            it.remove("pinHash")
+            it.remove("pinSalt")
+            it.put("pinEnabled", false)
+            it.put("rate", 889.579)
+        }
+        val fresh = JSONObject(NativeJsonStore.readUiState(context).first)
+        assertFalse(fresh.has("pinHash"))
+        assertFalse(fresh.has("pinSalt"))
+        assertEquals(889.579, fresh.getDouble("rate"), 0.0)
+        assertState(NativeJsonStore.readState(context), fresh)
+    }
+
+    @Test fun uiSnapshotRecoversFromCorruptionAndTracksChangedCollections() {
+        NativeJsonStore.writeState(context, fixture().toString())
+        NativeJsonStore.readUiState(context)
+        sql { it.execSQL("UPDATE store_ui_cache SET payload = 'corrupt'") }
+        assertState(fixture(), JSONObject(NativeJsonStore.readUiState(context).first))
+        NativeJsonStore.writeSplitState(context, NativeJsonStore.readMain(context).toString(),
+            mapOf("movements" to "[]"))
+        val fresh = JSONObject(NativeJsonStore.readUiState(context).first)
+        assertEquals(0, fresh.getJSONArray("movements").length())
+        assertState(NativeJsonStore.readState(context), fresh)
+    }
+
+    @Test fun cachedStartupUsesBoundedKeyOperationsForLargeHistory() {
+        val source = fixture()
+        source.put("movements", JSONArray().apply {
+            for (i in 0 until 1000) put(JSONObject().put("id", "m$i").put("amount", i + .25))
+        })
+        NativeJsonStore.writeState(context, source.toString())
+        NativeJsonStore.readUiState(context)
+        val key = javax.crypto.spec.SecretKeySpec(ByteArray(32) { (it + 1).toByte() }, "AES")
+        NativeJsonStore.cipher = StateCipher { key }
+        assertState(source, JSONObject(NativeJsonStore.readUiState(context).first))
+        assertTrue("Startup decryptions: ${NativeJsonStore.cipher.decryptions}", NativeJsonStore.cipher.decryptions <= 2)
+        source.getJSONArray("movements").getJSONObject(0).put("amount", 5.5)
+        NativeJsonStore.writeState(context, source.toString())
+        assertTrue("Save decryptions: ${NativeJsonStore.cipher.decryptions}", NativeJsonStore.cipher.decryptions <= 4)
+        assertState(source, JSONObject(NativeJsonStore.readUiState(context).first))
+    }
+
+    @Test fun failedSnapshotWriteRollsBackFinancialReplacement() {
+        NativeJsonStore.writeState(context, fixture().toString())
+        NativeJsonStore.readUiState(context)
+        sql { it.execSQL("CREATE TRIGGER fail_snapshot BEFORE INSERT ON store_ui_cache BEGIN SELECT RAISE(ABORT, 'full'); END") }
+        assertThrows(Exception::class.java) {
+            NativeJsonStore.writeSplitState(context, NativeJsonStore.readMain(context).toString(), mapOf("movements" to "[]"))
+        }
+        assertState(fixture(), NativeJsonStore.readState(context))
+    }
+
+    @Test fun independentUsdtTimestampPreventsBcvRefreshFromRevertingTheQuote() {
+        NativeJsonStore.writeState(context, fixture().put("usdtRate", 1000).put("usdtLastRateMillis", 200).toString())
+        val stale = NativeJsonStore.readMain(context).put("rateLastAttemptMillis", 900)
+            .put("usdtRate", 900).put("usdtLastRateMillis", 100)
+        NativeJsonStore.writeSplitState(context, stale.toString(), emptyMap())
+        val result = NativeJsonStore.readMain(context)
+        assertEquals(1000.0, result.getDouble("usdtRate"), 0.0)
+        assertEquals(900L, result.getLong("rateLastAttemptMillis"))
+    }
+
     @Test fun plaintextMigrationKeepsEveryFieldAndCollectionAndUsesSeparateTables() {
         val source = fixture()
         legacy.edit().putString("state", source.toString()).putLong("daily_reminder_next_millis", 1234).commit()

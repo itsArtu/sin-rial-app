@@ -4,6 +4,8 @@ import android.graphics.Color
 import org.json.JSONObject
 import java.text.NumberFormat
 import java.util.Locale
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 class WidgetAppearance(state: JSONObject) {
     val dark = state.optBoolean("darkMode", true)
@@ -41,6 +43,7 @@ class WidgetAppearance(state: JSONObject) {
 
     companion object {
         fun amount(value: Double): String = NumberFormat.getNumberInstance(Locale.forLanguageTag("es-VE"))
-            .apply { minimumFractionDigits = 2; maximumFractionDigits = 2 }.format(value)
+            .apply { minimumFractionDigits = 2; maximumFractionDigits = 2; roundingMode = RoundingMode.DOWN }
+            .format(BigDecimal.valueOf(value).setScale(2, RoundingMode.DOWN))
     }
 }

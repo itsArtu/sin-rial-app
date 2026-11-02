@@ -19,6 +19,8 @@ import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 open class MainActivity : FlutterFragmentActivity() {
     protected open val quickAccess: Boolean = false
@@ -30,6 +32,7 @@ open class MainActivity : FlutterFragmentActivity() {
     private val screenPrivacy by lazy { ScreenPrivacyController(this) }
     private var pdfResult: MethodChannel.Result? = null
     private var pdfBytes: ByteArray? = null
+    private val backupDocuments = BackupDocuments(this)
     private val createPdf = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         val bytes = pdfBytes
         pdfBytes = null
@@ -55,6 +58,20 @@ open class MainActivity : FlutterFragmentActivity() {
     companion object {
         private val updateExecutor = Executors.newSingleThreadExecutor()
         private val stateExecutor = Executors.newSingleThreadExecutor()
+        private val refreshExecutor = Executors.newSingleThreadScheduledExecutor()
+        private var pendingRefresh: ScheduledFuture<*>? = null
+        @Synchronized private fun refreshDependents(context: Context) {
+            pendingRefresh?.cancel(false)
+            pendingRefresh = refreshExecutor.schedule({
+                runCatching { DailyReminderScheduler.schedule(context) }
+                runCatching { RateUpdateScheduler.schedule(context) }
+                runCatching { MovementWidgetProvider.updateAll(context) }
+                runCatching { UsdRateWidgetProvider.updateAll(context) }
+                runCatching { EurRateWidgetProvider.updateAll(context) }
+                runCatching { UsdtRateWidgetProvider.updateAll(context) }
+                runCatching { CalculatorWidgetProvider.updateAll(context) }
+            }, 350, TimeUnit.MILLISECONDS)
+        }
         const val ACTION_WIDGET_MOVEMENT = "com.lacaprichosa.app.WIDGET_MOVEMENT"
         const val EXTRA_WIDGET_MOVEMENT_TYPE = "movement_type"
     }
@@ -92,6 +109,7 @@ open class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        backupDocuments.close()
         pdfResult?.error("PDF_INTERRUPTED", "La exportacion fue interrumpida", null)
         pdfResult = null
         pdfBytes = null
@@ -105,6 +123,10 @@ open class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             if (calculatorAccess && call.method !in CalculatorAccess.allowedMethods) {
                 result.error("CALCULATOR_ONLY", "Abre Sin Rial para acceder a tus datos", null)
+                return@setMethodCallHandler
+            }
+            if (call.method == "exportBackupBytes" || call.method == "pickBackupBytes") {
+                backupDocuments.handle(call, result)
                 return@setMethodCallHandler
             }
             if (call.method == "readAppearance" || call.method == "readCalculatorState") {
@@ -183,13 +205,7 @@ open class MainActivity : FlutterFragmentActivity() {
                                 loadedRevision = if (call.method == "writeState") NativeJsonStore.writeState(this, state, revision)
                                 else NativeJsonStore.writeSplitState(this, state,
                                     call.argument<Map<String, String>>("parts") ?: emptyMap(), revision)
-                                runCatching { DailyReminderScheduler.schedule(this) }
-                                runCatching { RateUpdateScheduler.schedule(this) }
-                                runCatching { MovementWidgetProvider.updateAll(this) }
-                                runCatching { UsdRateWidgetProvider.updateAll(this) }
-                                runCatching { EurRateWidgetProvider.updateAll(this) }
-                                runCatching { UsdtRateWidgetProvider.updateAll(this) }
-                                runCatching { CalculatorWidgetProvider.updateAll(this) }
+                                refreshDependents(applicationContext)
                                 true
                             }
                         }
