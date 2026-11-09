@@ -93,7 +93,7 @@ void main() {
     expect(find.byType(ReleaseTour), findsOneWidget);
     await tester.tap(find.text('Siguiente'));
     await tester.pumpAndSettle();
-    expect(find.text('Movimientos al instante'), findsOneWidget);
+    expect(find.text('Deudas saldadas, sin residuos'), findsOneWidget);
     await tester.tap(find.text('Omitir'));
     await tester.pumpAndSettle();
     expect(find.byType(HomePage), findsOneWidget);

@@ -26,6 +26,42 @@ void main() {
 
   for (final kind in ['payable', 'receivable']) {
     testWidgets(
+      'Repaired $kind debt can delete and undo an old payment exactly',
+      (tester) async {
+        final dynamic app = await fixtures.fixture(tester);
+        app.mutate(() {
+          app.debtById('d').addAll({
+            'kind': kind,
+            'amount': 29.19,
+            'paidAmount': 29.18,
+            'status': 'paid',
+          });
+          app.state['movements'] = [
+            {
+              ...fixtures.movement(
+                kind == 'payable' ? 'expense' : 'income',
+                amount: 9.73,
+              ),
+              'feeAmount': 0.0,
+              'debtId': 'd',
+              'debtAppliedAmount': 9.729999999999999,
+            },
+          ];
+        });
+        expect(debtRemainingAmount(app.debtById('d')), 0);
+        app.deleteMovement(app.movementById('m'));
+        expect(app.debtById('d')['paidAmount'], 19.46);
+        expect(debtRemainingAmount(app.debtById('d')), 9.73);
+        expect(app.debtById('d')['status'], 'pending');
+        expect(app.undoLastOperation(), isTrue);
+        expect(debtRemainingAmount(app.debtById('d')), 0);
+        expect(app.accountById('a')['balance'], 100);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
       'Fixed $kind supports a partial payment, edit, delete and undo',
       (tester) async {
         final dynamic app = await fixtures.fixture(tester);

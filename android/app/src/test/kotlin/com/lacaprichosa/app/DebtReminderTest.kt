@@ -55,7 +55,28 @@ class DebtReminderTest {
         DailyReminderScheduler.schedule(context)
     }
 
-    private fun deliver() = DailyReminderReceiver().onReceive(context, Intent())
+    private fun deliver() = DailyReminderReceiver().deliver(context)
+
+    @Test fun settledResidualsDoNotNotifyButAGenuineCentStillDoes() {
+        assertNull(DebtReminder.from(debt().put("paidAmount", 99.999999999)))
+        assertNull(DebtReminder.from(debt().put("paidAmount", 99.99).put("status", "paid")))
+        assertNotNull(DebtReminder.from(debt().put("paidAmount", 99.99).put("status", "pending")))
+        assertNotNull(DebtReminder.from(debt().put("paidAmount", 99.98).put("status", "paid")))
+        val truncated = DebtReminder.from(debt().put("paidAmount", 99.999))!!
+        assertEquals(9999L, truncated.paidCents)
+        save(debt().put("paidAmount", 99.99).put("status", "paid"))
+        deliver()
+        assertTrue(manager.activeNotifications.isEmpty())
+    }
+
+    @Test fun reminderTextDistinguishesDueTodayTomorrowAndOverdue() {
+        val notice = DebtReminder.from(debt().put("paidAmount", 25))!!
+        assertEquals("Pago para hoy", notice.notificationTitle(at(2026, 10, 2)))
+        assertEquals("Pago para ma\u00f1ana", notice.notificationTitle(at(2026, 10, 1)))
+        assertEquals("Pago vencido", notice.notificationTitle(at(2026, 10, 3)))
+        assertTrue(notice.text(at(2026, 10, 3)).contains("venci\u00f3 ayer"))
+        assertTrue(notice.text(at(2026, 10, 4)).contains("venci\u00f3 hace 2 d\u00edas"))
+    }
 
     @Test fun paidDeletedAndDisabledNoticesAreRemovedAndNeverRedelivered() {
         for (kind in listOf("payable", "receivable")) {

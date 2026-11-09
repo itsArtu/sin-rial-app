@@ -63,6 +63,7 @@ void main() {
     '3.5.0+95',
     '3.5.0+96',
     '3.5.0+97',
+    '3.5.1+100',
   ]) {
     testWidgets('Older version $previous gets only release news, once', (
       tester,
@@ -75,7 +76,7 @@ void main() {
       state.remove('pendingAppTour');
       await tester.pumpWidget(RialApp(initialState: withDefaults(state)));
       await tester.pumpAndSettle();
-      expect(find.text('Novedades de 3.5.1'), findsOneWidget);
+      expect(find.text('Novedades de 3.5.2'), findsOneWidget);
       expect(find.byType(ReleaseTour), findsOneWidget);
       expect(find.text('Conoce Sin Rial'), findsNothing);
       await tester.tap(find.text('Omitir'));
@@ -96,7 +97,7 @@ void main() {
     final dynamic app = await fixtures.fixture(tester);
     app.mutate(() => app.state['seenFeatureTour'] = '');
     await tester.pumpAndSettle();
-    for (var step = 0; step < 6; step++) {
+    for (var step = 0; step < 3; step++) {
       await tester.tap(find.text('Siguiente'));
       await tester.pumpAndSettle();
     }

@@ -52,8 +52,12 @@ object DailyReminderScheduler {
         }
         val exact = canScheduleExact(context)
         val scheduleKey = "${hour.coerceIn(0, 23)}:${minute.coerceIn(0, 59)}:${TimeZone.getDefault().id}:$exact"
-        // Unrelated saves must not postpone an alarm already waiting to be delivered.
-        if (!force && existing != null && prefs.getString(SCHEDULE_KEY, "") == scheduleKey) return
+        val now = System.currentTimeMillis()
+        val previous = prefs.getLong("daily_reminder_next_millis", 0L)
+        val sameSchedule = prefs.getString(SCHEDULE_KEY, "") == scheduleKey
+        // Give a delayed alarm a short grace period, but repair a stale PendingIntent
+        // after a missed delivery instead of leaving reminders disabled indefinitely.
+        if (!force && existing != null && sameSchedule && previous > now - 15 * 60 * 1000L) return
         val pending = PendingIntent.getBroadcast(
             context,
             REQUEST_CODE,
@@ -61,7 +65,12 @@ object DailyReminderScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarm.cancel(pending)
-        val trigger = nextReminderTime(hour, minute)
+        val next = nextReminderTime(hour, minute, now)
+        val today = Calendar.getInstance().apply { timeInMillis = now }
+        val nextDay = Calendar.getInstance().apply { timeInMillis = next }
+        val missedToday = !force && sameSchedule && previous in 1..now &&
+            DebtReminder.dayNumber(nextDay) > DebtReminder.dayNumber(today)
+        val trigger = if (missedToday) now + 1000L else next
         var scheduledExactly = exact
         try {
             if (exact) {

@@ -26,8 +26,7 @@ List<double> debtInstallmentPaidAmounts(Map<String, dynamic> debt) {
   final paid = List<int>.filled(amounts.length, 0);
   var available = math.max(
     0,
-    moneyCents(numberValue(debt['paidAmount'])) -
-        moneyCents(debtInitialAmount(debt)),
+    moneyCents(debtPaidAmount(debt)) - moneyCents(debtInitialAmount(debt)),
   );
   for (final entry in (debt['installmentPayments'] as Map? ?? {}).values) {
     if (entry is! Map || entry['index'] is! int) continue;
@@ -37,7 +36,7 @@ List<double> debtInstallmentPaidAmounts(Map<String, dynamic> debt) {
       available,
       math.min(
         amounts[index] - paid[index],
-        math.max(0, moneyCents(numberValue(entry['amount']))),
+        math.max(0, moneyCents(debtMoney(numberValue(entry['amount'])))),
       ),
     );
     paid[index] += value;
@@ -69,9 +68,9 @@ double debtMovementValue(
   final amount = numberValue(movement['amount']);
   final quote = numberValue(movement['debtExchangeRate']);
   return currency == target
-      ? moneyRound(amount)
+      ? debtMoney(amount)
       : quote > 0
-      ? moneyConvert(amount, 1, quote)
+      ? debtCreditForPayment(amount, quote)
       : moneyRound(
           convert(
             amount,
@@ -106,15 +105,16 @@ void validateInstallmentPayment(
     debt['paidAmount'] = math.max(
       0.0,
       moneySubtract(
-        numberValue(debt['paidAmount']),
+        debtPaidAmount(debt),
         previous.containsKey('debtAppliedAmount')
-            ? numberValue(previous['debtAppliedAmount'])
+            ? debtMoney(numberValue(previous['debtAppliedAmount']))
             : debtMovementValue(previous, debt, app.rate),
       ),
     );
     debt['installmentPayments'] = Map<String, dynamic>.from(
       debt['installmentPayments'] as Map? ?? {},
     )..remove(previous['id']);
+    debt['status'] = 'pending';
   }
   if (moneyCents(debtMovementValue(movement, debt, app.rate)) >
       moneyCents(debtInstallmentRemainingAmounts(debt)[index])) {

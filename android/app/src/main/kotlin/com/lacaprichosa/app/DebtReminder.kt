@@ -21,13 +21,24 @@ internal data class DebtReminder(
 
     fun isDue(now: Long): Boolean = daysLeft(now).let { it < 0 || it in setOf(0L, 1L, 3L, 5L, 7L) }
 
+    fun notificationTitle(now: Long): String {
+        val name = if (kind == "cobro") "Cobro" else "Pago"
+        return when {
+            daysLeft(now) < 0 -> "$name vencido"
+            daysLeft(now) == 0L -> "$name para hoy"
+            daysLeft(now) == 1L -> "$name para ma\u00f1ana"
+            else -> "Pr\u00f3ximo $kind"
+        }
+    }
+
     fun text(now: Long): String {
         val days = daysLeft(now)
         val time = when {
             days > 1 -> "vence en $days d\u00edas"
             days == 1L -> "vence ma\u00f1ana"
             days == 0L -> "vence hoy"
-            else -> "est\u00e1 atrasado ${-days} d\u00eda(s)"
+            days == -1L -> "venci\u00f3 ayer"
+            else -> "venci\u00f3 hace ${-days} d\u00edas"
         }
         if (hideAmounts) return "Tienes un $kind que $time. Abre Sin Rial para ver el detalle."
         val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("es-VE")).apply {
@@ -38,7 +49,7 @@ internal data class DebtReminder(
             val symbol = when (currency) { "VES" -> "Bs."; "USD" -> "$"; "EUR" -> "EUR"; else -> currency }
             return "$symbol ${formatter.format(BigDecimal.valueOf(cents, 2))}"
         }
-        return "$title $time.\n${if (kind == "cobro") "Cobrado" else "Abonado"}: ${money(paidCents)} de ${money(totalCents)}. Pendiente: ${money(totalCents - paidCents)}."
+        return "$title: $time.\nPendiente: ${money(totalCents - paidCents)}. ${if (kind == "cobro") "Cobrado" else "Abonado"}: ${money(paidCents)} de ${money(totalCents)}."
     }
 
     fun signature(now: Long) = digest("$kind:${dayNumber(due)}:$totalCents:$paidCents:$currency:$hideAmounts:${text(now)}")
@@ -62,6 +73,7 @@ internal data class DebtReminder(
             val amount = cents(debt, "amount") ?: return null
             val paid = cents(debt, "paidAmount") ?: return null
             if (amount <= 0 || paid >= amount || paid < 0) return null
+            if (debt.optString("status") == "paid" && amount - paid <= 1L) return null
             val hasInstallments = debt.optBoolean("hasInstallments") || debt.optDouble("installments", 0.0) > 1 ||
                 debt.optDouble("installmentAmount", 0.0) > 0 || debt.optString("paymentFrequency").isNotBlank()
             val index = if (hasInstallments) installmentIndex(debt, amount, paid) ?: return null else 0
@@ -123,7 +135,11 @@ internal data class DebtReminder(
         }
 
         private fun cents(debt: JSONObject, field: String): Long? = runCatching {
-            BigDecimal(debt.optString(field, "0")).movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact()
+            val value = BigDecimal(debt.optString(field, "0"))
+            val nearest = value.setScale(2, RoundingMode.HALF_UP)
+            val normalized = if (value.subtract(nearest).abs() <= BigDecimal("0.00000001")) nearest
+                else value.setScale(2, RoundingMode.DOWN)
+            normalized.movePointRight(2).longValueExact()
         }.getOrNull()
 
         private fun parseDate(value: String): Calendar? {

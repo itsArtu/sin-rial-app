@@ -63,11 +63,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.5.1',
+  defaultValue: '3.5.2',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 100,
+  defaultValue: 101,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -787,6 +787,10 @@ Map<String, dynamic> withDefaults(Map<String, dynamic> source) {
     migrateBudgetPlans(state);
   }
   migrateCategoryNames(state);
+  state['debts'] = [
+    for (final debt in state['debts'] as List)
+      if (debt is Map) normalizeDebtMoney(debt.cast<String, dynamic>()),
+  ];
   for (final item in state['accounts'] as List) {
     if (item is Map && isWalletProvider(item['provider']?.toString() ?? '')) {
       item['kind'] = 'wallet';
@@ -2282,7 +2286,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         : rate;
     final savedQuote = numberValue(movement['debtExchangeRate']);
     final converted = movementCurrency == debtCurrency
-        ? moneyRound(numberValue(movement['amount']))
+        ? debtMoney(numberValue(movement['amount']))
         : savedQuote > 0
         ? debtCreditForPayment(numberValue(movement['amount']), savedQuote)
         : moneyRound(
@@ -2293,14 +2297,12 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
               movementRate,
             ),
           );
-    final total = numberValue(debt['amount']);
+    final total = debtMoney(numberValue(debt['amount']));
     final delta = direction < 0 && movement.containsKey('debtAppliedAmount')
-        ? numberValue(movement['debtAppliedAmount'])
+        ? debtMoney(numberValue(movement['debtAppliedAmount']))
         : math.min(
             converted,
-            direction > 0
-                ? debtRemainingAmount(debt)
-                : numberValue(debt['paidAmount']),
+            direction > 0 ? debtRemainingAmount(debt) : debtPaidAmount(debt),
           );
     if (direction > 0) movement['debtAppliedAmount'] = delta;
     final assignments = Map<String, dynamic>.from(
@@ -2318,10 +2320,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     }
     final paid = math.max(
       0.0,
-      math.min(
-        total,
-        moneyAdd(numberValue(debt['paidAmount']), delta * direction),
-      ),
+      math.min(total, moneyAdd(debtPaidAmount(debt), delta * direction)),
     );
     debt['paidAmount'] = paid;
     debt['status'] = paid + .0001 >= total ? 'paid' : 'pending';
@@ -16066,7 +16065,7 @@ bool movementTouchesCurrency(
 double debtRemainingAmount(Map<String, dynamic> debt) {
   return math.max(
     0.0,
-    moneySubtract(numberValue(debt['amount']), numberValue(debt['paidAmount'])),
+    moneySubtract(debtMoney(numberValue(debt['amount'])), debtPaidAmount(debt)),
   );
 }
 

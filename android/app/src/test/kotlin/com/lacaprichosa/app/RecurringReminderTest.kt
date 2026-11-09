@@ -46,7 +46,7 @@ class RecurringReminderTest {
             .put("movements", if (confirmed) JSONArray().put(JSONObject().put("id", "m").put("recurringId", "r").put("recurringDate", "2026-10-06")) else JSONArray()).toString())
         DailyReminderScheduler.schedule(context)
     }
-    private fun deliver() = DailyReminderReceiver().onReceive(context, Intent())
+    private fun deliver() = DailyReminderReceiver().deliver(context)
 
     @Test fun noticeDoesNotWriteMoneyAndDoesNotDuplicateSameDay() {
         save()

@@ -15,6 +15,11 @@ import java.util.Calendar
 
 class DailyReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        val appContext = context.applicationContext
+        ReminderWork.run(goAsync()) { deliver(appContext) }
+    }
+
+    internal fun deliver(context: Context) {
         // Ledger maintenance does not depend on notification permission.
         runCatching { BankMaintenance.apply(context) }
         DailyReminderScheduler.schedule(context, force = true)
@@ -52,7 +57,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
             }
             if (enabled && prefs.getLong("movement_reminder_sent_day", Long.MIN_VALUE) != day) {
                 manager.notify(ReminderNotifications.MOVEMENT_ID,
-                    notification(context, "Sin Rial", "Registra tus movimientos de hoy.", contentIntent))
+                    notification(context, "Tu balance, al d\u00eda", "Dedica un momento a registrar los ingresos y gastos de hoy. Tu pr\u00f3ximo balance estar\u00e1 al d\u00eda.", contentIntent))
                 edit.putLong("movement_reminder_sent_day", day)
             }
             val sent = runCatching { JSONObject(prefs.getString(ReminderNotifications.SENT_KEY, "{}")!!) }.getOrDefault(JSONObject())
@@ -62,7 +67,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
                 val delivery = "$day:$signature"
                 if (sent.optString(debt.tag) == delivery) continue
                 manager.notify(debt.tag, ReminderNotifications.DEBT_ID,
-                    notification(context, "Sin Rial: ${debt.kind} pendiente", debt.text(now), contentIntent, signature))
+                    notification(context, debt.notificationTitle(now), debt.text(now), contentIntent, signature))
                 sent.put(debt.tag, delivery)
             }
             edit.putString(ReminderNotifications.SENT_KEY, sent.toString()).apply()
@@ -74,7 +79,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
                 val delivery = "$day:${reminder.signature}"
                 if (recurringSent.optString(reminder.tag) == delivery) continue
                 manager.notify(reminder.tag, ReminderNotifications.RECURRING_ID,
-                    notification(context, "Sin Rial: movimiento recurrente", reminder.text, contentIntent, reminder.signature))
+                    notification(context, "Confirma tu ${reminder.kind} recurrente", reminder.text, contentIntent, reminder.signature))
                 recurringSent.put(reminder.tag, delivery)
             }
             prefs.edit().putString(ReminderNotifications.RECURRING_SENT_KEY, recurringSent.toString()).apply()

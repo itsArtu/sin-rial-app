@@ -89,9 +89,9 @@ void main() {
           const Offset(-400, 0),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Movimientos al instante'), findsOneWidget);
+        expect(find.text('Deudas saldadas, sin residuos'), findsOneWidget);
         expect(tester.getRect(find.text('Siguiente')), nextRect);
-        for (var i = 0; i < 5; i++) {
+        for (var i = 0; i < 2; i++) {
           await tester.tap(find.text('Siguiente'));
           await tester.pumpAndSettle();
         }
@@ -203,7 +203,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Siguiente'));
     await tester.pump();
-    expect(find.text('Movimientos al instante'), findsOneWidget);
+    expect(find.text('Deudas saldadas, sin residuos'), findsOneWidget);
     await tester.tap(find.text('Omitir'));
     await tester.pumpAndSettle();
     expect(find.byType(HomePage), findsOneWidget);

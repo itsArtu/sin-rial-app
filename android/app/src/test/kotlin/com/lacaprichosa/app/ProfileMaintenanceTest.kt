@@ -149,11 +149,11 @@ class ProfileMaintenanceTest {
     @Test fun birthdayFiresOncePerYearWithoutAgeAndCancelsWhenDateRemoved() {
         NativeJsonStore.writeState(context, birthday().put("birthdayReminderEnabled", false).toString())
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        DailyReminderReceiver().onReceive(context, Intent())
+        DailyReminderReceiver().deliver(context)
         assertEquals(1, manager.activeNotifications.size)
         assertEquals(BirthdayReminder.ID, manager.activeNotifications.single().id)
         manager.cancelAll()
-        DailyReminderReceiver().onReceive(context, Intent())
+        DailyReminderReceiver().deliver(context)
         assertTrue(manager.activeNotifications.isEmpty())
         NativeJsonStore.writeState(context, birthday().put("userBirthDate", "").toString())
         DailyReminderScheduler.schedule(context)

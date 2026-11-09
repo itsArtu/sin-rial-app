@@ -99,7 +99,7 @@ class DailyReminderSchedulerTest {
         SystemClock.setCurrentTimeMillis(at(2026, 9, 17, 19, 0))
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         shadowOf(manager).setNotificationsEnabled(false)
-        DailyReminderReceiver().onReceive(context, Intent())
+        DailyReminderReceiver().deliver(context)
         assertEquals(at(2026, 9, 18, 19, 0), shadowOf(alarm).scheduledAlarms.single().triggerAtMs)
         assertTrue(shadowOf(manager).allNotifications.isEmpty())
         assertEquals(false, DailyReminderScheduler.status(context)["notificationsAllowed"])
@@ -108,7 +108,7 @@ class DailyReminderSchedulerTest {
     @Test @Config(sdk = [24]) fun receiverDeliversAndRearmsOnOlderAndroid() {
         DailyReminderScheduler.schedule(context)
         SystemClock.setCurrentTimeMillis(at(2026, 9, 17, 19, 0))
-        DailyReminderReceiver().onReceive(context, Intent())
+        DailyReminderReceiver().deliver(context)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         assertEquals(1, shadowOf(manager).allNotifications.size)
         assertEquals(at(2026, 9, 18, 19, 0), shadowOf(alarm).scheduledAlarms.single().triggerAtMs)
@@ -117,10 +117,10 @@ class DailyReminderSchedulerTest {
     @Test fun clockAndTimezoneChangesRearmFromLocalTime() {
         DailyReminderScheduler.schedule(context)
         SystemClock.setCurrentTimeMillis(at(2026, 9, 17, 21, 0))
-        BootReceiver().onReceive(context, Intent(Intent.ACTION_TIME_CHANGED))
+        BootReceiver().reschedule(context, Intent(Intent.ACTION_TIME_CHANGED))
         assertEquals(at(2026, 9, 18, 19, 0), reminderAlarm().triggerAtMs)
         TimeZone.setDefault(TimeZone.getTimeZone("Europe/Madrid"))
-        BootReceiver().onReceive(context, Intent(Intent.ACTION_TIMEZONE_CHANGED))
+        BootReceiver().reschedule(context, Intent(Intent.ACTION_TIMEZONE_CHANGED))
         assertEquals(at(2026, 9, 18, 19, 0, "Europe/Madrid"), reminderAlarm().triggerAtMs)
     }
 
@@ -129,13 +129,48 @@ class DailyReminderSchedulerTest {
             AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED)) {
             DailyReminderScheduler.schedule(context)
             alarm.cancel(reminderAlarm().operation!!)
-            BootReceiver().onReceive(context, Intent(action))
+            BootReceiver().reschedule(context, Intent(action))
             assertEquals(0L, reminderAlarm().windowLengthMs)
         }
     }
 
     private fun reminderAlarm() = shadowOf(alarm).scheduledAlarms.single {
         shadowOf(it.operation!!).savedIntent.component?.className == DailyReminderReceiver::class.java.name
+    }
+
+    @Test fun staleAlarmIsRecoveredWithoutPostponingTodayUntilTomorrow() {
+        DailyReminderScheduler.schedule(context)
+        val old = reminderAlarm()
+        alarm.cancel(old.operation!!)
+        val now = at(2026, 9, 17, 19, 20)
+        SystemClock.setCurrentTimeMillis(now)
+        DailyReminderScheduler.schedule(context)
+        assertEquals(now + 1000L, reminderAlarm().triggerAtMs)
+        SystemClock.setCurrentTimeMillis(now + 1000L)
+        DailyReminderReceiver().deliver(context)
+        assertEquals(at(2026, 9, 18, 19, 0), reminderAlarm().triggerAtMs)
+    }
+
+    @Test fun staleAlarmBeforeTodaysSelectedTimeDoesNotSendAnEarlyNotice() {
+        DailyReminderScheduler.schedule(context)
+        SystemClock.setCurrentTimeMillis(at(2026, 9, 18, 10, 0))
+        DailyReminderScheduler.schedule(context)
+        assertEquals(at(2026, 9, 18, 19, 0), reminderAlarm().triggerAtMs)
+    }
+
+    @Test fun broadcastReturnsBeforeStorageWorkAndRearmsInBackground() {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        ReminderWork.executor.execute { entered.countDown(); release.await(5, java.util.concurrent.TimeUnit.SECONDS) }
+        assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        try {
+            DailyReminderReceiver().onReceive(context, Intent())
+            assertTrue(shadowOf(alarm).scheduledAlarms.isEmpty())
+        } finally {
+            release.countDown()
+            ReminderWork.executor.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        assertEquals(1, shadowOf(alarm).scheduledAlarms.size)
     }
 
     @Test fun nextLocalDayHandlesMidnightAndDaylightSaving() {

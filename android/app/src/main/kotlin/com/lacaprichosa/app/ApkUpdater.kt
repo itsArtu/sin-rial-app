@@ -8,11 +8,12 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.os.StatFs
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
 
 /** Download metadata is separate from the financial database. No financial data is sent. */
@@ -20,7 +21,6 @@ class ApkUpdater(private val context: Context) {
     private val prefs = context.getSharedPreferences("apk_update", Context.MODE_PRIVATE)
     private val manager get() = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     private val apk get() = File(File(context.filesDir, "updates"), "verified.apk")
-    private val download get() = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "sin-rial-update.apk")
 
     companion object {
         const val MAX_BYTES = 200L * 1024 * 1024
@@ -32,6 +32,36 @@ class ApkUpdater(private val context: Context) {
         }.getOrDefault(false)
 
         fun validDigest(value: String) = Regex("^[a-fA-F0-9]{64}$").matches(value)
+
+        internal fun copyDownload(input: InputStream, destination: File, expected: Long) {
+            require(expected in 1..MAX_BYTES) { "Tamano de APK no valido" }
+            check(destination.parentFile!!.isDirectory || destination.parentFile!!.mkdirs()) {
+                "No se pudo preparar el almacenamiento interno. Libera espacio y reintenta."
+            }
+            try {
+                destination.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(65536)
+                    var copied = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        copied += count
+                        require(copied <= expected) { "El tamano descargado no coincide con la APK publicada" }
+                        output.write(buffer, 0, count)
+                    }
+                    require(copied == expected) { "La descarga esta incompleta" }
+                }
+            } catch (error: Exception) {
+                destination.delete()
+                throw error
+            }
+        }
+
+        fun errorMessage(error: Exception): String = when (error) {
+            is IllegalArgumentException -> error.message ?: "No se pudo verificar la actualizacion"
+            is SecurityException -> "Android bloqueo la descarga. Revisa que el gestor de descargas este habilitado."
+            else -> "No se pudo preparar la actualizacion. Revisa el espacio disponible y vuelve a intentarlo."
+        }
 
         @Suppress("DEPRECATION")
         fun version(info: PackageInfo): Long = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
@@ -59,7 +89,6 @@ class ApkUpdater(private val context: Context) {
             val current = status()
             if (current["status"] in listOf("downloading", "paused", "ready")) return current
         }
-        require(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) != null) { "Almacenamiento no disponible" }
         require(StatFs(context.filesDir.path).availableBytes > size * 2 + 20 * 1024 * 1024) { "No hay espacio para la actualizacion" }
         cancel()
         val request = DownloadManager.Request(Uri.parse(url))
@@ -67,7 +96,8 @@ class ApkUpdater(private val context: Context) {
             .setDescription("Descargando actualizacion")
             .setMimeType("application/vnd.android.package-archive")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "sin-rial-update.apk")
+        // DownloadManager owns the destination. Some OEMs cannot create Android/data folders.
+        // Read its descriptor, never a device-specific external-storage path.
         val id = manager.enqueue(request)
         prefs.edit().putLong("downloadId", id).putString("sha256", digest.lowercase())
             .putLong("build", build).putLong("size", size).putString("version", versionName).commit()
@@ -77,7 +107,6 @@ class ApkUpdater(private val context: Context) {
     fun cancel() {
         val id = prefs.getLong("downloadId", -1)
         if (id >= 0) manager.remove(id)
-        download.delete()
         apk.delete()
         prefs.edit().clear().commit()
     }
@@ -103,17 +132,19 @@ class ApkUpdater(private val context: Context) {
             return when (cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))) {
                 DownloadManager.STATUS_SUCCESSFUL -> {
                     try {
-                        require(download.length() == total) { "La descarga esta incompleta" }
-                        apk.parentFile!!.mkdirs()
-                        download.copyTo(apk, overwrite = true)
+                        val descriptor = manager.openDownloadedFile(id)
+                            ?: error("Descarga no disponible")
+                        ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
+                            copyDownload(input, apk, total)
+                        }
                         verify()
                         prefs.edit().putBoolean("verified", true).commit()
-                        download.delete()
+                        manager.remove(id)
                         progress + ("status" to "ready")
                     } catch (error: Exception) {
                         apk.delete()
                         manager.remove(id)
-                        progress + mapOf("status" to "failed", "message" to (error.message ?: "No se pudo verificar la APK"))
+                        progress + mapOf("status" to "failed", "message" to errorMessage(error))
                     }
                 }
                 DownloadManager.STATUS_FAILED -> progress + mapOf("status" to "failed", "message" to "No se pudo descargar. Revisa tu conexion y el espacio disponible.")

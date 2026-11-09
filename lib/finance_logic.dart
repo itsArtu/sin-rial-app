@@ -139,6 +139,55 @@ double moneyRound(num value) => moneyCents(value) / 100;
 double moneyAdd(num a, num b) => (moneyCents(a) + moneyCents(b)) / 100;
 double moneySubtract(num a, num b) => (moneyCents(a) - moneyCents(b)) / 100;
 
+// Old debt totals can contain binary arithmetic residue (e.g. 29.189999999).
+// Only snap values effectively on a cent boundary; genuine fractions still truncate.
+double debtMoney(num value) {
+  final decimal = _decimal(value);
+  final nearest = decimal.round(scale: 2);
+  return (decimal - nearest).abs() <= Decimal.parse('0.00000001')
+      ? nearest.toDouble()
+      : moneyRound(value);
+}
+
+double debtPaidAmount(Map<String, dynamic> debt) {
+  final total = debtMoney(numberValue(debt['amount']));
+  final paid = debtMoney(numberValue(debt['paidAmount']));
+  final remaining = moneySubtract(total, paid);
+  // A historical settlement is evidence, not a blanket forgiveness of one cent.
+  return debt['status'] == 'paid' && remaining >= 0 && remaining <= .01
+      ? total
+      : paid;
+}
+
+Map<String, dynamic> normalizeDebtMoney(Map<String, dynamic> source) {
+  final debt = Map<String, dynamic>.from(source);
+  for (final key in [
+    'amount',
+    'paidAmount',
+    'initialAmount',
+    'installmentAmount',
+  ]) {
+    if (debt.containsKey(key)) debt[key] = debtMoney(numberValue(debt[key]));
+  }
+  debt['paidAmount'] = debtPaidAmount(debt);
+  if (numberValue(debt['amount']) > 0 &&
+      numberValue(debt['paidAmount']) >= numberValue(debt['amount'])) {
+    debt['status'] = 'paid';
+  }
+  if (debt['installmentPayments'] is Map) {
+    debt['installmentPayments'] = {
+      for (final entry in (debt['installmentPayments'] as Map).entries)
+        entry.key: entry.value is Map
+            ? {
+                ...entry.value as Map,
+                'amount': debtMoney(numberValue(entry.value['amount'])),
+              }
+            : entry.value,
+    };
+  }
+  return debt;
+}
+
 Decimal _convertedDecimal(num amount, num multiplier, num divisor) {
   if (!divisor.isFinite || divisor <= 0) {
     throw const FormatException('Tasa no valida');
@@ -174,19 +223,20 @@ List<double> splitInstallments(double amount, int count) {
 }
 
 double debtInitialAmount(Map<String, dynamic> debt) {
-  final initial = numberValue(debt['initialAmount']);
+  final initial = debtMoney(numberValue(debt['initialAmount']));
   return math.min(
-    numberValue(debt['amount']),
-    initial > 0 || debt['initialPaid'] != true
-        ? initial
-        : numberValue(debt['paidAmount']),
+    debtMoney(numberValue(debt['amount'])),
+    initial > 0 || debt['initialPaid'] != true ? initial : debtPaidAmount(debt),
   );
 }
 
 List<double> debtInstallmentAmounts(Map<String, dynamic> debt) {
   final principal = math.max(
     0.0,
-    moneySubtract(numberValue(debt['amount']), debtInitialAmount(debt)),
+    moneySubtract(
+      debtMoney(numberValue(debt['amount'])),
+      debtInitialAmount(debt),
+    ),
   );
   final count = debtInstallmentCount(debt);
   if (debt['installmentMode'] == 'auto' ||

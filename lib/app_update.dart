@@ -19,6 +19,7 @@ class _AppUpdatePageState extends State<AppUpdatePage>
   Map<String, dynamic> snapshot = {'status': 'starting'};
   Timer? timer;
   bool busy = false;
+  bool pollingStatus = false;
   bool foreground = true;
   bool needsPermission = false;
   String? error;
@@ -67,29 +68,32 @@ class _AppUpdatePageState extends State<AppUpdatePage>
   }
 
   Future<void> invoke(String method, [Map<String, dynamic>? arguments]) async {
-    if (busy || !mounted) return;
-    setState(() {
-      busy = true;
-      error = null;
-    });
+    if (busy || pollingStatus || !mounted) return;
+    final polling = method == 'apkUpdateStatus';
+    pollingStatus = polling;
+    busy = !polling;
+    if (!polling) {
+      setState(() => error = null);
+    }
     try {
       final response = await _storeChannel.invokeMethod<dynamic>(
         method,
         arguments,
       );
       if (!mounted) return;
-      setState(() {
-        if (response is Map) {
-          final next = Map<String, dynamic>.from(response);
-          if (next['status'] == 'permission') {
-            needsPermission = true;
-          } else if (next['status'] != 'install') {
+      if (response is Map) {
+        final next = Map<String, dynamic>.from(response);
+        if (next['status'] == 'permission') {
+          setState(() => needsPermission = true);
+        } else if (next['status'] == 'install') {
+          setState(() => needsPermission = false);
+        } else if (jsonEncode(snapshot) != jsonEncode(next) || error != null) {
+          setState(() {
             snapshot = next;
-          } else {
-            needsPermission = false;
-          }
+            error = null;
+          });
         }
-      });
+      }
     } on PlatformException catch (failure) {
       if (mounted)
         setState(
@@ -103,7 +107,9 @@ class _AppUpdatePageState extends State<AppUpdatePage>
               error = 'El actualizador no esta disponible en este dispositivo',
         );
     } finally {
-      if (mounted) setState(() => busy = false);
+      busy = false;
+      pollingStatus = false;
+      if (mounted && !polling) setState(() {});
     }
   }
 
@@ -146,16 +152,18 @@ class _AppUpdatePageState extends State<AppUpdatePage>
             ),
             const SizedBox(height: 24),
             Text(
-              switch (status) {
-                'ready' => 'Actualizacion verificada',
-                'installed' => 'Actualizacion instalada',
-                'paused' => 'Descarga en espera',
-                'downloading' =>
-                  'Descargando${progress == null ? '' : ' ${(progress * 100).floor()}%'}',
-                'failed' => 'Descarga interrumpida',
-                'idle' => 'Descarga cancelada',
-                _ => 'Preparando descarga',
-              },
+              error != null
+                  ? 'No se pudo completar la actualización'
+                  : switch (status) {
+                      'ready' => 'Actualizacion verificada',
+                      'installed' => 'Actualizacion instalada',
+                      'paused' => 'Descarga en espera',
+                      'downloading' =>
+                        'Descargando${progress == null ? '' : ' ${(progress * 100).floor()}%'}',
+                      'failed' => 'Descarga interrumpida',
+                      'idle' => 'Descarga cancelada',
+                      _ => 'Preparando descarga',
+                    },
               textAlign: TextAlign.center,
               style: TextStyle(color: t.ink, fontWeight: FontWeight.w600),
             ),

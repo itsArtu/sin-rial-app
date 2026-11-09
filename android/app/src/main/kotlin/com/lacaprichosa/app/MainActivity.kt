@@ -99,7 +99,7 @@ open class MainActivity : FlutterFragmentActivity() {
         screenPrivacy.onResume()
         // The first Flutter frame schedules these after readState has completed.
         if (loadedRevision != null) {
-            stateExecutor.execute { runCatching { DailyReminderScheduler.schedule(applicationContext) } }
+            refreshExecutor.execute { runCatching { DailyReminderScheduler.schedule(applicationContext) } }
         }
     }
 
@@ -169,12 +169,30 @@ open class MainActivity : FlutterFragmentActivity() {
                             } catch (_: Exception) { result.error("UPDATE_INSTALL", "Android no pudo abrir el instalador", null) }
                         }
                     } catch (error: Exception) {
-                        runOnUiThread { result.error("UPDATE_FAILED", error.message ?: "No se pudo actualizar", null) }
+                        runOnUiThread { result.error("UPDATE_FAILED", ApkUpdater.errorMessage(error), null) }
                     }
                 }
                 return@setMethodCallHandler
             }
-            if (call.method in setOf("readState", "readRateState", "stateChanged", "writeState", "writeSplitState", "configureSecurity", "disableSecurity", "verifyPin", "scheduleDailyReminder", "scheduleRateUpdate")) {
+            if (call.method == "scheduleDailyReminder" || call.method == "scheduleRateUpdate") {
+                val context = applicationContext
+                refreshExecutor.execute {
+                    val scheduled = runCatching {
+                        if (call.method == "scheduleDailyReminder") {
+                            DailyReminderScheduler.schedule(context,
+                                call.argument<Boolean>("enabled") ?: true,
+                                (call.argument<Number>("hour")?.toInt() ?: 19).coerceIn(0, 23),
+                                (call.argument<Number>("minute")?.toInt() ?: 0).coerceIn(0, 59))
+                        } else RateUpdateScheduler.schedule(context)
+                    }
+                    runOnUiThread {
+                        if (scheduled.isSuccess) result.success(true)
+                        else result.error("REMINDER_SCHEDULE", "No se pudo programar el recordatorio", null)
+                    }
+                }
+                return@setMethodCallHandler
+            }
+            if (call.method in setOf("readState", "readRateState", "stateChanged", "writeState", "writeSplitState", "configureSecurity", "disableSecurity", "verifyPin")) {
                 stateExecutor.execute {
                     try {
                         val response: Any = when (call.method) {
@@ -191,14 +209,6 @@ open class MainActivity : FlutterFragmentActivity() {
                                 requireNotNull(call.argument<String>("pin")), call.argument<Boolean>("biometrics") == true)
                             "disableSecurity" -> PinSecurity.disable(this, call.argument<String>("pin") ?: "")
                             "verifyPin" -> PinSecurity.verify(this, call.argument<String>("pin") ?: "")
-                            "scheduleDailyReminder" -> {
-                                val enabled = call.argument<Boolean>("enabled") ?: true
-                                val hour = (call.argument<Number>("hour")?.toInt() ?: 19).coerceIn(0, 23)
-                                val minute = (call.argument<Number>("minute")?.toInt() ?: 0).coerceIn(0, 59)
-                                DailyReminderScheduler.schedule(this, enabled, hour, minute)
-                                true
-                            }
-                            "scheduleRateUpdate" -> RateUpdateScheduler.schedule(this)
                             else -> {
                                 val state = requireNotNull(call.argument<String>("state"))
                                 val revision = requireNotNull(loadedRevision) { "Read state before writing" }

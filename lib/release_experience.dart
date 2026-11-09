@@ -160,34 +160,19 @@ class _ReleaseTourState extends State<ReleaseTour> {
       CupertinoIcons.sparkles,
     ),
     (
-      'Movimientos al instante',
-      'Buscador más amplio, filtros más cómodos y una transición suave y directa entre Inicio, Plan y Menú.',
-      CupertinoIcons.calendar,
+      'Deudas saldadas, sin residuos',
+      'Los registros ya pagados no vuelven a mostrar centavos residuales. Se conservan tus abonos, movimientos y saldos.',
+      CupertinoIcons.check_mark_circled,
     ),
     (
-      'Tus datos van contigo',
-      'Exporta una copia protegida con contraseña e impórtala en otro dispositivo desde Ajustes. Tu PIN no se comparte con la copia.',
-      CupertinoIcons.lock_shield,
+      'Recordatorios más claros',
+      'Avisos claros para pagos de hoy, próximos y vencidos. Recuperamos alarmas pendientes y protegemos tu privacidad.',
+      CupertinoIcons.bell,
     ),
     (
-      'USDT al abrir',
-      'La cotización USDT se consulta al abrir la app. Entre aperturas se conserva la última disponible; BCV mantiene su actualización habitual.',
+      'Actualizaciones más compatibles',
+      'Descargas compatibles con más teléfonos, con la misma verificación de firma y menos trabajo repetido al cargar tus datos.',
       CupertinoIcons.arrow_clockwise,
-    ),
-    (
-      'Decimales consistentes',
-      'Importes y conversiones con dos decimales sin redondear hacia arriba, también al copiar desde la calculadora.',
-      CupertinoIcons.number,
-    ),
-    (
-      'Transferencias claras',
-      'En transferencias entre cuentas en dólares, ingresa lo enviado y lo recibido. La diferencia y su porcentaje se registran como comisión sin descontarla dos veces.',
-      CupertinoIcons.arrow_right_arrow_left,
-    ),
-    (
-      'Mantenimiento al cierre',
-      'Bs. 684 para cuentas bancarias corrientes y de ahorro en bolívares. Se registra el día 31 o el 1 siguiente, con el nombre del mes que cerró.',
-      CupertinoIcons.calendar,
     ),
   ];
   List<(String, String, IconData)> get pages =>

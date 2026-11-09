@@ -123,4 +123,66 @@ void main() {
     expect(find.text('Instalar actualizacion'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('Unchanged polling keeps the screen and controls stable', (
+    tester,
+  ) async {
+    var received = 250;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('rial/native_state'), (
+          call,
+        ) async {
+          calls.add(call.method);
+          return {'status': 'downloading', 'received': received, 'total': 1000};
+        });
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: AppUpdatePage(update: update, theme: RTheme(true, 'emerald')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final label = tester.widget(find.text('Descargando 25%'));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(calls, contains('apkUpdateStatus'));
+    expect(
+      identical(label, tester.widget(find.text('Descargando 25%'))),
+      isTrue,
+    );
+    received = 500;
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Descargando 50%'), findsOneWidget);
+    final cancel = find.widgetWithText(CupertinoButton, 'Cancelar descarga');
+    expect(tester.widget<CupertinoButton>(cancel).onPressed, isNotNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'Startup failure shows an error state rather than preparing forever',
+    (tester) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(const MethodChannel('rial/native_state'), (
+            _,
+          ) async {
+            throw PlatformException(
+              code: 'UPDATE_FAILED',
+              message: 'Revisa el espacio disponible',
+            );
+          });
+      await tester.pumpWidget(
+        CupertinoApp(
+          home: AppUpdatePage(update: update, theme: RTheme(true, 'emerald')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Preparando descarga'), findsNothing);
+      expect(
+        find.text('No se pudo completar la actualización'),
+        findsOneWidget,
+      );
+      expect(find.text('Reintentar'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }
