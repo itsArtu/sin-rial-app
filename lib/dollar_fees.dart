@@ -3,6 +3,14 @@ part of 'main.dart';
 bool isDollarTransfer(Object? source, Object? target) =>
     source == 'USD' && target == 'USD';
 
+bool isCashBolivarTransfer(
+  Map<String, dynamic>? source,
+  Map<String, dynamic>? target,
+) =>
+    source?['currency'] == 'VES' &&
+    target?['currency'] == 'VES' &&
+    (isCashAccount(source) || isCashAccount(target));
+
 double receivedDollarFee(double sent, double received) {
   if (!sent.isFinite ||
       !received.isFinite ||
@@ -67,7 +75,10 @@ double transferDestinationAmount({
 }
 
 bool supportsDollarFees(Map<String, dynamic>? account) =>
-    account != null && account['currency'] == 'USD' && !isCashAccount(account);
+    account != null &&
+    account['currency'] == 'USD' &&
+    !isCashAccount(account) &&
+    !isCreditCard(account);
 
 bool isCestaticketFood(Map<String, dynamic>? account) =>
     account?['provider'] == 'CESTATICKET' &&

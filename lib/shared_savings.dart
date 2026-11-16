@@ -392,7 +392,7 @@ class SharedSavingsScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
     backgroundColor: app.theme.bg,
-    navigationBar: CupertinoNavigationBar(
+    navigationBar: RialNavigationBar(
       transitionBetweenRoutes: false,
       backgroundColor: app.theme.bg,
       border: null,

@@ -18,33 +18,34 @@ class MovementFilterButton extends StatelessWidget {
     selected: selected,
     child: ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 48, maxWidth: 240),
-      child: CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        color: selected ? theme.accent.withValues(alpha: .16) : theme.card,
-        borderRadius: BorderRadius.circular(24),
-        onPressed: onTap,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? theme.accent : theme.ink,
+      child: PressFeedback(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: RialSurface.control(theme, active: selected),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? theme.accent : theme.ink,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              CupertinoIcons.chevron_down,
-              size: 14,
-              color: selected ? theme.accent : theme.muted,
-            ),
-          ],
+              const SizedBox(width: 8),
+              Icon(
+                CupertinoIcons.chevron_down,
+                size: 14,
+                color: selected ? theme.accent : theme.muted,
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -175,31 +176,10 @@ class _MovementFilterControlsState extends State<MovementFilterControls> {
         Row(
           children: [
             Expanded(
-              child: CupertinoSearchTextField(
+              child: RialSearchField(
+                theme: t,
                 controller: query,
                 placeholder: 'Buscar movimientos',
-                style: TextStyle(
-                  color: t.ink,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-                placeholderStyle: TextStyle(
-                  color: t.muted,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 18,
-                ),
-                prefixInsets: const EdgeInsetsDirectional.only(start: 14),
-                suffixInsets: const EdgeInsetsDirectional.only(end: 14),
-                itemSize: 22,
-                itemColor: t.muted,
-                decoration: BoxDecoration(
-                  color: t.field,
-                  borderRadius: BorderRadius.circular(24),
-                ),
                 onChanged: (_) {
                   debounce?.cancel();
                   setState(() {});

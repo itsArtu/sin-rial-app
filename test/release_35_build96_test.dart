@@ -108,9 +108,7 @@ void main() {
           await tester.pumpAndSettle();
           final heading =
               tester
-                      .widget<CupertinoNavigationBar>(
-                        find.byType(CupertinoNavigationBar),
-                      )
+                      .widget<RialNavigationBar>(find.byType(RialNavigationBar))
                       .middle!
                   as Text;
           expect(heading.data, contains('Cuenta renovada'));

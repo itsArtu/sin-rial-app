@@ -40,18 +40,10 @@ class _ReminderPermissionsState extends State<ReminderPermissions>
     final opened = await NativeStateStore.openReminderSettings(exact: exact);
     if (!mounted) return;
     if (!opened) {
-      await showCupertinoDialog<void>(
-        context: context,
-        builder: (context) => CupertinoAlertDialog(
-          title: const Text('Ajustes de Android'),
-          content: const Text('No se pudieron abrir los permisos de Sin Rial.'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Aceptar'),
-            ),
-          ],
-        ),
+      await showModernNotice(
+        context,
+        title: 'Ajustes de Android',
+        message: 'No se pudieron abrir los permisos de Sin Rial.',
       );
     }
     await refresh();

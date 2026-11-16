@@ -17,7 +17,7 @@ class _RetainedTabTransitionState extends State<RetainedTabTransition>
   late final AnimationController motion =
       AnimationController(
         vsync: this,
-        duration: const Duration(milliseconds: 240),
+        duration: const Duration(milliseconds: 220),
         value: 1,
       )..addStatusListener((status) {
         if (status == AnimationStatus.completed && mounted) {
@@ -25,17 +25,21 @@ class _RetainedTabTransitionState extends State<RetainedTabTransition>
         }
       });
   final visited = <int>{};
+  final pages = <int, Widget>{};
   int? previous;
 
   @override
   void initState() {
     super.initState();
     visited.add(widget.index);
+    pages[widget.index] = widget.children[widget.index];
   }
 
   @override
   void didUpdateWidget(covariant RetainedTabTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Keep hidden tabs mounted, but only refresh their data when revisited.
+    pages[widget.index] = widget.children[widget.index];
     if (oldWidget.index == widget.index) return;
     visited.add(widget.index);
     previous = oldWidget.index;
@@ -57,7 +61,7 @@ class _RetainedTabTransitionState extends State<RetainedTabTransition>
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: motion,
     builder: (context, _) {
-      final progress = Curves.easeOutCubic.transform(motion.value);
+      final progress = Curves.easeOutQuart.transform(motion.value);
       return Stack(
         fit: StackFit.expand,
         children: [
@@ -77,13 +81,18 @@ class _RetainedTabTransitionState extends State<RetainedTabTransition>
                         child: Opacity(
                           opacity: i == widget.index
                               ? progress
-                              : (i == previous ? 1 - progress : 0),
+                              : (i == previous
+                                    ? 1 -
+                                          Curves.easeInQuad.transform(
+                                            motion.value,
+                                          )
+                                    : 0),
                           child: Transform.translate(
                             offset: Offset(
                               0,
-                              i == widget.index ? 5 * (1 - progress) : 0,
+                              i == widget.index ? 4 * (1 - progress) : 0,
                             ),
-                            child: widget.children[i],
+                            child: RepaintBoundary(child: pages[i]!),
                           ),
                         ),
                       ),
@@ -113,62 +122,73 @@ class AppPillSelector extends StatelessWidget {
   final bool showIcons;
 
   @override
-  Widget build(BuildContext context) => Row(
-    spacing: 8,
-    children: [
-      for (final item in items)
-        Expanded(
-          child: Semantics(
-            selected: value == item.value,
-            child: PressFeedback(
-              onTap: () => onChanged(item.value),
-              child: AnimatedContainer(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                constraints: const BoxConstraints(minHeight: 44),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: value == item.value ? theme.accent : theme.card,
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (showIcons) ...[
-                      Icon(
-                        item.icon,
-                        size: 18,
-                        color: value == item.value
-                            ? theme.onAccent
-                            : theme.muted,
-                      ),
-                      const SizedBox(width: 7),
-                    ],
-                    Flexible(
-                      child: Text(
-                        item.label,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(4),
+    decoration: RialSurface.control(theme),
+    child: Row(
+      spacing: 4,
+      children: [
+        for (final item in items)
+          Expanded(
+            child: Semantics(
+              selected: value == item.value,
+              child: PressFeedback(
+                onTap: () => onChanged(item.value),
+                child: AnimatedContainer(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  constraints: const BoxConstraints(minHeight: 44),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: value == item.value
+                        ? theme.elevated
+                        : const Color(0x00000000),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: value == item.value
+                          ? theme.border
+                          : const Color(0x00000000),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (showIcons) ...[
+                        Icon(
+                          item.icon,
+                          size: 18,
                           color: value == item.value
-                              ? theme.onAccent
+                              ? theme.accent
                               : theme.muted,
                         ),
+                        const SizedBox(width: 7),
+                      ],
+                      Flexible(
+                        child: Text(
+                          item.label,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: value == item.value
+                                ? theme.ink
+                                : theme.muted,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-    ],
+      ],
+    ),
   );
 }
 
@@ -333,7 +353,7 @@ class _PhoneWidgetsPageState extends State<PhoneWidgetsPage> {
     final t = widget.app.theme;
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         backgroundColor: t.bg,
         border: null,
@@ -641,43 +661,59 @@ class IconGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, box) {
-      final count = box.maxWidth < 340 ? 3 : 4;
-      final width = (box.maxWidth - 12 * (count - 1)) / count;
+      final columns = box.maxWidth < 520 ? 1 : 2;
       return Wrap(
-        spacing: 12,
-        runSpacing: 18,
+        spacing: 20,
         children: [
           for (final item in items)
             SizedBox(
-              width: width,
-              height: 102,
+              width: (box.maxWidth - (columns - 1) * 20) / columns,
               child: PressFeedback(
                 onTap: item.onTap,
-                child: Column(
-                  children: [
-                    Container(
-                      width: 58,
-                      height: 58,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: theme.card,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: theme.border),
-                      ),
-                      child: Icon(item.icon, color: theme.ink, size: 26),
-                    ),
-                    const SizedBox(height: 9),
-                    Text(
-                      item.title,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      style: TextStyle(
-                        color: theme.ink,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 64),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: theme.border.withValues(alpha: .6),
+                        width: .5,
                       ),
                     ),
-                  ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: theme.accent.withValues(alpha: .1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(item.icon, color: theme.accent, size: 21),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          item.title,
+                          style: TextStyle(
+                            color: theme.ink,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Icon(
+                        CupertinoIcons.chevron_right,
+                        size: 14,
+                        color: theme.muted,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -715,6 +751,11 @@ class ModernMenu extends StatelessWidget {
               'Movimientos',
               CupertinoIcons.arrow_up_arrow_down,
               () => open((_) => MovementHistoryPage(app: app)),
+            ),
+            IconGridItem(
+              'Tarjetas de crédito',
+              CupertinoIcons.creditcard,
+              () => open((_) => CreditCardsPage(app: app)),
             ),
             IconGridItem(
               'Resumen mensual',
@@ -766,6 +807,11 @@ class ModernMenu extends StatelessWidget {
               'Ajustes',
               CupertinoIcons.gear_alt,
               () => open((_) => SettingsPage(app: app)),
+            ),
+            IconGridItem(
+              'Copias de seguridad',
+              CupertinoIcons.lock_shield,
+              () => open((_) => BackupPage(app: app)),
             ),
           ],
         ),
@@ -1056,7 +1102,7 @@ class AccountCurrencyOverview extends StatelessWidget {
     );
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         backgroundColor: t.bg,
         border: null,
@@ -1437,7 +1483,7 @@ class ExchangeRatesPage extends StatelessWidget {
         : null;
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         backgroundColor: t.bg,
         border: null,

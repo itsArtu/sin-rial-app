@@ -17,6 +17,45 @@ class _BudgetPageState extends State<BudgetPage>
   String? expandedPlan;
   bool exporting = false;
 
+  Future<void> suggestPlan() async {
+    final app = widget.app;
+    final selected = DateTime.parse('$month-01');
+    final previous = DateTime(selected.year, selected.month - 1);
+    final period =
+        '${previous.year}-${previous.month.toString().padLeft(2, '0')}';
+    final spending = summarizeBudgetSpending(
+      app.maps('movements'),
+      period,
+      'monthly',
+      usdRate: app.rate,
+      eurRate: app.eurRate,
+    );
+    if (spending.missingRates > 0 || spending.total <= 0) {
+      showModernNotice(
+        context,
+        title: 'Sin propuesta todavía',
+        message: spending.missingRates > 0
+            ? 'Faltan tasas en algunos movimientos del mes anterior. Revísalas antes de preparar el presupuesto.'
+            : 'No hay gastos del mes anterior para preparar una propuesta.',
+      );
+      return;
+    }
+    await app.pushPage<String>(
+      context,
+      (_) => BudgetPlanEditorPage(
+        app: app,
+        initialPeriod: month,
+        initialType: 'monthly',
+        suggestedItems: [
+          for (final entry in spending.ranked)
+            if (entry.value > 0)
+              {'category': entry.key, 'limit': entry.value, 'currency': 'USD'},
+        ],
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> exportPlan(Map<String, dynamic> plan) async {
     if (exporting) return;
     exporting = true;
@@ -253,6 +292,15 @@ class _BudgetPageState extends State<BudgetPage>
                     theme: t,
                     label: 'Comenzar a planificar',
                     onPressed: () => editPlan(),
+                  ),
+                if (canCreate)
+                  CupertinoButton(
+                    key: const ValueKey('budget-suggest'),
+                    onPressed: suggestPlan,
+                    child: Text(
+                      'Sugerir según mis gastos',
+                      style: TextStyle(color: t.accent, fontSize: 14),
+                    ),
                   ),
                 if (canCreate)
                   CupertinoButton(
@@ -774,7 +822,7 @@ class BudgetFormScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
     backgroundColor: app.theme.bg,
-    navigationBar: CupertinoNavigationBar(
+    navigationBar: RialNavigationBar(
       transitionBetweenRoutes: false,
       backgroundColor: app.theme.bg,
       border: null,
@@ -808,12 +856,14 @@ class BudgetPlanEditorPage extends StatefulWidget {
     required this.initialPeriod,
     required this.initialType,
     this.initialStep = 0,
+    this.suggestedItems = const [],
   });
   final _RialAppState app;
   final Map<String, dynamic>? plan;
   final bool copy;
   final String initialPeriod, initialType;
   final int initialStep;
+  final List<Map<String, dynamic>> suggestedItems;
   @override
   State<BudgetPlanEditorPage> createState() => _BudgetPlanEditorPageState();
 }
@@ -843,6 +893,12 @@ class _BudgetPlanEditorPageState extends State<BudgetPlanEditorPage> {
     if (!editing && !canCreateBudgetInMonth(month)) month = currentMonthKey();
     half = widget.initialPeriod.endsWith('H2') ? 2 : 1;
     type = widget.initialType;
+    if (widget.plan == null && widget.suggestedItems.isNotEmpty) {
+      incomeMode = 'variable';
+      items.addAll(
+        widget.suggestedItems.map((item) => Map<String, dynamic>.from(item)),
+      );
+    }
     final plan = widget.plan, app = widget.app;
     if (plan != null) {
       incomeMode = plan['incomeMode'] == 'variable' ? 'variable' : 'fixed';

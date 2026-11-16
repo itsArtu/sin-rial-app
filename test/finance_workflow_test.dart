@@ -228,26 +228,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MovementHistoryPage), findsOneWidget);
     expect(find.byType(MovementTile).evaluate().length, lessThan(20));
-    final search = tester.widget<CupertinoSearchTextField>(
-      find.byType(CupertinoSearchTextField),
+    final searchField = find.descendant(
+      of: find.byType(RialSearchField),
+      matching: find.byType(CupertinoTextField),
     );
-    final selector = tester.widget<CupertinoButton>(
+    final search = tester.widget<CupertinoTextField>(searchField);
+    final selector = tester.widget<Container>(
       find.descendant(
         of: find.byType(MovementFilterButton).first,
-        matching: find.byType(CupertinoButton),
+        matching: find.byType(Container),
       ),
     );
     expect(
       (search.decoration as BoxDecoration).borderRadius,
-      selector.borderRadius,
+      (selector.decoration as BoxDecoration).borderRadius,
     );
     expect((search.decoration as BoxDecoration).color, app.theme.field);
-    expect(selector.color, app.theme.card);
-    expect(search.style?.fontSize, 16);
-    await tester.enterText(
-      find.byType(CupertinoSearchTextField),
-      'Compra 1999',
-    );
+    expect((selector.decoration as BoxDecoration).color, app.theme.field);
+    expect(search.style?.fontSize, 15);
+    await tester.enterText(searchField, 'Compra 1999');
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pumpAndSettle();
     expect(find.text('1 operaciones'), findsOneWidget);

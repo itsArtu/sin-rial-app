@@ -40,7 +40,7 @@ internal data class DebtReminder(
             days == -1L -> "venci\u00f3 ayer"
             else -> "venci\u00f3 hace ${-days} d\u00edas"
         }
-        if (hideAmounts) return "Tienes un $kind que $time. Abre Sin Rial para ver el detalle."
+        if (hideAmounts) return "Tu $kind $time. Rev\u00edsalo en Sin Rial."
         val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("es-VE")).apply {
             minimumFractionDigits = 2
             maximumFractionDigits = 2
@@ -49,7 +49,8 @@ internal data class DebtReminder(
             val symbol = when (currency) { "VES" -> "Bs."; "USD" -> "$"; "EUR" -> "EUR"; else -> currency }
             return "$symbol ${formatter.format(BigDecimal.valueOf(cents, 2))}"
         }
-        return "$title: $time.\nPendiente: ${money(totalCents - paidCents)}. ${if (kind == "cobro") "Cobrado" else "Abonado"}: ${money(paidCents)} de ${money(totalCents)}."
+        val shortTitle = if (title.length > 42) title.take(39) + "..." else title
+        return "$shortTitle: $time.\nPendiente: ${money(totalCents - paidCents)}."
     }
 
     fun signature(now: Long) = digest("$kind:${dayNumber(due)}:$totalCents:$paidCents:$currency:$hideAmounts:${text(now)}")

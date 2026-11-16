@@ -8,6 +8,7 @@ extension _MovementComposer on _MovementEditorState {
   void selectComposerAccount(String id) {
     _setViewState(() {
       accountId = id;
+      if (isCreditCard(widget.app.accountById(id))) debtId = '';
       resetDollarFee();
       keypadBuffer = null;
       if (targetId == id) targetId = firstAccountId(except: id);
@@ -141,7 +142,8 @@ extension _MovementComposer on _MovementEditorState {
       ),
       decoration: BoxDecoration(
         color: t.card,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(RialSurface.radius),
+        border: Border.all(color: t.border),
       ),
       textInputAction: TextInputAction.done,
       onSubmitted: (_) => descriptionFocus.unfocus(),
@@ -174,7 +176,9 @@ extension _MovementComposer on _MovementEditorState {
               compactSubtitle: account == null
                   ? null
                   : app.secureMoney(
-                      numberValue(account['balance']),
+                      isCreditCard(account)
+                          ? creditAvailable(account)
+                          : numberValue(account['balance']),
                       account['currency'].toString(),
                     ),
               onTap: () => pickAccount(
@@ -255,7 +259,11 @@ extension _MovementComposer on _MovementEditorState {
                           : widget.partialDebtPayment
                           ? 'Registrar abono'
                           : transfer
-                          ? 'Transferencia'
+                          ? (isCreditCard(target)
+                                ? 'Pagar tarjeta'
+                                : 'Transferencia')
+                          : isCreditCard(source)
+                          ? 'Nuevo consumo'
                           : type == 'income'
                           ? 'Nuevo ingreso'
                           : 'Nuevo gasto',
@@ -457,6 +465,8 @@ extension _MovementComposer on _MovementEditorState {
                           ),
                       ],
                       if (!transfer || !compact) descriptionInput(),
+                      if (!transfer && descriptionFocus.hasFocus)
+                        learnedSuggestionButton(),
                       SizedBox(
                         height: compact
                             ? 2
@@ -651,7 +661,8 @@ class ComposerModeButton extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             color: theme.card,
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(RialSurface.radius),
+            border: Border.all(color: theme.border),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -702,7 +713,8 @@ class ComposerOptionButton extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: 4, vertical: roomy ? 7 : 4),
           decoration: BoxDecoration(
             color: theme.card,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(RialSurface.radius),
+            border: Border.all(color: theme.border.withValues(alpha: .5)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -806,7 +818,7 @@ class ComposerChip extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: theme.card,
-          borderRadius: BorderRadius.circular(32),
+          borderRadius: BorderRadius.circular(RialSurface.radius),
           border: Border.all(color: theme.border),
         ),
         child: Row(
@@ -900,7 +912,7 @@ class ComposerAmount extends StatelessWidget {
           ),
           decoration: BoxDecoration(
             color: active ? theme.accent.withValues(alpha: .06) : theme.bg,
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: SizedBox(
             height: compact
@@ -1038,7 +1050,13 @@ class ComposerKeypad extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: color ?? theme.card,
-                  borderRadius: BorderRadius.circular(keyHeight / 2),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: color == theme.accent
+                        ? theme.accent
+                        : theme.border.withValues(alpha: .55),
+                    width: .7,
+                  ),
                 ),
                 child: icon != null
                     ? Icon(

@@ -218,18 +218,20 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
     app.mutate(() => app.state['seenFeatureTour'] = '');
     await tester.pumpAndSettle();
-    for (var page = 0; page < 4; page++) {
+    final dynamic tour = tester.state(find.byType(ReleaseTour));
+    final pageCount = (tour.pages as List).length;
+    for (var page = 0; page < pageCount; page++) {
       expect(find.text('Omitir').hitTestable(), findsOneWidget);
       expect(
         find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.label == 'Página ${page + 1} de 4',
+              widget.properties.label == 'Página ${page + 1} de $pageCount',
         ),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
-      if (page < 3) {
+      if (page < pageCount - 1) {
         await tester.tap(find.text('Siguiente'));
         await tester.pumpAndSettle();
       }

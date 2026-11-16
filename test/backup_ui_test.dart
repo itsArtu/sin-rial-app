@@ -6,6 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rial_flutter/main.dart';
+import 'package:rial_flutter/portable_backup.dart';
 
 import 'finance_workflow_test.dart' as fixtures;
 
@@ -14,6 +15,7 @@ void main() {
   Map<String, dynamic> disk = {};
   bool failWrite = false;
   Completer<void>? writeGate;
+  late Uint8List backupBytes;
   setUp(() {
     failWrite = false;
     writeGate = null;
@@ -35,6 +37,7 @@ void main() {
             return true;
           }
           if (call.method == 'readState') return jsonEncode(disk);
+          if (call.method == 'pickBackupBytes') return backupBytes;
           return null;
         });
   });
@@ -111,6 +114,11 @@ void main() {
   });
 
   setUpAll(() async {
+    backupBytes = await encryptPortableBackup({
+      'state': imported,
+      'password': 'portable-test-password',
+      'appVersion': '3.6.0',
+    });
     if (!const bool.fromEnvironment('FINANCE_GOLDENS')) return;
     final manifest =
         jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
@@ -148,7 +156,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        expect(find.text('Tu copia protegida'), findsOneWidget);
+        expect(find.text('Tus datos, contigo'), findsOneWidget);
         if (const bool.fromEnvironment('FINANCE_GOLDENS')) {
           await expectLater(
             find.byType(RialApp),
@@ -157,13 +165,23 @@ void main() {
             ),
           );
         }
-        await tester.tap(find.text('Importar'));
+        await tester.tap(find.text('Recuperar una copia'));
         await tester.pumpAndSettle();
-        expect(find.text('Recuperar tus datos'), findsOneWidget);
+        expect(find.text('Archivo seleccionado'), findsOneWidget);
         expect(find.text('Repite la contraseña'), findsNothing);
         final dynamic page = tester.state(find.byType(BackupPage));
-        page.preview = {'state': imported, 'createdAt': '2026-11-02T15:00:00Z'};
-        page.setState(() {});
+        await tester.enterText(
+          find.byType(CupertinoTextField),
+          'portable-test-password',
+        );
+        await tester.runAsync(() async {
+          await tester.tap(find.text('Abrir y revisar'));
+          final deadline = DateTime.now().add(const Duration(seconds: 45));
+          while (page.busy == true && DateTime.now().isBefore(deadline)) {
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+          expect(page.busy, false);
+        });
         await tester.pumpAndSettle();
         await tester.scrollUntilVisible(
           find.text('Restaurar esta copia'),
@@ -194,7 +212,7 @@ void main() {
       app.mutate(() => app.state['themeColor'] = 'sky');
       await tester.tap(find.text('Movimientos').first);
       await tester.pumpAndSettle();
-      final search = find.byType(CupertinoSearchTextField);
+      final search = find.byType(RialSearchField);
       expect(tester.getSize(search).height, greaterThanOrEqualTo(48));
       expect(
         tester.getSize(find.byType(MovementFilterButton).first).height,

@@ -147,7 +147,7 @@ void main() {
         tester
             .widget<CupertinoPageScaffold>(find.byType(CupertinoPageScaffold))
             .backgroundColor,
-        const Color(0xff000000),
+        RTheme(true, 'blue').bg,
       );
       await tester.pumpWidget(const SizedBox.shrink());
       reply.completeError(PlatformException(code: 'TEST_STORAGE_UNAVAILABLE'));

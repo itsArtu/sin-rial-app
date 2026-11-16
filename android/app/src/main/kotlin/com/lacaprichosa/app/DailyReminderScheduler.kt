@@ -39,10 +39,11 @@ object DailyReminderScheduler {
             ReminderNotifications.reconcile(context, debts, enabled)
             val recurring = RecurringReminder.fromState(state)
             ReminderNotifications.reconcileRecurring(context, recurring)
+            ReminderNotifications.reconcileCards(context, CardReminder.notice(state))
             if (BirthdayReminder.dueYear(state) == null) {
                 (context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.cancel(BirthdayReminder.ID)
             }
-            debts.isNotEmpty() || recurring.isNotEmpty() || BirthdayReminder.enabled(state) ||
+            debts.isNotEmpty() || recurring.isNotEmpty() || CardReminder.enabled(state) || BirthdayReminder.enabled(state) ||
                 BankMaintenance.hasEnabled(NativeJsonStore.readState(context, setOf("accounts")))
         }
         if (!enabled && !hasDebtNotices) {

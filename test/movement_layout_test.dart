@@ -194,7 +194,13 @@ void main() {
         money(currentTotal, 'USD'),
       );
 
-      await tester.enterText(find.byType(CupertinoSearchTextField), 'Actual');
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(RialSearchField),
+          matching: find.byType(CupertinoTextField),
+        ),
+        'Actual',
+      );
       await tester.pump(const Duration(milliseconds: 250));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(historyMonthKey));

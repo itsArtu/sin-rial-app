@@ -335,7 +335,7 @@ class _MonthlySpendingPageState extends State<MonthlySpendingPage> {
     final percent = _report.incomePercent(_report.expenses);
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         backgroundColor: t.bg.withOpacity(.92),
         border: null,
@@ -703,7 +703,7 @@ class MonthlySpendingMovementsPage extends StatelessWidget {
     );
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         backgroundColor: t.bg,
         border: null,

@@ -49,6 +49,12 @@ class DailyReminderReceiver : BroadcastReceiver() {
             ReminderNotifications.reconcile(context, debts, enabled, now)
             val prefs = NativeJsonStore.prefs(context)
             val edit = prefs.edit()
+            val cardNotice = CardReminder.notice(state, now)
+            ReminderNotifications.reconcileCards(context, cardNotice)
+            if (cardNotice != null && prefs.getString(CardReminder.SENT_KEY, "") != cardNotice.signature) {
+                manager.notify(CardReminder.ID, notification(context, "Tus tarjetas", cardNotice.text, contentIntent, cardNotice.signature))
+                edit.putString(CardReminder.SENT_KEY, cardNotice.signature)
+            }
             val birthdayYear = BirthdayReminder.dueYear(state, now)
             if (birthdayYear != null && prefs.getInt("birthday_sent_year", 0) != birthdayYear) {
                 manager.notify(BirthdayReminder.ID,
@@ -57,7 +63,7 @@ class DailyReminderReceiver : BroadcastReceiver() {
             }
             if (enabled && prefs.getLong("movement_reminder_sent_day", Long.MIN_VALUE) != day) {
                 manager.notify(ReminderNotifications.MOVEMENT_ID,
-                    notification(context, "Tu balance, al d\u00eda", "Dedica un momento a registrar los ingresos y gastos de hoy. Tu pr\u00f3ximo balance estar\u00e1 al d\u00eda.", contentIntent))
+                    notification(context, "\u00bfAnotaste lo de hoy?", "Registra tus ingresos y gastos de hoy en Sin Rial.", contentIntent))
                 edit.putLong("movement_reminder_sent_day", day)
             }
             val sent = runCatching { JSONObject(prefs.getString(ReminderNotifications.SENT_KEY, "{}")!!) }.getOrDefault(JSONObject())

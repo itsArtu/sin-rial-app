@@ -195,7 +195,7 @@ void main() {
           .dy;
       expect(
         button,
-        greaterThan(tester.getTopLeft(find.text('MOVIMIENTOS RECIENTES')).dy),
+        greaterThan(tester.getTopLeft(find.text('Movimientos recientes')).dy),
       );
       await tester.drag(
         find

@@ -123,7 +123,7 @@ class _AppUpdatePageState extends State<AppUpdatePage>
     final message = error ?? snapshot['message']?.toString();
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         backgroundColor: t.bg,
         middle: const Text('Actualizar Sin Rial'),

@@ -1,5 +1,22 @@
 part of 'main.dart';
 
+class FrostedSurface extends StatelessWidget {
+  const FrostedSurface({super.key, required this.child, this.radius = 0});
+  final Widget child;
+  final double radius;
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(radius),
+    child: BackdropFilter(
+      enabled:
+          !MediaQuery.highContrastOf(context) &&
+          !MediaQuery.disableAnimationsOf(context),
+      filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+      child: child,
+    ),
+  );
+}
+
 Color foregroundOn(Color color) => color.computeLuminance() > .42
     ? CupertinoColors.black
     : CupertinoColors.white;
@@ -58,11 +75,13 @@ class RialMotionTransition extends StatefulWidget {
     required this.animation,
     required this.child,
     this.offset = const Offset(0, .045),
+    this.fade = true,
   });
 
   final Animation<double> animation;
   final Widget child;
   final Offset offset;
+  final bool fade;
 
   @override
   State<RialMotionTransition> createState() => _RialMotionTransitionState();
@@ -106,13 +125,11 @@ class _RialMotionTransitionState extends State<RialMotionTransition> {
   @override
   Widget build(BuildContext context) {
     if (MediaQuery.disableAnimationsOf(context)) return widget.child;
-    return FadeTransition(
-      opacity: _curve,
-      child: SlideTransition(
-        position: _position,
-        child: RepaintBoundary(child: widget.child),
-      ),
+    final slide = SlideTransition(
+      position: _position,
+      child: RepaintBoundary(child: widget.child),
     );
+    return widget.fade ? FadeTransition(opacity: _curve, child: slide) : slide;
   }
 }
 

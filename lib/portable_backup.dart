@@ -9,6 +9,7 @@ const _format = 'sin-rial-portable';
 const _aad = 'sin-rial-portable:1:pbkdf2-sha256:600000:aes-256-gcm';
 
 bool isDeviceOnlyBackupKey(String key) =>
+    key.startsWith('automaticBackup') ||
     key.startsWith('pin') ||
     key.startsWith('biometric') ||
     key.startsWith('dismissedUpdate') ||

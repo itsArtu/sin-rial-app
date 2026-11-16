@@ -11,7 +11,10 @@ internal data class RecurringReminder(val tag: String, val name: String, val kin
     fun isDue(now: Long) = DebtReminder.dayNumber(due) <=
         DebtReminder.dayNumber(Calendar.getInstance().apply { timeInMillis = now })
     val signature get() = "$kind:$name:$dateKey"
-    val text get() = "$name: tienes un $kind pendiente de confirmar. Revisa el monto y reg\u00edstralo cuando se haya realizado."
+    val text get(): String {
+        val shortName = if (name.length > 42) name.take(39) + "..." else name
+        return "$shortName: \u00bfya se realiz\u00f3? Confirma el $kind en Sin Rial."
+    }
 
     companion object {
         const val TAG_PREFIX = "sin_rial_recurring:"

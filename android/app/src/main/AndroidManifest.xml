@@ -132,6 +132,19 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <package android:name="com.bancodevenezuela.bdvdigital" />
+        <package android:name="com.venezolano.vol_app" />
+        <package android:name="com.mercantilbanco.mercantilmovil" />
+        <package android:name="com.totaltexto.bancamovil" />
+        <package android:name="bancaribe.miconexion" />
+        <package android:name="com.click.caroni.normal.app.click" />
+        <package android:name="com.banesco.samfbancamovilunificada" />
+        <package android:name="com.bancamiga" />
+        <package android:name="com.asociadosgerenciales.banpluspay" />
+        <package android:name="bnc.bncnet.mobile2" />
+        <package android:name="ubii.ubiipagos.com.ubiiapp" />
+        <package android:name="com.zinli.app" />
+        <package android:name="com.kinpos.wallytech" />
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>

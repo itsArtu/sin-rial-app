@@ -17,7 +17,20 @@ Future<void> showDisablePinDialog(
 ) async {
   await showCupertinoDialog<void>(
     context: context,
-    builder: (_) => DisablePinDialog(app: app),
+    builder: (context) => SafeArea(
+      child: AnimatedPadding(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 180),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          MediaQuery.viewInsetsOf(context).bottom + 24,
+        ),
+        child: Center(child: DisablePinDialog(app: app)),
+      ),
+    ),
   );
 }
 
@@ -39,15 +52,15 @@ class _DisablePinDialogState extends State<DisablePinDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoAlertDialog(
-    title: const Text('Desactivar bloqueo'),
-    content: Column(
-      children: [
-        const Text(
-          'Confirma tu PIN actual. Tus datos seguir\u00e1n cifrados, pero la app abrir\u00e1 sin pedir desbloqueo.',
-        ),
-        const SizedBox(height: 16),
-        CupertinoTextField(
+  Widget build(BuildContext context) => RialDialogSurface(
+    theme: widget.app.theme,
+    title: 'Desactivar bloqueo',
+    message: 'Confirma tu PIN actual. Tus datos seguir\u00e1n cifrados, pero la app abrir\u00e1 sin pedir desbloqueo.',
+    actions: [
+      IgnorePointer(
+        ignoring: busy,
+        child: RField(
+          theme: widget.app.theme,
           controller: pin,
           obscureText: true,
           placeholder: 'PIN actual',
@@ -57,33 +70,45 @@ class _DisablePinDialogState extends State<DisablePinDialog> {
             LengthLimitingTextInputFormatter(6),
           ],
         ),
-        if (error != null)
-          Text(error!, style: TextStyle(color: widget.app.theme.red)),
-      ],
-    ),
-    actions: [
-      CupertinoDialogAction(
-        onPressed: busy ? null : () => Navigator.pop(context),
-        child: const Text('Cancelar'),
       ),
-      CupertinoDialogAction(
-        isDestructiveAction: true,
-        onPressed: busy
-            ? null
-            : () async {
-                setState(() => busy = true);
-                final success = await widget.app.disableSecurity(pin: pin.text);
-                if (!mounted) return;
-                if (success) {
-                  Navigator.pop(context);
-                } else {
-                  setState(() {
-                    busy = false;
-                    error = widget.app.pinError;
-                  });
-                }
-              },
-        child: const Text('Desactivar'),
+      if (error != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(error!, style: TextStyle(color: widget.app.theme.red)),
+        ),
+      IgnorePointer(
+        ignoring: busy,
+        child: Opacity(
+          opacity: busy ? .5 : 1,
+          child: Column(
+            children: [
+              PrimaryActionButton(
+                theme: widget.app.theme,
+                label: busy ? 'Verificando' : 'Desactivar',
+                onPressed: () async {
+                  setState(() => busy = true);
+                  final success = await widget.app.disableSecurity(
+                    pin: pin.text,
+                  );
+                  if (!mounted) return;
+                  if (success) {
+                    Navigator.pop(context);
+                  } else {
+                    setState(() {
+                      busy = false;
+                      error = widget.app.pinError;
+                    });
+                  }
+                },
+              ),
+              SecondaryActionButton(
+                theme: widget.app.theme,
+                label: 'Cancelar',
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        ),
       ),
     ],
   );
@@ -160,19 +185,29 @@ class _ReleaseTourState extends State<ReleaseTour> {
       CupertinoIcons.sparkles,
     ),
     (
-      'Deudas saldadas, sin residuos',
-      'Los registros ya pagados no vuelven a mostrar centavos residuales. Se conservan tus abonos, movimientos y saldos.',
-      CupertinoIcons.check_mark_circled,
+      'Tus tarjetas de crédito',
+      'Visa Signature y Mastercard Black, con patrones propios de cada franquicia. Diseños por banco, tarjetas aliadas y deuda nominal o UVC con IDI confirmado.',
+      CupertinoIcons.creditcard,
     ),
     (
-      'Recordatorios más claros',
-      'Avisos claros para pagos de hoy, próximos y vencidos. Recuperamos alarmas pendientes y protegemos tu privacidad.',
-      CupertinoIcons.bell,
+      'Tu banco, más cerca',
+      'Abre la app de tu banco desde su cuenta. También puedes vincular la app que utilizas en tu teléfono.',
+      CupertinoIcons.building_2_fill,
     ),
     (
-      'Actualizaciones más compatibles',
-      'Descargas compatibles con más teléfonos, con la misma verificación de firma y menos trabajo repetido al cargar tus datos.',
-      CupertinoIcons.arrow_clockwise,
+      'Cada movimiento cuenta',
+      'Sugerencias de cuenta y categoría, aviso de duplicados y comisión calculada con lo enviado y recibido, también en recargas a Ubii.',
+      CupertinoIcons.arrow_right_arrow_left,
+    ),
+    (
+      'Tus datos, contigo',
+      'Guarda una copia con contraseña. Para recuperarla, elige el archivo, desbloquéalo y revisa su contenido antes de restaurar.',
+      CupertinoIcons.tray_arrow_down,
+    ),
+    (
+      'Más claro, más ligero',
+      'Controles en sintonía, recordatorios de tarjetas, presupuestos sugeridos y copias cifradas periódicas al usar la app.',
+      CupertinoIcons.sparkles,
     ),
   ];
   List<(String, String, IconData)> get pages =>

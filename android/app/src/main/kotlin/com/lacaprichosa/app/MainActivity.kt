@@ -125,7 +125,7 @@ open class MainActivity : FlutterFragmentActivity() {
                 result.error("CALCULATOR_ONLY", "Abre Sin Rial para acceder a tus datos", null)
                 return@setMethodCallHandler
             }
-            if (call.method == "exportBackupBytes" || call.method == "pickBackupBytes") {
+            if (call.method in setOf("exportBackupBytes", "pickBackupBytes", "pickBackupFolder", "writeScheduledBackup")) {
                 backupDocuments.handle(call, result)
                 return@setMethodCallHandler
             }
@@ -230,6 +230,9 @@ open class MainActivity : FlutterFragmentActivity() {
             }
             val prefs = NativeJsonStore.prefs(this)
             when (call.method) {
+                "openBankAppOrStore" -> result.success(BankAppShortcuts.openOrStore(
+                    this, call.argument<String>("package"), call.argument<String>("query") ?: ""
+                ))
                 "quickAction" -> result.success(if (quickAccess) QuickAccessActivity.actionFrom(intent) else null)
                 "closeQuickAccess" -> {
                     result.success(quickAccess)

@@ -233,6 +233,8 @@ void main() {
     expect(find.byType(MonthlySpendingPage), findsOneWidget);
     app.rootNavigatorKey.currentState.pop();
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Movimientos').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Movimientos').last);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byTooltip('Resumen mensual'));

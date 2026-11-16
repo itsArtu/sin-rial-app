@@ -487,7 +487,7 @@ class RecurringMovementsPage extends StatelessWidget {
     final pending = recurringPendingItems(app);
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         middle: const Text('Recurrentes'),
         trailing: CupertinoButton(
@@ -600,7 +600,7 @@ class _RecurringEditorState extends State<RecurringEditor> {
     final account = app.accountById(accountId);
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         middle: Text(
           widget.ruleId == null ? 'Nuevo recurrente' : 'Editar recurrente',

@@ -198,7 +198,7 @@ void main() {
           app.setTab(2);
           await tester.pumpAndSettle();
           final heading = tester.widget<Text>(find.text('Gestión financiera'));
-          expect(heading.style!.fontSize, 18);
+          expect(heading.style!.fontSize, 19);
           expect(heading.style!.fontWeight, FontWeight.w700);
           await capture(tester, 'menu-headings-$suffix');
           app.pushPage(

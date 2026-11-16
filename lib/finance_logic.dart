@@ -14,7 +14,7 @@ double receivedTransferRate(Object? source, double sent, double received) {
 
 class HomeLedgerSnapshot {
   HomeLedgerSnapshot(_RialAppState app, DateTime now) {
-    accounts = app.maps('accounts');
+    accounts = app.maps('accounts').where((a) => !isCreditCard(a)).toList();
     movements = sortedMovements(app.maps('movements'));
     balanceAccounts = app.homeBalanceMode == 'vesOnly'
         ? accounts.where((a) => a['currency'] == 'VES').toList()

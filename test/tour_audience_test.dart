@@ -76,7 +76,7 @@ void main() {
       state.remove('pendingAppTour');
       await tester.pumpWidget(RialApp(initialState: withDefaults(state)));
       await tester.pumpAndSettle();
-      expect(find.text('Novedades de 3.5.2'), findsOneWidget);
+      expect(find.text('Novedades de 3.6.0'), findsOneWidget);
       expect(find.byType(ReleaseTour), findsOneWidget);
       expect(find.text('Conoce Sin Rial'), findsNothing);
       await tester.tap(find.text('Omitir'));
@@ -97,7 +97,9 @@ void main() {
     final dynamic app = await fixtures.fixture(tester);
     app.mutate(() => app.state['seenFeatureTour'] = '');
     await tester.pumpAndSettle();
-    for (var step = 0; step < 3; step++) {
+    final dynamic tour = tester.state(find.byType(ReleaseTour));
+    final pageCount = (tour.pages as List).length;
+    for (var step = 0; step < pageCount - 1; step++) {
       await tester.tap(find.text('Siguiente'));
       await tester.pumpAndSettle();
     }

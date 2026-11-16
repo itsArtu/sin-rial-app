@@ -601,7 +601,9 @@ void main() {
         await tester.pumpAndSettle();
         app.mutate(() => app.state['seenFeatureTour'] = 'older');
         await capture(tester, 'tour-profile-$width-$dark');
-        for (var step = 0; step < 3; step++) {
+        final dynamic tour = tester.state(find.byType(ReleaseTour));
+        final pageCount = (tour.pages as List).length;
+        for (var step = 0; step < pageCount - 1; step++) {
           await tester.tap(find.text('Siguiente'));
           await capture(tester, 'tour-${step + 2}-$width-$dark');
         }

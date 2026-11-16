@@ -378,7 +378,7 @@ class _DebtOverviewState extends State<DebtOverview> {
         : debts;
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         border: null,
         backgroundColor: t.bg,

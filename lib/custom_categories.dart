@@ -205,7 +205,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
 
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         backgroundColor: t.bg,
         border: null,
@@ -238,14 +238,10 @@ class _CategoriesPageState extends State<CategoriesPage> {
           key: const ValueKey('categories-list'),
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
           children: [
-            CupertinoSearchTextField(
+            RialSearchField(
               key: const ValueKey('categories-search'),
+              theme: t,
               placeholder: 'Buscar categorías',
-              backgroundColor: t.card,
-              borderRadius: BorderRadius.circular(24),
-              itemColor: t.muted,
-              style: TextStyle(color: t.ink, fontSize: 14),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               onChanged: (value) => setState(() => query = value),
             ),
             if (query.isEmpty || entries.isNotEmpty)
@@ -362,7 +358,7 @@ class _CustomCategoryEditorState extends State<CustomCategoryEditor> {
     final t = widget.app.theme;
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      navigationBar: CupertinoNavigationBar(
+      navigationBar: RialNavigationBar(
         transitionBetweenRoutes: false,
         middle: Text(
           widget.entry == null ? 'Nueva categoría' : 'Editar categoría',

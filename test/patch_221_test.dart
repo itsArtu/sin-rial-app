@@ -42,12 +42,12 @@ void main() {
   });
 
   test(
-    'AMOLED background and bottom navigation are opaque black in every palette',
+    'Dark background and navigation use the same neutral base in every palette',
     () {
       for (final option in themeColorOptions) {
         final t = RTheme(true, option.key);
-        expect(t.bg.toARGB32(), 0xFF000000);
-        expect(t.nav.toARGB32(), 0xFF000000);
+        expect(t.bg.toARGB32(), 0xFF101112);
+        expect(t.nav, t.bg);
         expect(t.card, isNot(t.bg));
       }
     },

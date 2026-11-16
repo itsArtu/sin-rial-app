@@ -51,9 +51,18 @@ class _BalanceTrendState extends State<BalanceTrend> {
       ],
       color: t.accent,
       barWidth: 2,
-      isCurved: true,
-      preventCurveOverShooting: true,
-      dotData: const charts.FlDotData(show: false),
+      isStepLineChart: true,
+      lineChartStepData: const charts.LineChartStepData(stepDirection: 1),
+      dotData: charts.FlDotData(
+        show: true,
+        checkToShowDot: (spot, _) => spot.x == points.length - 1,
+        getDotPainter: (_, _, _, _) => charts.FlDotCirclePainter(
+          radius: 3,
+          color: t.accent,
+          strokeWidth: 2,
+          strokeColor: t.bg,
+        ),
+      ),
       showingIndicators: [if (selected != null) index],
       belowBarData: charts.BarAreaData(
         show: true,

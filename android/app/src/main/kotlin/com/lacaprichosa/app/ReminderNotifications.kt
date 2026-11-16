@@ -14,7 +14,7 @@ internal object ReminderNotifications {
     const val RECURRING_SENT_KEY = "recurring_reminders_sent_v1"
 
     fun readState(context: Context): JSONObject {
-        val state = NativeJsonStore.readState(context, setOf("debts"))
+        val state = NativeJsonStore.readState(context, setOf("debts", "accounts"))
         val rules = state.optJSONArray("recurringMovements")
         if (rules != null && (0 until rules.length()).any { index ->
                 rules.optJSONObject(index)?.let { !it.optBoolean("archived") && !it.optBoolean("paused") && it.optBoolean("notify", true) } == true
@@ -48,6 +48,14 @@ internal object ReminderNotifications {
         val debts = state.optJSONArray("debts") ?: return emptyList()
         return (0 until debts.length()).mapNotNull { index ->
             debts.optJSONObject(index)?.let { DebtReminder.from(it, state.optBoolean("hideAmounts")) }
+        }
+    }
+
+    fun reconcileCards(context: Context, notice: CardReminder.Notice?) {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        val active = manager.activeNotifications.firstOrNull { it.id == CardReminder.ID }
+        if (active != null && (notice == null || active.notification.extras.getString(SIGNATURE) != notice.signature)) {
+            manager.cancel(CardReminder.ID)
         }
     }
 

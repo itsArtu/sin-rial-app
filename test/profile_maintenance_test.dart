@@ -54,6 +54,52 @@ void main() {
     expect(withDefaults(previous)['seenFeatureTour'], '3.2');
   });
 
+  testWidgets(
+    'PIN dialog fits above keyboard and preserves failed verification',
+    (tester) async {
+      final dynamic app = await fixtures.fixture(tester);
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 230);
+      addTearDown(tester.view.resetViewInsets);
+      final attempts = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(const MethodChannel('rial/native_state'), (
+            call,
+          ) async {
+            if (call.method == 'disableSecurity') {
+              attempts.add((call.arguments as Map)['pin'] as String);
+              throw PlatformException(code: 'invalid_pin');
+            }
+            if (call.method == 'scheduleRateUpdate') return true;
+            return null;
+          });
+      showDisablePinDialog(tester.element(find.byType(HomePage)), app);
+      await tester.pumpAndSettle();
+      expect(find.byType(RialDialogSurface), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getRect(find.byType(RialDialogSurface)).bottom,
+        lessThan(410),
+      );
+      await tester.enterText(field('PIN actual'), '1234');
+      await tester.ensureVisible(find.text('Desactivar'));
+      await tester.tap(find.text('Desactivar'));
+      await tester.pumpAndSettle();
+      expect(attempts, ['1234']);
+      expect(
+        find.textContaining('No se pudo desactivar el PIN'),
+        findsOneWidget,
+      );
+      expect(find.byType(DisablePinDialog), findsOneWidget);
+      await tester.ensureVisible(find.text('Cancelar'));
+      await tester.tap(find.text('Cancelar'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DisablePinDialog), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets('Initial setup saves surname and can finish without PIN', (
     tester,
   ) async {
@@ -93,7 +139,7 @@ void main() {
     expect(find.byType(ReleaseTour), findsOneWidget);
     await tester.tap(find.text('Siguiente'));
     await tester.pumpAndSettle();
-    expect(find.text('Deudas saldadas, sin residuos'), findsOneWidget);
+    expect(find.text('Tus tarjetas de crédito'), findsOneWidget);
     await tester.tap(find.text('Omitir'));
     await tester.pumpAndSettle();
     expect(find.byType(HomePage), findsOneWidget);

@@ -86,10 +86,12 @@ extension _QuickAccessApp on _RialAppState {
     _reloadingExternal = true;
     try {
       await NativeStateStore.flush();
+      final requestedAt = localMutationEpoch;
       final changed = await _storeChannel.invokeMethod<bool>('stateChanged');
       if (changed == true) {
         final fresh = await NativeStateStore.load();
-        if (!mounted) return;
+        if (!mounted || requestedAt != localMutationEpoch || _restoringBackup)
+          return;
         _setViewState(() => state = fresh);
         _undoHistory.clear();
         _showUndo = false;
@@ -200,7 +202,7 @@ class QuickAccessUnavailable extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
     backgroundColor: theme.bg,
-    navigationBar: CupertinoNavigationBar(
+    navigationBar: RialNavigationBar(
       middle: const Text('Sin Rial'),
       trailing: CircleTool(
         theme: theme,
@@ -320,7 +322,7 @@ extension _QuickMovementForm on _MovementEditorState {
       canPop: !_saving,
       child: CupertinoPageScaffold(
         backgroundColor: t.bg,
-        navigationBar: CupertinoNavigationBar(
+        navigationBar: RialNavigationBar(
           transitionBetweenRoutes: false,
           backgroundColor: t.bg,
           border: null,
