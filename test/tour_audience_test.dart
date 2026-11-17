@@ -76,7 +76,7 @@ void main() {
       state.remove('pendingAppTour');
       await tester.pumpWidget(RialApp(initialState: withDefaults(state)));
       await tester.pumpAndSettle();
-      expect(find.text('Novedades de 3.6.0'), findsOneWidget);
+      expect(find.text('Novedades de 3.6.1'), findsOneWidget);
       expect(find.byType(ReleaseTour), findsOneWidget);
       expect(find.text('Conoce Sin Rial'), findsNothing);
       await tester.tap(find.text('Omitir'));

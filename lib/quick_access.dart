@@ -418,9 +418,29 @@ extension _QuickMovementForm on _MovementEditorState {
                             category,
                             (value) => _setViewState(() {
                               category = value;
+                              if (value == 'Pago TDC') {
+                                debtId = '';
+                                debtInstallmentIndex = null;
+                              } else {
+                                creditPaymentId = '';
+                              }
                               categoryTouched = true;
                             }),
                           ),
+                        ),
+                      if (type == 'expense' &&
+                          category == 'Pago TDC' &&
+                          !isCreditCard(source) &&
+                          widget.app.maps('accounts').any(isCreditCard))
+                        choice(
+                          'Tarjeta a pagar',
+                          widget.app.accountById(creditPaymentId) == null
+                              ? 'Seleccionar tarjeta'
+                              : accountPrimaryName(
+                                  widget.app.accountById(creditPaymentId)!,
+                                ),
+                          CupertinoIcons.creditcard,
+                          pickCreditPaymentCard,
                         ),
                       if (hasPaymentMethod)
                         choice(

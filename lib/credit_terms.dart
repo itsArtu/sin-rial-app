@@ -44,7 +44,7 @@ String? creditProductUrl(String provider, String design) => switch (provider) {
 Decimal creditUnitsFor(num bolivars, num index) {
   if (!index.isFinite || index <= 0 || index > 1000000000) {
     throw const FormatException(
-      'Indica el índice IDI confirmado, no la tasa del dólar.',
+      'El IDI no está disponible. Conéctate para actualizarlo desde el BCV.',
     );
   }
   return (_decimal(bolivars) / _decimal(index)).toDecimal(
@@ -59,12 +59,44 @@ Decimal indexedCreditUnits(Map<String, dynamic> card) =>
       numberValue(card['creditIndex']),
     );
 
+void setCreditUvcAmounts(
+  Map<String, dynamic> card,
+  String debt,
+  String available,
+) {
+  Decimal? parse(String text) =>
+      Decimal.tryParse(text.trim().replaceAll(',', '.'));
+  final owed = parse(debt), remaining = parse(available);
+  if (owed == null ||
+      remaining == null ||
+      owed < Decimal.zero ||
+      remaining < Decimal.zero ||
+      owed + remaining <= Decimal.zero ||
+      (owed + remaining).toDouble() > 999999999999) {
+    throw const FormatException(
+      'Indica la deuda y el disponible en UVC con valores válidos.',
+    );
+  }
+  if (numberValue(card['creditIndex']) <= 0) {
+    throw const FormatException(
+      'Necesitamos el IDI publicado por el BCV. Conéctate e inténtalo de nuevo.',
+    );
+  }
+  card['creditUnits'] = (-owed).toString();
+  card['creditLimitUnits'] = (owed + remaining).toString();
+  refreshIndexedCreditBalance(card);
+}
+
 void refreshIndexedCreditBalance(Map<String, dynamic> card) {
   if (!isIndexedCredit(card)) return;
-  card['balance'] = debtMoney(
-    (indexedCreditUnits(card) * _decimal(numberValue(card['creditIndex'])))
-        .toDouble(),
+  final index = Decimal.parse(card['creditIndex'].toString());
+  card['balance'] = debtMoney((indexedCreditUnits(card) * index).toDouble());
+  final limitUnits = Decimal.tryParse(
+    card['creditLimitUnits']?.toString() ?? '',
   );
+  if (limitUnits != null) {
+    card['creditLimit'] = debtMoney((limitUnits * index).toDouble());
+  }
   updateCreditMinimum(card);
 }
 
@@ -125,16 +157,18 @@ void prepareCreditIndex(
     movement[key] = previous![key];
     return;
   }
-  final quoteDate = DateTime.tryParse(
-    card['creditIndexDate']?.toString() ?? '',
-  );
   final date = parseMovementDate(movement['date']?.toString());
-  if (quoteDate == null || !isSameDate(quoteDate, date)) {
+  final quote = creditIndexForDate([
+    ...((card['creditIndexHistory'] as List?) ?? []),
+    {'date': card['creditIndexDate'], 'index': card['creditIndex']},
+  ], date);
+  if (quote == null ||
+      date.difference(DateTime.parse(quote['date'])).inDays > 7) {
     throw const FormatException(
-      'Confirma el IDI de la fecha del movimiento en la tarjeta antes de guardarlo.',
+      'No está disponible el IDI de esta fecha. Conéctate a internet e inténtalo de nuevo.',
     );
   }
-  movement[key] = card['creditIndex'];
+  movement[key] = quote['index'];
 }
 
 Map<String, dynamic> cardWithNewLimit(
@@ -149,6 +183,12 @@ Map<String, dynamic> cardWithNewLimit(
   }
   final result = Map<String, dynamic>.from(card);
   result['creditLimit'] = moneyRound(limit);
+  if (isIndexedCredit(card)) {
+    result['creditLimitUnits'] = creditUnitsFor(
+      limit,
+      numberValue(card['creditIndex']),
+    ).toString();
+  }
   if (moneyCents(limit) != moneyCents(numberValue(card['creditLimit']))) {
     result['creditLimitHistory'] = [
       ...((card['creditLimitHistory'] as List?) ?? []),

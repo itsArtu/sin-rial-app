@@ -8,6 +8,8 @@
 - Initial debt, limit, minimum and closing/payment days are user-entered statement data. No interest or minimum-payment formula is invented.
 - Payments reduce `creditMinimumDue`. A signed `creditMinimumBalance` retains excess payment coverage, so edit/delete/undo work in any order. Updating the statement minimum creates a new `creditMinimumCycle`; reversing an older-cycle payment does not change the new minimum.
 - Liquid home balances, savings funding and debt-payment sources exclude credit cards.
+- Currency account overviews also exclude credit cards. Selecting a bank account always opens that account. Home credit widgets are separate, show available credit and open the selected credit card.
+- Selecting `Pago TDC` from an expense offers a credit-card selector only when cards exist. A linked payment becomes a transfer, debiting the bank once and reducing the selected card debt without another expense. Without cards, the legacy category remains an ordinary expense.
 - Cards and their movements are included in existing encrypted state and portable backups. Only optional last four digits are stored, not PAN or CVV.
 - The last-four field accepts at most four numeric digits, including paste; nonempty values must contain exactly four digits when saved. `cardholderName` is separate from the optional alias in `label`; display names keep the bank, with the alias in parentheses.
 
@@ -31,6 +33,7 @@ Android visibility reference: https://developer.android.com/training/package-vis
 - Visa: https://commons.wikimedia.org/wiki/File:Visa_Inc._logo_(2021%E2%80%93present).svg
 - Mastercard symbol, without wordmark: https://commons.wikimedia.org/wiki/File:Mastercard_2019_logo.svg
 - Logos identify the card network; generic card designs do not imply bank affiliation.
+- Partner assets: Rio logo from https://instaleap-data-client.s3.us-east-1.amazonaws.com/RIO_SUPERMARKET/RioLogo.png (Rio Market storefront); Zona Tech from https://zonatechgroup.com/wp-content/themes/zt-nueva-era/assets/brand/logo-white.svg ; SoyTechno from https://brandfetch.com/soytechno.com . Partner designs identify the merchant separately from the bank and network. SoyTechno supports Visa and Mastercard; Rio and Zona Tech are restricted to Mastercard, including save validation.
 - Franchise designs use separate Visa/Mastercard palettes and motifs. Visa offers Standard (Classic in the lockup), Gold, Platinum and Signature. Mastercard offers Standard, Gold, Platinum and Black. Legacy Visa records saved as Black display as Signature and normalize on edit, without changing debt, limit or movements. Switching the network converts Signature/Black to the matching tier. Bank and co-brand designs remain available separately.
 - Reference catalogs: https://www.mastercard.com/lac/es/personal/find-a-card/credit-card.html and https://caribbean.visa.com/pay-with-visa/find-a-card/credit-cards.html . The Gold references supplied by the user guide the Visa lockup and Mastercard radial engraving; no cardholder identity or card number is copied.
 - Manrope static weights 400/500/600/700/800 were instantiated from the existing bundled variable font using fontTools, with updated name tables and unchanged source timestamp. The existing OFL license is retained.
@@ -39,13 +42,14 @@ Android visibility reference: https://developer.android.com/training/package-vis
 
 Android bank shortcuts need installed, launchable bank apps. This feature does not authorize transactions. Card payment currently requires a source account in the card's currency. Closing/payment day 29-31 clamps to the last valid day in short months.
 
-## Indexed credit and actual transfer fees (build 103)
+## Indexed credit and actual transfer fees (build 106)
 
-- `creditBasis` defaults to nominal for existing records. UVC must be explicitly selected with a positive IDI and its date. It is not the USD exchange rate.
+- `creditBasis` defaults to nominal for existing records. UVC must be explicitly selected. The form accepts debt and available credit in UVC, using the latest valid official BCV IDI without an editable IDI field. It is not the USD exchange rate.
 - `creditUnits` stores signed decimal units as text, with up to 24 decimal places on division. `creditIndex` and `creditIndexDate` identify the confirmed valuation; index history is retained.
 - Each indexed movement retains its original index and unit delta. Edits and reversals remove those units even after valuation changes. Full payments clear fractional unit residue.
-- No automatic BCV IDI fetch was enabled: the official endpoint could not be retrieved reliably during validation. New operations need a quote for their date. There is no inferred daily interest or invented tariff.
-- The approved limit is a separately confirmed VES value, not an automatically indexed UVC limit. Updating it appends `creditLimitHistory` and never creates income or changes the debt.
+- The official BCV index table is fetched in the background, at most once per successful day, with coalesced requests, timeouts and retry throttling. The parser selects the current-expression IDI column, not USD or the obsolete index. Future and invalid quotes are rejected; failed requests retain the last valid valuation and its date. Index parsing runs outside the UI isolate.
+- Indexed debt and limit are stored as decimal UVC units. Both are revalued from the latest eligible IDI without creating movements or debiting liquid accounts. Legacy nominal snapshots are converted using their previous confirmed index before applying a newer index. New operations need a quote for their date, at most seven days old. Existing operations retain their original unit delta for reversal.
+- Updating an approved limit appends `creditLimitHistory` and never creates income or changes debt. Indexed limit updates also maintain `creditLimitUnits`. Ordinary consumption is entered by the user; no automatic expense, interest or tariff is inferred from index changes.
 - Credit-to-Ubii uses gross source debt, net destination balance and a deducted fee equal to the difference. Example: 10000 -> 9650, fee 350 / 3.5%. This is arithmetic from actual amounts, not a universal Ubii tariff.
 - Direct advances default off and must be enabled from confirmed card conditions. BNC SoyTechno rejects direct advances even with an imported enabled flag. Recording a completed Ubii top-up does not assert that every card is eligible for it.
 - The five automations never send banking instructions. Suggestions and budgets require acceptance, duplicate warnings can be overridden, and card reminders are grouped/deduplicated. Scheduled portable backups use the Android-selected persistent folder permission and password stored only in the encrypted device state; those settings are excluded from exported backups. They run while the app is active, not as a guaranteed background job.
@@ -69,7 +73,7 @@ Sources:
 - https://www.mercantilbanco.com/personas/productos/tarjetas/tarjeta-credito-mastercard-mercantil
 - https://chatbot.mercantilbanco.com/mercprod/content/privada/tarjetas/prestame.html
 - https://www.bancaribe.com.ve/tarjeta-de-credito-bancaribe
-- https://www.bcv.org.ve/estadisticas/indice-de-inversion (unavailable during this check)
+- https://www.bcv.org.ve/estadisticas/indice-de-inversion (retrieved on 2026-11-17: current-expression IDI 4.47704199; the separate USD column was 915.74760000)
 
 The reviewed February/March Bancamiga and April BDV tariff PDFs are not treated as current November tariff tables. No historical published percentage is silently applied to user transactions.
 

@@ -1087,7 +1087,10 @@ class AccountCurrencyOverview extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = app.theme;
     final accounts =
-        app.maps('accounts').where((a) => a['currency'] == currency).toList()
+        app
+            .maps('accounts')
+            .where((a) => !isCreditCard(a) && a['currency'] == currency)
+            .toList()
           ..sort(
             (a, b) =>
                 numberValue(b['balance']).compareTo(numberValue(a['balance'])),

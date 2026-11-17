@@ -1,11 +1,79 @@
 part of 'main.dart';
 
+extension _CreditPaymentPicker on _MovementEditorState {
+  void pickCreditPaymentCard() {
+    final app = widget.app;
+    showModernActionSheet(
+      context,
+      title: 'Tarjeta a pagar',
+      actions: [
+        for (final card in app.maps('accounts').where(isCreditCard))
+          ModernSheetAction(
+            title: accountPrimaryName(card),
+            subtitle:
+                '${displayCurrency(card['currency'].toString())} · ${app.secureMoney(creditDebt(card), card['currency'].toString())}',
+            logoProvider: card['provider']?.toString(),
+            icon: CupertinoIcons.creditcard,
+            selected: card['id'] == creditPaymentId,
+            onPressed: () =>
+                _setViewState(() => creditPaymentId = card['id'].toString()),
+          ),
+      ],
+    );
+  }
+}
+
 bool isCreditCard(Map<String, dynamic>? account) =>
     account?['kind'] == 'credit';
 String creditNetwork(Map<String, dynamic> card) =>
     card['cardNetwork'] == 'mastercard' ? 'Mastercard' : 'Visa';
 double creditDebt(Map<String, dynamic> card) =>
     math.max(0.0, -numberValue(card['balance']));
+
+// A card payment moves existing money to a liability, not to a second expense.
+void linkCreditCardPayment(
+  Map<String, dynamic> movement,
+  List<Map<String, dynamic>> accounts,
+  String cardId,
+) {
+  if (movement['type'] != 'expense' || movement['category'] != 'Pago TDC')
+    return;
+  final source = accounts
+      .where((a) => a['id'] == movement['accountId'])
+      .firstOrNull;
+  if (isCreditCard(source)) {
+    throw const FormatException(
+      'Selecciona una cuenta bancaria para pagar la tarjeta.',
+    );
+  }
+  final cards = accounts.where(isCreditCard).toList();
+  if (cards.isEmpty) return;
+  final card = cards.where((a) => a['id'] == cardId).firstOrNull;
+  if (card == null)
+    throw const FormatException('Selecciona la tarjeta que estás pagando.');
+  if (source?['currency'] != card['currency']) {
+    throw const FormatException(
+      'La cuenta y la tarjeta deben tener la misma moneda.',
+    );
+  }
+  movement.addAll({
+    'type': 'transfer',
+    'creditPayment': true,
+    'category': 'Pago TDC',
+    'targetAccountId': cardId,
+    'targetAmount': movement['amount'],
+    'targetCurrency': card['currency'],
+    'debtId': '',
+    'feeAmount': 0.0,
+    'feeMode': 'none',
+    'feeTreatment': 'deducted',
+    'rate': 1.0,
+    'paymentMethod': '',
+  });
+  movement.remove('debtInstallmentIndex');
+  movement.remove('debtExchangeRate');
+}
+
 double creditAvailable(Map<String, dynamic> card) => math.max(
   0.0,
   moneyAdd(numberValue(card['creditLimit']), numberValue(card['balance'])),
@@ -55,6 +123,10 @@ DateTime nextCardDate(int day, DateTime now) {
 
 void validateCreditAccount(Map<String, dynamic> card) {
   if (!isCreditCard(card)) return;
+  if (const ['bancamiga-rio', 'bancamiga-zona'].contains(card['cardDesign']) &&
+      card['cardNetwork'] != 'mastercard') {
+    throw const FormatException('Río y Zona Tech utilizan Mastercard.');
+  }
   final limit = numberValue(card['creditLimit']);
   final debt = creditDebt(card);
   final minimum = numberValue(card['creditMinimumDue']);
@@ -275,6 +347,70 @@ extension _CreditCardActions on _RialAppState {
               ),
             ),
           ),
+      ],
+    );
+  }
+}
+
+class HomeCreditCardsSection extends StatelessWidget {
+  const HomeCreditCardsSection({super.key, required this.app});
+  final _RialAppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = app.maps('accounts').where(isCreditCard).toList();
+    if (cards.isEmpty) return const SizedBox.shrink();
+    return Column(
+      key: const ValueKey('home-credit-cards'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeader(
+          theme: app.theme,
+          title: 'Tarjetas de crédito',
+          action: 'Ver todas',
+          onAction: () =>
+              app.pushPage(context, (_) => CreditCardsPage(app: app)),
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = cards.length == 1
+                ? math.min(340.0, constraints.maxWidth)
+                : math.min(300.0, constraints.maxWidth * .86);
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < cards.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 12),
+                    Semantics(
+                      button: true,
+                      label: 'Abrir ${accountPrimaryName(cards[i])}',
+                      child: PressFeedback(
+                        key: ValueKey('home-credit-${cards[i]['id']}'),
+                        onTap: () => app.pushPage(
+                          context,
+                          (_) => CreditCardDetailPage(
+                            app: app,
+                            cardId: cards[i]['id'].toString(),
+                          ),
+                        ),
+                        child: SizedBox(
+                          width: width,
+                          child: BankCardFace(
+                            account: cards[i],
+                            app: app,
+                            compact: true,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
       ],
     );
   }
@@ -514,7 +650,23 @@ class _CreditCardDetailPageState extends State<CreditCardDetailPage> {
                   ),
                   DebtDetailRow(
                     theme: t,
-                    label: 'IDI confirmado',
+                    label: 'Disponible en UVC',
+                    value: app.hideAmounts
+                        ? '••••'
+                        : formatNumberTruncated(
+                            math.max(
+                              0,
+                              numberValue(card['creditLimitUnits']) +
+                                  indexedCreditUnits(card).toDouble(),
+                            ),
+                            decimals: 8,
+                          ),
+                  ),
+                  DebtDetailRow(
+                    theme: t,
+                    label: card['creditIndexSource'] == 'BCV'
+                        ? 'IDI BCV'
+                        : 'Último IDI guardado',
                     value: compactDecimal(numberValue(card['creditIndex'])),
                   ),
                   Text(
@@ -523,7 +675,7 @@ class _CreditCardDetailPageState extends State<CreditCardDetailPage> {
                   ),
                   SecondaryActionButton(
                     theme: t,
-                    label: 'Actualizar IDI / estado de cuenta',
+                    label: 'Actualizar estado de cuenta',
                     onPressed: () => app.openCreditEditor(context, card: card),
                   ),
                 ],
@@ -642,6 +794,9 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
   String basis = 'nominal';
   bool cashAdvance = false;
   final index = TextEditingController();
+  final uvcDebt = TextEditingController(),
+      uvcAvailable = TextEditingController();
+  bool indexLoading = false;
   DateTime indexDate = DateTime.now();
   int cutDay = 15, dueDay = 30;
   @override
@@ -668,12 +823,49 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
       limit.text = plain(numberValue(card['creditLimit']));
       debt.text = plain(creditDebt(card));
       minimum.text = plain(numberValue(card['creditMinimumDue']));
+      if (isIndexedCredit(card)) {
+        final units = -indexedCreditUnits(card);
+        final total =
+            Decimal.tryParse(card['creditLimitUnits']?.toString() ?? '') ??
+            creditUnitsFor(
+              numberValue(card['creditLimit']),
+              numberValue(card['creditIndex']),
+            );
+        uvcDebt.text = units.toString();
+        uvcAvailable.text = (total - units).toString();
+      }
     }
+    if (basis == 'uvc') unawaited(loadIndex());
+  }
+
+  Future<void> loadIndex({bool force = false}) async {
+    if (indexLoading) return;
+    setState(() => indexLoading = true);
+    await widget.app.refreshCreditIndex(force: force, forEditor: true);
+    if (!mounted) return;
+    final quote = widget.app.officialCreditIndex;
+    setState(() {
+      indexLoading = false;
+      if (quote != null) {
+        index.text = quote['index'].toString();
+        indexDate = DateTime.parse(quote['date']);
+      }
+    });
   }
 
   @override
   void dispose() {
-    for (final c in [label, lastFour, holder, limit, debt, minimum, index]) {
+    for (final c in [
+      label,
+      lastFour,
+      holder,
+      limit,
+      debt,
+      minimum,
+      index,
+      uvcDebt,
+      uvcAvailable,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -747,8 +939,14 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
                     'cardTier': tier,
                     'cardDesign': design,
                     'currency': currency,
-                    'creditLimit': parseAmount(limit.text),
-                    'balance': -parseAmount(debt.text),
+                    'creditLimit': basis == 'uvc'
+                        ? (parseAmount(uvcDebt.text) +
+                                  parseAmount(uvcAvailable.text)) *
+                              parseAmount(index.text)
+                        : parseAmount(limit.text),
+                    'balance': basis == 'uvc'
+                        ? -parseAmount(uvcDebt.text) * parseAmount(index.text)
+                        : -parseAmount(debt.text),
                     'lastFour': lastFour.text,
                     'cardholderName': holder.text,
                   },
@@ -799,12 +997,13 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
                 AppPillSelector(
                   theme: t,
                   value: network,
-                  items: const [
-                    KindSelectorItem(
-                      value: 'visa',
-                      label: 'Visa',
-                      icon: CupertinoIcons.creditcard,
-                    ),
+                  items: [
+                    if (design != 'bancamiga-rio' && design != 'bancamiga-zona')
+                      const KindSelectorItem(
+                        value: 'visa',
+                        label: 'Visa',
+                        icon: CupertinoIcons.creditcard,
+                      ),
                     KindSelectorItem(
                       value: 'mastercard',
                       label: 'Mastercard',
@@ -854,9 +1053,10 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
                     context,
                     ['Bolívares', 'Dólares'],
                     displayCurrency(currency),
-                    (v) => setState(
-                      () => currency = v == 'Bolívares' ? 'VES' : 'USD',
-                    ),
+                    (v) => setState(() {
+                      currency = v == 'Bolívares' ? 'VES' : 'USD';
+                      if (currency != 'VES') basis = 'nominal';
+                    }),
                   ),
                 ),
                 OptionField(
@@ -871,10 +1071,13 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
                     basis == 'uvc'
                         ? 'Indexada en UVC'
                         : 'Nominal, sin indexación',
-                    (value) => setState(() {
-                      basis = value == 'Indexada en UVC' ? 'uvc' : 'nominal';
-                      if (basis == 'uvc') currency = 'VES';
-                    }),
+                    (value) {
+                      setState(() {
+                        basis = value == 'Indexada en UVC' ? 'uvc' : 'nominal';
+                        if (basis == 'uvc') currency = 'VES';
+                      });
+                      if (basis == 'uvc') unawaited(loadIndex());
+                    },
                   ),
                 ),
                 Padding(
@@ -897,25 +1100,31 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
                     ),
                   ),
                 if (basis == 'uvc') ...[
-                  input('IDI confirmado (con todos sus decimales)', index),
-                  OptionField(
-                    theme: t,
-                    label: 'Fecha del IDI',
-                    value: formatDate(indexDate),
-                    icon: CupertinoIcons.calendar,
-                    onTap: () => showModernDateTimePicker(
-                      context,
-                      theme: t,
-                      initial: indexDate,
-                      onSelected: (v) => setState(() => indexDate = v),
-                    ),
-                  ),
-                  Text(
-                    'La valoración usa el último IDI que confirmes. No se sustituye por la tasa USD ni se inventa un ajuste diario.',
-                    style: TextStyle(
-                      color: t.muted,
-                      fontSize: 12,
-                      height: 1.45,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            indexLoading
+                                ? 'Consultando IDI del BCV…'
+                                : parseAmount(index.text) > 0
+                                ? '${widget.app.officialCreditIndex != null ? 'IDI BCV' : 'Último IDI guardado'} · ${index.text.replaceAll('.', ',')}\n${formatDate(indexDate)}'
+                                : 'IDI no disponible. Conéctate para actualizar.',
+                            style: TextStyle(
+                              color: t.muted,
+                              fontSize: 13,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                        CircleTool(
+                          theme: t,
+                          icon: CupertinoIcons.refresh,
+                          label: 'Actualizar IDI',
+                          onTap: () => unawaited(loadIndex(force: true)),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -944,8 +1153,13 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
                     ),
                   ],
                 ),
-                input('Límite de crédito', limit),
-                input('Deuda actual', debt),
+                if (basis == 'uvc') ...[
+                  input('Deuda actual en UVC', uvcDebt),
+                  input('Disponible en UVC', uvcAvailable),
+                ] else ...[
+                  input('Límite de crédito', limit),
+                  input('Deuda actual', debt),
+                ],
                 input('Mínimo pendiente del estado de cuenta', minimum),
                 OptionField(
                   theme: t,
@@ -999,7 +1213,7 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
       'creditBasis': basis,
       'creditCashAdvance': design != 'bnc-soytechno' && cashAdvance,
       if (basis == 'uvc') ...{
-        'creditIndex': parseAmount(index.text),
+        'creditIndex': index.text,
         'creditIndexDate': DateTime(
           indexDate.year,
           indexDate.month,
@@ -1020,6 +1234,23 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
       'bankAccountType': '',
     };
     try {
+      if (basis == 'uvc') {
+        if (indexLoading)
+          throw const FormatException(
+            'Espera a que termine la consulta del IDI.',
+          );
+        setCreditUvcAmounts(card, uvcDebt.text, uvcAvailable.text);
+        if (widget.app.officialCreditIndex != null) {
+          applyOfficialCreditIndex(
+            card,
+            ((widget.app.state['creditIndexQuotes'] as List?) ?? [])
+                .whereType<Map>()
+                .map((q) => Map<String, dynamic>.from(q))
+                .toList(),
+            DateTime.now(),
+          );
+        }
+      }
       if (parseAmount(debt.text) < 0)
         throw const FormatException('La deuda no puede ser negativa.');
       validateCreditAccount(card);
@@ -1036,7 +1267,11 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
           'Una tarjeta con movimientos conserva su moneda.',
         );
       }
-      widget.app.saveAccount(card, editingId: widget.cardId);
+      widget.app.saveAccount(
+        card,
+        editingId: widget.cardId,
+        unitsProvided: basis == 'uvc',
+      );
       Navigator.pop(context);
     } on FormatException catch (e) {
       showModernNotice(context, title: 'Revisa la tarjeta', message: e.message);

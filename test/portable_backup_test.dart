@@ -71,6 +71,9 @@ void main() {
       },
     },
     'futurePreference': {'preserved': true},
+    'creditIndexQuotes': [
+      {'date': '2026-11-17T00:00:00.000', 'index': '4.47704199'},
+    ],
   };
   late Uint8List encrypted;
   setUpAll(() async {
@@ -96,6 +99,7 @@ void main() {
       expect(restored['movements'], state['movements']);
       expect(restored['savingsFunds'], state['savingsFunds']);
       expect(restored['futurePreference'], state['futurePreference']);
+      expect(restored['creditIndexQuotes'], state['creditIndexQuotes']);
       for (final field in [
         'pinHash',
         'pinSalt',

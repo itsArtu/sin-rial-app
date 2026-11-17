@@ -185,28 +185,28 @@ class _ReleaseTourState extends State<ReleaseTour> {
       CupertinoIcons.sparkles,
     ),
     (
-      'Tus tarjetas de crédito',
-      'Visa Signature y Mastercard Black, con patrones propios de cada franquicia. Diseños por banco, tarjetas aliadas y deuda nominal o UVC con IDI confirmado.',
+      'Tu crédito, a la vista',
+      'Tus tarjetas aparecen en Inicio con su diseño y crédito disponible. Toca una para ver sus consumos y pagos.',
       CupertinoIcons.creditcard,
     ),
     (
-      'Tu banco, más cerca',
-      'Abre la app de tu banco desde su cuenta. También puedes vincular la app que utilizas en tu teléfono.',
+      'Cuentas y crédito, separados',
+      'La deuda de tus tarjetas no se resta del dinero en tus cuentas. Desde tus balances entras a la cuenta bancaria, no a la tarjeta.',
       CupertinoIcons.building_2_fill,
     ),
     (
-      'Cada movimiento cuenta',
-      'Sugerencias de cuenta y categoría, aviso de duplicados y comisión calculada con lo enviado y recibido, también en recargas a Ubii.',
+      'Pagos de tarjeta conectados',
+      'Al elegir Pago TDC puedes seleccionar la tarjeta. El pago reduce su deuda y descuenta el dinero de tu cuenta una sola vez.',
       CupertinoIcons.arrow_right_arrow_left,
     ),
     (
-      'Tus datos, contigo',
-      'Guarda una copia con contraseña. Para recuperarla, elige el archivo, desbloquéalo y revisa su contenido antes de restaurar.',
+      'UVC al día',
+      'Registra tu deuda y crédito disponible en UVC. El IDI se consulta en el BCV para actualizar su valor en bolívares, sin crear gastos.',
       CupertinoIcons.tray_arrow_down,
     ),
     (
-      'Más claro, más ligero',
-      'Controles en sintonía, recordatorios de tarjetas, presupuestos sugeridos y copias cifradas periódicas al usar la app.',
+      'Cada tarjeta, su identidad',
+      'Logos de Río Supermarket, Zona Tech y SoyTechno, con mejores proporciones, chip y contactless. Tus datos y preferencias se conservan.',
       CupertinoIcons.sparkles,
     ),
   ];

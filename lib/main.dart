@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:decimal/decimal.dart';
+import 'package:html/parser.dart' as html_parser;
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:fl_chart/fl_chart.dart' as charts;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' as material;
@@ -54,6 +56,7 @@ part 'clock_picker.dart';
 part 'backup_ui.dart';
 part 'credit_cards.dart';
 part 'credit_terms.dart';
+part 'credit_index.dart';
 part 'card_designs.dart';
 part 'smart_assistance.dart';
 part 'automatic_backup.dart';
@@ -72,11 +75,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.6.0',
+  defaultValue: '3.6.1',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 105,
+  defaultValue: 106,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -1247,6 +1250,8 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
   Timer? rateRefreshTimer;
   Timer? rateBoundaryTimer;
   Timer? _dayBoundaryTimer;
+  Future<void>? _creditIndexPending;
+  DateTime? _creditIndexAttempt;
   bool openAccountAfterOnboarding = false;
   bool rateLoading = false;
   bool usdtLoading = false;
@@ -1376,6 +1381,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       }
       if (!isQuickAccess) unawaited(checkNativeLaunchAction());
       scheduleAutomaticBackup();
+      if (!isCalculatorAccess) unawaited(refreshCreditIndex());
     });
     rateRefreshTimer = Timer.periodic(const Duration(minutes: 30), (_) {
       if ((!isQuickAccess || widget.quickAction == 'calculator') &&
@@ -1404,6 +1410,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
       () {
         if (!mounted) return;
         setState(() => revision.value++);
+        unawaited(refreshCreditIndex());
         _scheduleDayBoundary();
       },
     );
@@ -1485,6 +1492,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     _updateScreenPrivacy();
     if (!mounted || locked) return;
     unawaited(refreshUsdtOnOpen());
+    if (!isCalculatorAccess) unawaited(refreshCreditIndex());
     if (!isQuickAccess || widget.quickAction == 'calculator')
       await refreshRateIfNeeded();
   }
@@ -1497,6 +1505,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     _updateScreenPrivacy();
     backgroundedAt = null;
     unawaited(refreshUsdtOnOpen());
+    if (!isCalculatorAccess) unawaited(refreshCreditIndex());
     if (!isCalculatorAccess) {
       unawaited(NativeStateStore.consumeScreenOff());
       unawaited(checkNativeLaunchAction());
@@ -2777,7 +2786,11 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     );
   }
 
-  void saveAccount(Map<String, dynamic> account, {String? editingId}) {
+  void saveAccount(
+    Map<String, dynamic> account, {
+    String? editingId,
+    bool unitsProvided = false,
+  }) {
     validateCreditAccount(account);
     if (isCreditCard(account)) {
       final old = editingId == null ? null : accountById(editingId);
@@ -2802,7 +2815,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
         final sameBalance =
             isIndexedCredit(old) &&
             numberValue(account['balance']) == numberValue(old?['balance']);
-        account['creditUnits'] = sameBalance
+        account['creditUnits'] = unitsProvided
+            ? account['creditUnits']
+            : sameBalance
             ? indexedCreditUnits(old!).toString()
             : creditUnitsFor(
                 numberValue(account['balance']),
@@ -2815,7 +2830,9 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
             old?['creditIndexDate'] != account['creditIndexDate'];
         if (changedIndex)
           account['creditIndexHistory'] = [
-            ...((old?['creditIndexHistory'] as List?) ?? []),
+            ...((account['creditIndexHistory'] as List?) ??
+                (old?['creditIndexHistory'] as List?) ??
+                []),
             {
               'index': account['creditIndex'],
               'date': account['creditIndexDate'],
@@ -5959,6 +5976,7 @@ class HomePage extends StatelessWidget {
               ),
             ),
         ]);
+        sections.add(HomeCreditCardsSection(app: app));
       } else if (section == 'upcoming') {
         sections.add(UpcomingPaymentsSection(app: app));
       } else if (section == 'recent') {
@@ -6072,6 +6090,9 @@ class HomePage extends StatelessWidget {
               for (final child in [
                 HomeShortcutRow(app: app),
                 RecurringPendingSection(app: app),
+                if (!sanitizeHomeSections(app.state['homeSections'])
+                    .contains('accounts'))
+                  HomeCreditCardsSection(app: app),
                 ...sections,
                 if (sanitizeHomeSections(app.state['homeSections']).length <
                     homeSectionOptions.length)
@@ -7924,7 +7945,11 @@ class BalanceGroupCard extends StatelessWidget {
     final t = app.theme;
     final accounts = app
         .maps('accounts')
-        .where((account) => account['currency']?.toString() == currency)
+        .where(
+          (account) =>
+              !isCreditCard(account) &&
+              account['currency']?.toString() == currency,
+        )
         .toList();
     final total = accounts.fold<double>(
       0,
@@ -12365,6 +12390,7 @@ class _MovementEditorState extends State<MovementEditor> {
   final receivedAmount = MoneyEditingController();
   String paymentMethod = 'payment_mobile_p2p';
   String debtId = '';
+  String creditPaymentId = '';
   int? debtInstallmentIndex;
   bool amountEdited = false;
   String feeMode = 'auto';
@@ -12865,6 +12891,7 @@ class _MovementEditorState extends State<MovementEditor> {
         : false;
     final showDebtSelector =
         !isCreditCard(source) &&
+        category != 'Pago TDC' &&
         (type == 'expense' || type == 'income') &&
         (hasLinkableDebt || selectedDebt != null);
     final previewAmount = moneyRound(parseAmount(amount.text));
@@ -12957,9 +12984,32 @@ class _MovementEditorState extends State<MovementEditor> {
             category,
             (v) => setState(() {
               category = v;
+              if (v == 'Pago TDC') {
+                debtId = '';
+                debtInstallmentIndex = null;
+              } else {
+                creditPaymentId = '';
+              }
               categoryTouched = true;
             }),
           ),
+        ),
+      if (type == 'expense' &&
+          category == 'Pago TDC' &&
+          !isCreditCard(source) &&
+          app.maps('accounts').any(isCreditCard))
+        OptionField(
+          key: const ValueKey('credit-payment-selector'),
+          theme: t,
+          label: 'Tarjeta a pagar',
+          value: app.accountById(creditPaymentId) == null
+              ? 'Seleccionar tarjeta'
+              : accountPrimaryName(app.accountById(creditPaymentId)!),
+          logoProvider: app
+              .accountById(creditPaymentId)?['provider']
+              ?.toString(),
+          icon: CupertinoIcons.creditcard,
+          onTap: pickCreditPaymentCard,
         ),
       if (exchange && !receivedExchange)
         RField(
@@ -13802,6 +13852,14 @@ class _MovementEditorState extends State<MovementEditor> {
             ? parseAmount(rate.text)
             : numberValue(bcvQuote?['USD']),
       };
+      linkCreditCardPayment(draft, app.maps('accounts'), creditPaymentId);
+      if (isIndexedCredit(source) ||
+          isIndexedCredit(
+            app.accountById(draft['targetAccountId']?.toString() ?? ''),
+          )) {
+        await app.refreshCreditIndex();
+        if (!mounted) return;
+      }
       if (possibleDuplicateMovement(
             draft,
             app.maps('movements'),

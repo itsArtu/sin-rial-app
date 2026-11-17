@@ -191,14 +191,10 @@ const bankCardDesigns = [
     Color(0xFF28564A),
     Color(0xFF122C26),
   ]),
-  BankCardDesign(
-    'bnc-soytechno',
-    'SoyTechno',
-    '0191',
-    [Color(0xFF286BA1), Color(0xFF20264E)],
-    partner: 'SoyTechno',
-    network: 'visa',
-  ),
+  BankCardDesign('bnc-soytechno', 'SoyTechno', '0191', [
+    Color(0xFF286BA1),
+    Color(0xFF20264E),
+  ], partner: 'SoyTechno'),
   BankCardDesign(
     'bancamiga-zona',
     'Zona Tech',
@@ -353,43 +349,82 @@ class CardNetworkMark extends StatelessWidget {
   }
 }
 
-class BankCardFace extends StatelessWidget {
-  const BankCardFace({super.key, required this.account, required this.app});
-  final Map<String, dynamic> account;
-  final _RialAppState app;
+class CardPartnerMark extends StatelessWidget {
+  const CardPartnerMark({super.key, required this.design, required this.ink});
+  final String design;
+  final Color ink;
+
   @override
   Widget build(BuildContext context) {
-    final credit = isCreditCard(account);
-    if (!credit) return AccountIdentitySurface(account: account, app: app);
+    final (asset, label) = switch (design) {
+      'bnc-soytechno' => ('partner_soytechno.png', 'SoyTechno'),
+      'bancamiga-zona' => ('partner_zona.svg', 'Zona Tech'),
+      'bancamiga-rio' => ('partner_rio.png', 'Río Supermarket'),
+      _ => ('', ''),
+    };
+    if (asset.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      key: ValueKey('partner-$design'),
+      width: design == 'bancamiga-rio' ? 58 : 108,
+      height: 32,
+      child: asset.endsWith('.svg')
+          ? SvgPicture.asset(
+              'assets/logos/$asset',
+              semanticsLabel: label,
+              colorFilter: ColorFilter.mode(ink, BlendMode.srcIn),
+            )
+          : Image.asset(
+              'assets/logos/$asset',
+              fit: BoxFit.contain,
+              color: ink,
+              semanticLabel: label,
+              cacheWidth: 324,
+            ),
+    );
+  }
+}
+
+class BankCardFace extends StatelessWidget {
+  const BankCardFace({
+    super.key,
+    required this.account,
+    required this.app,
+    this.compact = false,
+  });
+  final Map<String, dynamic> account;
+  final _RialAppState app;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isCreditCard(account)) {
+      return AccountIdentitySurface(account: account, app: app);
+    }
     final design = resolveCardDesign(account);
     final tier = creditTier(account);
-    final network = account['cardNetwork']?.toString();
-    final franchise = credit && design == null;
-    final colors =
-        design?.colors ??
-        (credit
-            ? creditNetworkColors(network ?? 'visa', tier)
-            : [app.theme.elevated, app.theme.card]);
-    final light =
-        design?.light ??
-        (credit
-            ? creditNetworkLight(network ?? 'visa', tier)
-            : !app.theme.dark);
+    final network = account['cardNetwork']?.toString() ?? 'visa';
+    final franchise = design == null;
+    final colors = design?.colors ?? creditNetworkColors(network, tier);
+    final light = design?.light ?? creditNetworkLight(network, tier);
     final ink = light ? const Color(0xFF202629) : const Color(0xFFF8FAFC);
     final currency = account['currency']?.toString() ?? 'VES';
     final last = account['lastFour']?.toString() ?? '';
+    final holder = account['cardholderName']?.toString().trim() ?? '';
     final balance = numberValue(account['balance']);
+    final partner = design?.partner.isNotEmpty == true;
+    final labelStyle = TextStyle(
+      color: ink.withValues(alpha: .85),
+      fontSize: 12,
+    );
     return Semantics(
-      label: credit
-          ? '${creditNetwork(account)} $tier'
-          : 'Cuenta ${accountPrimaryName(account)}',
+      label: '${creditNetwork(account)} $tier',
       child: RepaintBoundary(
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           child: AnimatedContainer(
             duration: MediaQuery.disableAnimationsOf(context)
                 ? Duration.zero
-                : const Duration(milliseconds: 260),
+                : const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -400,230 +435,323 @@ class BankCardFace extends StatelessWidget {
             ),
             child: CustomPaint(
               painter: franchise
-                  ? _CreditNetworkPattern(network ?? 'visa', tier, ink)
-                  : _BankCardPattern(design?.id ?? 'generic', ink),
-              child: Container(
-                key: const ValueKey('bank-card-face'),
-                constraints: const BoxConstraints(
-                  minHeight: 220,
-                  maxWidth: 600,
-                ),
-                padding: const EdgeInsets.all(22),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        LogoBadge(
-                          provider: account['provider']?.toString() ?? '',
-                          kind: account['kind']?.toString(),
-                          benefitType: account['benefitType']?.toString(),
-                          theme: app.theme,
-                          size: 30,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            accountPrimaryName(account),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: ink,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          credit ? tier : currency,
-                          style: TextStyle(
-                            color: ink.withValues(alpha: .8),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (design?.partner.isNotEmpty ?? false)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Text(
-                          design!.partner,
-                          style: TextStyle(
-                            color: ink,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    SizedBox(height: franchise ? 18 : 24),
-                    Text(
-                      credit ? 'Disponible' : 'Saldo disponible',
-                      style: TextStyle(
-                        color: ink.withValues(alpha: .8),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        app.secureMoney(
-                          credit ? creditAvailable(account) : balance,
-                          currency,
-                        ),
-                        style: TextStyle(
-                          color: ink,
-                          fontSize: 32,
-                          fontWeight: FontWeight.w700,
-                          fontFeatures: const [ui.FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      credit
-                          ? (balance > 0
-                                ? 'Saldo a favor ${app.secureMoney(balance, currency)}'
-                                : 'Deuda ${app.secureMoney(creditDebt(account), currency)}')
-                          : currency == 'VES' && app.rate > 0
-                          ? '${app.secureMoney(moneyConvert(balance, 1, app.rate), 'USD')} BCV'
-                          : accountSecondaryName(account),
-                      key: credit ? null : const ValueKey('account-detail-bcv'),
-                      style: TextStyle(
-                        color: ink.withValues(alpha: .85),
-                        fontSize: 12,
-                      ),
-                    ),
-                    SizedBox(height: franchise ? 14 : 22),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                  ? _CreditNetworkPattern(network, tier, ink)
+                  : _BankCardPattern(design.id, ink),
+              child: compact
+                  ? Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              if (franchise) ...[
-                                Row(
-                                  children: [
-                                    _CardChip(ink: ink),
-                                    const SizedBox(width: 10),
-                                    _CardContactless(ink: ink),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                              ],
-                              Text(
-                                last.isNotEmpty
-                                    ? '•••• $last'
-                                    : credit
-                                    ? 'Tarjeta de crédito'
-                                    : accountSecondaryName(account),
-                                style: TextStyle(
-                                  color: ink.withValues(alpha: .8),
-                                  fontSize: 12,
-                                ),
+                              LogoBadge(
+                                provider: account['provider']?.toString() ?? '',
+                                kind: 'credit',
+                                theme: app.theme,
+                                size: 28,
                               ),
-                              if (account['cardholderName']
-                                      ?.toString()
-                                      .trim()
-                                      .isNotEmpty ==
-                                  true) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  account['cardholderName'].toString().trim(),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: ink,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        if (franchise && network != 'mastercard')
-                          Container(
-                            width: 88,
-                            height: 74,
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: tier == 'Gold'
-                                    ? const [
-                                        Color(0xFFC9AC68),
-                                        Color(0xFF917338),
-                                      ]
-                                    : const [
-                                        Color(0xFF49535F),
-                                        Color(0xFF182635),
-                                      ],
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const CardNetworkMark(
-                                  network: 'visa',
-                                  onDark: true,
-                                ),
-                                Container(
-                                  width: 58,
-                                  height: 1,
-                                  margin: const EdgeInsets.symmetric(
-                                    vertical: 3,
-                                  ),
-                                  color: CupertinoColors.white.withValues(
-                                    alpha: .65,
-                                  ),
-                                ),
-                                Flexible(
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: SizedBox(
+                                  height: MediaQuery.textScalerOf(context)
+                                      .scale(36),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
                                     child: Text(
-                                      tier == 'Standard' ? 'Classic' : tier,
-                                      maxLines: 1,
-                                      style: const TextStyle(
-                                        color: CupertinoColors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
+                                      accountPrimaryName(account),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: ink,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          )
-                        else if (franchise)
-                          SizedBox(
-                            width: 88,
-                            height: 74,
-                            child: Center(
-                              child: CardNetworkMark(
-                                network: tier == 'Black'
-                                    ? 'mastercard-black'
-                                    : network ?? 'visa',
-                                onDark: !light,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Text('Crédito disponible', style: labelStyle),
+                          const SizedBox(height: 4),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              app.secureMoney(
+                                creditAvailable(account),
+                                currency,
+                              ),
+                              key: ValueKey(
+                                'home-credit-available-${account['id']}',
+                              ),
+                              style: TextStyle(
+                                color: ink,
+                                fontSize: 27,
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: const [
+                                  ui.FontFeature.tabularFigures(),
+                                ],
                               ),
                             ),
-                          )
-                        else if (credit || network != null)
-                          CardNetworkMark(
-                            network: network ?? 'visa',
-                            onDark: !light,
-                          )
-                        else
-                          _CardContactless(ink: ink),
-                      ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  last.isEmpty ? tier : '•••• $last',
+                                  style: labelStyle,
+                                ),
+                              ),
+                              if (partner)
+                                SizedBox(
+                                  width: 72,
+                                  height: 24,
+                                  child: FittedBox(
+                                    child: CardPartnerMark(
+                                      design: design!.id,
+                                      ink: ink,
+                                    ),
+                                  ),
+                                )
+                              else
+                                SizedBox(
+                                  width: 48,
+                                  height: 26,
+                                  child: FittedBox(
+                                    child: CardNetworkMark(
+                                      network:
+                                          network == 'mastercard' &&
+                                              tier == 'Black'
+                                          ? 'mastercard-black'
+                                          : network,
+                                      onDark: !light,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final scaled = MediaQuery.textScalerOf(context)
+                            .scale(1);
+                        return ConstrainedBox(
+                          key: const ValueKey('bank-card-face'),
+                          constraints: BoxConstraints(
+                            minHeight: math.max(
+                              constraints.maxWidth / 1.586,
+                              220 * scaled,
+                            ),
+                            maxWidth: 600,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    LogoBadge(
+                                      provider:
+                                          account['provider']?.toString() ?? '',
+                                      kind: account['kind']?.toString(),
+                                      theme: app.theme,
+                                      size: 26,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        accountPrimaryName(account),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: ink,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    if (partner)
+                                      CardPartnerMark(
+                                        design: design!.id,
+                                        ink: ink,
+                                      )
+                                    else
+                                      _CardContactless(ink: ink),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _CardChip(
+                                          ink: ink,
+                                          silver: network == 'mastercard',
+                                        ),
+                                        const SizedBox(height: 8),
+                                        if (partner)
+                                          _CardContactless(ink: ink)
+                                        else
+                                          Text(
+                                            network == 'mastercard'
+                                                ? tier.toLowerCase()
+                                                : tier,
+                                            style: TextStyle(
+                                              color: ink,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(width: 18),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text('Disponible', style: labelStyle),
+                                          const SizedBox(height: 2),
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              app.secureMoney(
+                                                creditAvailable(account),
+                                                currency,
+                                              ),
+                                              style: TextStyle(
+                                                color: ink,
+                                                fontSize: 30,
+                                                fontWeight: FontWeight.w700,
+                                                fontFeatures: const [
+                                                  ui.FontFeature.tabularFigures(),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            balance > 0
+                                                ? 'Saldo a favor ${app.secureMoney(balance, currency)}'
+                                                : 'Deuda ${app.secureMoney(creditDebt(account), currency)}',
+                                            style: labelStyle,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 18),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            last.isNotEmpty
+                                                ? '•••• $last'
+                                                : 'Tarjeta de crédito',
+                                            style: labelStyle,
+                                          ),
+                                          if (holder.isNotEmpty) ...[
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              holder,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: ink,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    if (franchise && network == 'visa')
+                                      Container(
+                                        width: 72,
+                                        constraints: const BoxConstraints(
+                                          minHeight: 52,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              ink.withValues(alpha: .04),
+                                              ink.withValues(alpha: .16),
+                                            ],
+                                          ),
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            SizedBox(
+                                              height: 26,
+                                              child: CardNetworkMark(
+                                                network: network,
+                                                onDark: !light,
+                                              ),
+                                            ),
+                                            Container(
+                                              width: 50,
+                                              height: .7,
+                                              color: ink.withValues(alpha: .5),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              tier == 'Standard'
+                                                  ? 'Classic'
+                                                  : tier,
+                                              style: TextStyle(
+                                                color: ink,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    else
+                                      CardNetworkMark(
+                                        network:
+                                            network == 'mastercard' &&
+                                                tier == 'Black'
+                                            ? 'mastercard-black'
+                                            : network,
+                                        onDark: !light,
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  ],
-                ),
-              ),
             ),
           ),
         ),
@@ -633,20 +761,22 @@ class BankCardFace extends StatelessWidget {
 }
 
 class _CardChip extends StatelessWidget {
-  const _CardChip({required this.ink});
+  const _CardChip({required this.ink, this.silver = true});
   final Color ink;
+  final bool silver;
   @override
   Widget build(BuildContext context) => SizedBox(
     key: const ValueKey('card-chip'),
-    width: 36,
-    height: 27,
-    child: CustomPaint(painter: _CardChipPainter(ink)),
+    width: 38,
+    height: 29,
+    child: CustomPaint(painter: _CardChipPainter(ink, silver)),
   );
 }
 
 class _CardChipPainter extends CustomPainter {
-  const _CardChipPainter(this.ink);
+  const _CardChipPainter(this.ink, this.silver);
   final Color ink;
+  final bool silver;
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
@@ -657,20 +787,27 @@ class _CardChipPainter extends CustomPainter {
     canvas.drawRRect(
       shape,
       Paint()
-        ..shader = const LinearGradient(
+        ..shader = LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF4E8C8),
-            Color(0xFFBCAD88),
-            Color(0xFFE7DABB),
-            Color(0xFFA39678),
-          ],
+          colors: silver
+              ? const [
+                  Color(0xFFF1F3F2),
+                  Color(0xFFADB6B8),
+                  Color(0xFFE3E7E7),
+                  Color(0xFF9EA6AA),
+                ]
+              : const [
+                  Color(0xFFF4E8C8),
+                  Color(0xFFBCAD88),
+                  Color(0xFFE7DABB),
+                  Color(0xFFA39678),
+                ],
           stops: [0, .4, .65, 1],
         ).createShader(rect),
     );
     final line = Paint()
-      ..color = const Color(0xFF736C5B)
+      ..color = silver ? const Color(0xFF727C80) : const Color(0xFF736C5B)
       ..style = PaintingStyle.stroke
       ..strokeWidth = .65;
     canvas.save();
@@ -716,7 +853,8 @@ class _CardChipPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CardChipPainter old) => old.ink != ink;
+  bool shouldRepaint(_CardChipPainter old) =>
+      old.ink != ink || old.silver != silver;
 }
 
 class _CardContactless extends StatelessWidget {
@@ -725,8 +863,8 @@ class _CardContactless extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     key: const ValueKey('card-contactless'),
-    width: 24,
-    height: 28,
+    width: 20,
+    height: 24,
     child: CustomPaint(painter: _CardContactlessPainter(ink)),
   );
 }
@@ -740,8 +878,8 @@ class _CardContactlessPainter extends CustomPainter {
       ..color = ink.withValues(alpha: .88)
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = 2;
-    for (final radius in [6.0, 10.0, 14.0, 18.0]) {
+      ..strokeWidth = 1.8;
+    for (final radius in [4.0, 8.0, 12.0, 16.0]) {
       canvas.drawArc(
         Rect.fromCircle(center: Offset(1, size.height / 2), radius: radius),
         -.65,
@@ -861,15 +999,26 @@ class _BankCardPattern extends CustomPainter {
           }
         }
       case 'bancamiga':
-        final center = Offset(w * .76, h * .57);
-        for (var ring = 1; ring < 12; ring++) {
-          final radius = ring * 6.5;
-          for (var i = 0; i < ring * 6; i++) {
-            final a = i * math.pi * 2 / (ring * 6);
+        final center = Offset(w * .74, h * .52);
+        final extent = math.min(w * .26, h * .48);
+        final dots = Paint();
+        // Three curved blades, with tapered dot sizes along each blade.
+        for (var ring = 2; ring <= 15; ring++) {
+          final fraction = ring / 15;
+          final radius = fraction * extent;
+          final count = ring * 7;
+          for (var i = 0; i < count; i++) {
+            final angle = i * math.pi * 2 / count;
+            final phase = (angle + fraction * 1.1) * 3;
+            final blade = (math.sin(phase) + 1) / 2;
+            final strength = blade * (1 - math.pow(fraction, 3) * .65);
+            if (blade < .22) continue;
+            dots.color = const Color(0xFF12B8EF)
+                .withValues(alpha: .20 + strength * .58);
             canvas.drawCircle(
-              center + Offset(math.cos(a), math.sin(a)) * radius,
-              1.1 + ring * .035,
-              Paint()..color = const Color(0xFF09B6F0).withValues(alpha: .55),
+              center + Offset(math.cos(angle), math.sin(angle)) * radius,
+              extent * (.007 + .014 * strength),
+              dots,
             );
           }
         }

@@ -133,7 +133,7 @@ void main() {
       expect(creditDebt(app.accountById('credit')), 150);
       expect(app.accountById('b')['balance'], 100);
       expect(
-        () => app.saveMovement({...expense, 'date': '17/09/2026 11:00 AM'}),
+        () => app.saveMovement({...expense, 'date': '25/09/2026 11:00 AM'}),
         throwsFormatException,
       );
       await tester.pumpAndSettle();

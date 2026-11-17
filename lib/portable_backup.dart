@@ -36,6 +36,7 @@ const _recordCollections = {
   'recurringMovements',
   'usdtRateHistory',
   'bcvRateSnapshots',
+  'creditIndexQuotes',
 };
 
 Map<String, dynamic> validatePortableState(Object? value) {

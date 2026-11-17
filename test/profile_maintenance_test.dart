@@ -139,7 +139,7 @@ void main() {
     expect(find.byType(ReleaseTour), findsOneWidget);
     await tester.tap(find.text('Siguiente'));
     await tester.pumpAndSettle();
-    expect(find.text('Tus tarjetas de crédito'), findsOneWidget);
+    expect(find.text('Tu crédito, a la vista'), findsOneWidget);
     await tester.tap(find.text('Omitir'));
     await tester.pumpAndSettle();
     expect(find.byType(HomePage), findsOneWidget);
