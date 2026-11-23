@@ -309,8 +309,13 @@ void main() {
         expect(find.text('Bienvenido Arturo'), findsOneWidget);
         expect(find.text('a Sin Rial'), findsOneWidget);
         final trendBounds = tester.getRect(find.byType(BalanceTrend));
-        expect(trendBounds.left, closeTo(0, .01));
-        expect(trendBounds.right, closeTo(width, .01));
+        final heroBounds = tester.getRect(find.byType(BalanceHero));
+        // The balance has no surrounding card and the trend spans the screen.
+        expect(trendBounds.left, closeTo(0, .5));
+        expect(trendBounds.right, closeTo(width, .5));
+        expect(trendBounds.center.dx, closeTo(heroBounds.center.dx, .5));
+        expect(trendBounds.width, closeTo(width, .5));
+        expect(trendBounds.height, greaterThan(0));
         final homeScroll = tester.widget<AppScroll>(
           find.descendant(
             of: find.byType(HomePage),

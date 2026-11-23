@@ -178,10 +178,10 @@ void main() {
     await tester.ensureVisible(find.byKey(const ValueKey('composer-time')));
     await tester.tap(find.byKey(const ValueKey('composer-time')));
     await tester.pumpAndSettle();
-    await capture(tester, 'time-numeric');
-    await tester.tap(find.byTooltip('Usar reloj'));
-    await tester.pumpAndSettle();
     await capture(tester, 'time-clock');
+    await tester.tap(find.byIcon(material.Icons.keyboard_outlined));
+    await tester.pumpAndSettle();
+    await capture(tester, 'time-numeric');
     expect(find.byType(material.TimePickerDialog), findsOneWidget);
     Navigator.of(tester.element(find.byType(material.TimePickerDialog)))
         .pop(const material.TimeOfDay(hour: 17, minute: 42));

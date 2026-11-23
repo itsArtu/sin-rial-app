@@ -1,8 +1,8 @@
 part of 'main.dart';
 
 abstract final class RialSurface {
-  static const radius = 14.0;
-  static const sheetRadius = 28.0;
+  static const radius = 18.0;
+  static const sheetRadius = 30.0;
   static BoxDecoration control(RTheme theme, {bool active = false}) =>
       BoxDecoration(
         color: active ? theme.accent.withValues(alpha: .08) : theme.field,

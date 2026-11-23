@@ -181,33 +181,23 @@ class _ReleaseTourState extends State<ReleaseTour> {
   static const releasePages = [
     (
       'Sin Rial $_appVersionName',
-      'Tus cuentas, movimientos y preferencias siguen contigo. Descubre las novedades de esta actualización.',
+      'Tu balance vuelve a ocupar todo el ancho. Menús más uniformes y transiciones suaves al navegar y crear cuentas.',
       CupertinoIcons.sparkles,
     ),
     (
-      'Tu crédito, a la vista',
-      'Tus tarjetas aparecen en Inicio con su diseño y crédito disponible. Toca una para ver sus consumos y pagos.',
+      'Cada cuenta, su banco',
+      'Venezuela y OKX estrenan diseños más fieles. Las cuentas usan la identidad de su banco; las tarjetas de crédito tienen su propia sección y conservan los diseños personalizables.',
       CupertinoIcons.creditcard,
     ),
     (
-      'Cuentas y crédito, separados',
-      'La deuda de tus tarjetas no se resta del dinero en tus cuentas. Desde tus balances entras a la cuenta bancaria, no a la tarjeta.',
-      CupertinoIcons.building_2_fill,
-    ),
-    (
-      'Pagos de tarjeta conectados',
-      'Al elegir Pago TDC puedes seleccionar la tarjeta. El pago reduce su deuda y descuenta el dinero de tu cuenta una sola vez.',
-      CupertinoIcons.arrow_right_arrow_left,
+      'Movimientos más cómodos',
+      'El reloj de Android permite elegir la hora o escribirla con teclado numérico. Los botones y el guardado se adaptan mejor cuando el teclado está abierto.',
+      CupertinoIcons.clock,
     ),
     (
       'UVC al día',
-      'Registra tu deuda y crédito disponible en UVC. El IDI se consulta en el BCV para actualizar su valor en bolívares, sin crear gastos.',
+      'El IDI se revisa al abrir o desbloquear la app para actualizar tus tarjetas indexadas. Sin conexión, se conserva el último valor confirmado y su fecha.',
       CupertinoIcons.tray_arrow_down,
-    ),
-    (
-      'Cada tarjeta, su identidad',
-      'Logos de Río Supermarket, Zona Tech y SoyTechno, con mejores proporciones, chip y contactless. Tus datos y preferencias se conservan.',
-      CupertinoIcons.sparkles,
     ),
   ];
   List<(String, String, IconData)> get pages =>
@@ -317,39 +307,15 @@ class _ReleaseTourState extends State<ReleaseTour> {
                   padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
                   child: Column(
                     children: [
-                      Semantics(
-                        label: 'Página ${step + 1} de ${pages.length}',
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            for (var index = 0; index < pages.length; index++)
-                              AnimatedContainer(
-                                duration:
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? Duration.zero
-                                    : const Duration(milliseconds: 220),
-                                curve: Curves.easeOutCubic,
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 3,
-                                ),
-                                width: index == step ? 24 : 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: index == step ? t.accent : t.field,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 22),
                       Row(
+                        key: const ValueKey('release-tour-progress'),
                         children: [
                           SizedBox(
                             width: 48,
                             height: 48,
                             child: step > 0
                                 ? CircleTool(
+                                    key: const ValueKey('release-tour-back'),
                                     theme: t,
                                     icon: CupertinoIcons.chevron_left,
                                     label: 'Anterior',
@@ -357,19 +323,57 @@ class _ReleaseTourState extends State<ReleaseTour> {
                                   )
                                 : null,
                           ),
-                          const SizedBox(width: 12),
                           Expanded(
-                            child: PrimaryActionButton(
-                              theme: t,
-                              label: step == pages.length - 1
-                                  ? 'Empezar'
-                                  : 'Siguiente',
-                              onPressed: () => step == pages.length - 1
-                                  ? finish()
-                                  : moveTo(step + 1),
+                            child: Semantics(
+                              label: 'Página ${step + 1} de ${pages.length}',
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  for (
+                                    var index = 0;
+                                    index < pages.length;
+                                    index++
+                                  )
+                                    AnimatedContainer(
+                                      duration:
+                                          MediaQuery.disableAnimationsOf(
+                                            context,
+                                          )
+                                          ? Duration.zero
+                                          : const Duration(milliseconds: 220),
+                                      curve: Curves.easeOutCubic,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 3,
+                                      ),
+                                      width: index == step ? 24 : 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: index == step
+                                            ? t.accent
+                                            : t.field,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
+                          const SizedBox(width: 48, height: 48),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: PrimaryActionButton(
+                          key: const ValueKey('release-tour-next'),
+                          theme: t,
+                          label: step == pages.length - 1
+                              ? 'Empezar'
+                              : 'Siguiente',
+                          onPressed: () => step == pages.length - 1
+                              ? finish()
+                              : moveTo(step + 1),
+                        ),
                       ),
                     ],
                   ),

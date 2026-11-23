@@ -70,10 +70,13 @@ void main() {
       isTrue,
     );
     expect(card['balance'], -150);
-    expect(card['creditLimit'], 1500);
-    expect(creditAvailable(card), 1350);
+    expect(card['creditLimit'], 1000);
+    expect(creditAvailable(card), 850);
     expect(card['creditUnits'], '-50');
-    expect(card['creditLimitUnits'], '500');
+    expect(
+      indexedCreditAvailableUnits(card).toDouble(),
+      closeTo(850 / 3, 1e-10),
+    );
     expect(card['creditIndex'], '3');
   });
 

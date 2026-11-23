@@ -374,8 +374,8 @@ class HomeCreditCardsSection extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             final width = cards.length == 1
-                ? math.min(340.0, constraints.maxWidth)
-                : math.min(300.0, constraints.maxWidth * .86);
+                ? math.min(268.0, constraints.maxWidth)
+                : math.min(268.0, constraints.maxWidth * .78);
             return SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -509,6 +509,7 @@ class CreditCardDetailPage extends StatefulWidget {
 
 class _CreditCardDetailPageState extends State<CreditCardDetailPage> {
   DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
+  bool showDetails = false;
   @override
   Widget build(BuildContext context) {
     final app = widget.app, t = app.theme;
@@ -613,112 +614,122 @@ class _CreditCardDetailPageState extends State<CreditCardDetailPage> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AccountQuickActionButton(
-                        theme: t,
-                        label: 'Actualizar límite',
-                        icon: CupertinoIcons.arrow_up_circle,
-                        color: t.accent,
-                        onTap: () =>
-                            app.changeCreditLimit(context, widget.cardId),
+                SecondaryActionButton(
+                  theme: t,
+                  label: showDetails
+                      ? 'Ocultar detalles'
+                      : 'Detalles de la tarjeta',
+                  onPressed: () => setState(() => showDetails = !showDetails),
+                ),
+                if (showDetails) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AccountQuickActionButton(
+                          theme: t,
+                          label: 'Actualizar límite',
+                          icon: CupertinoIcons.arrow_up_circle,
+                          color: t.accent,
+                          onTap: () =>
+                              app.changeCreditLimit(context, widget.cardId),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: AccountQuickActionButton(
+                          theme: t,
+                          label: 'Recarga / avance',
+                          icon: CupertinoIcons.arrow_right_arrow_left,
+                          color: t.accent,
+                          onTap: () => app.withdrawCredit(context, card),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (isIndexedCredit(card)) ...[
+                    DebtDetailRow(
+                      theme: t,
+                      label: 'Deuda en UVC',
+                      value: app.hideAmounts
+                          ? '••••'
+                          : formatNumberTruncated(
+                              indexedCreditUnits(card).abs().toDouble(),
+                              decimals: 8,
+                            ),
+                    ),
+                    DebtDetailRow(
+                      theme: t,
+                      label: 'Disponible en UVC',
+                      value: app.hideAmounts
+                          ? '••••'
+                          : formatNumberTruncated(
+                              indexedCreditAvailableUnits(card).toDouble(),
+                              decimals: 8,
+                            ),
+                    ),
+                    DebtDetailRow(
+                      theme: t,
+                      label: card['creditIndexSource'] == 'BCV'
+                          ? 'IDI BCV'
+                          : 'Último IDI guardado',
+                      value: compactDecimal(numberValue(card['creditIndex'])),
+                    ),
+                    Text(
+                      'Valoración al ${formatDate(DateTime.parse(card['creditIndexDate'].toString()))}. No incluye intereses no registrados.',
+                      style: TextStyle(
+                        color: t.muted,
+                        fontSize: 12,
+                        height: 1.4,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: AccountQuickActionButton(
-                        theme: t,
-                        label: 'Recarga / avance',
-                        icon: CupertinoIcons.arrow_right_arrow_left,
-                        color: t.accent,
-                        onTap: () => app.withdrawCredit(context, card),
-                      ),
+                    SecondaryActionButton(
+                      theme: t,
+                      label: 'Actualizar estado de cuenta',
+                      onPressed: () =>
+                          app.openCreditEditor(context, card: card),
                     ),
                   ],
-                ),
-                if (isIndexedCredit(card)) ...[
                   DebtDetailRow(
                     theme: t,
-                    label: 'Deuda en UVC',
-                    value: app.hideAmounts
-                        ? '••••'
-                        : formatNumberTruncated(
-                            indexedCreditUnits(card).abs().toDouble(),
-                            decimals: 8,
-                          ),
+                    label: 'Límite',
+                    value: app.secureMoney(
+                      numberValue(card['creditLimit']),
+                      currency,
+                    ),
                   ),
                   DebtDetailRow(
                     theme: t,
-                    label: 'Disponible en UVC',
-                    value: app.hideAmounts
-                        ? '••••'
-                        : formatNumberTruncated(
-                            math.max(
-                              0,
-                              numberValue(card['creditLimitUnits']) +
-                                  indexedCreditUnits(card).toDouble(),
-                            ),
-                            decimals: 8,
-                          ),
+                    label: 'Mínimo pendiente',
+                    value: app.secureMoney(
+                      math.min(
+                        creditDebt(card),
+                        numberValue(card['creditMinimumDue']),
+                      ),
+                      currency,
+                    ),
                   ),
                   DebtDetailRow(
                     theme: t,
-                    label: card['creditIndexSource'] == 'BCV'
-                        ? 'IDI BCV'
-                        : 'Último IDI guardado',
-                    value: compactDecimal(numberValue(card['creditIndex'])),
+                    label: 'Próximo corte',
+                    value: formatDate(
+                      nextCardDate(
+                        numberValue(card['cutDay']).toInt(),
+                        DateTime.now(),
+                      ),
+                    ),
                   ),
-                  Text(
-                    'Valoración al ${formatDate(DateTime.parse(card['creditIndexDate'].toString()))}. No incluye intereses no registrados.',
-                    style: TextStyle(color: t.muted, fontSize: 12, height: 1.4),
-                  ),
-                  SecondaryActionButton(
+                  DebtDetailRow(
                     theme: t,
-                    label: 'Actualizar estado de cuenta',
-                    onPressed: () => app.openCreditEditor(context, card: card),
+                    label: 'Fecha de pago',
+                    value: formatDate(
+                      nextCardDate(
+                        numberValue(card['dueDay']).toInt(),
+                        DateTime.now(),
+                      ),
+                    ),
                   ),
+                  BankShortcutButton(app: app, account: card),
                 ],
-                DebtDetailRow(
-                  theme: t,
-                  label: 'Límite',
-                  value: app.secureMoney(
-                    numberValue(card['creditLimit']),
-                    currency,
-                  ),
-                ),
-                DebtDetailRow(
-                  theme: t,
-                  label: 'Mínimo pendiente',
-                  value: app.secureMoney(
-                    math.min(
-                      creditDebt(card),
-                      numberValue(card['creditMinimumDue']),
-                    ),
-                    currency,
-                  ),
-                ),
-                DebtDetailRow(
-                  theme: t,
-                  label: 'Próximo corte',
-                  value: formatDate(
-                    nextCardDate(
-                      numberValue(card['cutDay']).toInt(),
-                      DateTime.now(),
-                    ),
-                  ),
-                ),
-                DebtDetailRow(
-                  theme: t,
-                  label: 'Fecha de pago',
-                  value: formatDate(
-                    nextCardDate(
-                      numberValue(card['dueDay']).toInt(),
-                      DateTime.now(),
-                    ),
-                  ),
-                ),
-                BankShortcutButton(app: app, account: card),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -797,6 +808,8 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
   final uvcDebt = TextEditingController(),
       uvcAvailable = TextEditingController();
   bool indexLoading = false;
+  bool _uvcAmountsEdited = false;
+  bool _minimumEdited = false;
   DateTime indexDate = DateTime.now();
   int cutDay = 15, dueDay = 30;
   @override
@@ -824,18 +837,20 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
       debt.text = plain(creditDebt(card));
       minimum.text = plain(numberValue(card['creditMinimumDue']));
       if (isIndexedCredit(card)) {
-        final units = -indexedCreditUnits(card);
-        final total =
-            Decimal.tryParse(card['creditLimitUnits']?.toString() ?? '') ??
-            creditUnitsFor(
-              numberValue(card['creditLimit']),
-              numberValue(card['creditIndex']),
-            );
-        uvcDebt.text = units.toString();
-        uvcAvailable.text = (total - units).toString();
+        syncIndexedCard(card);
       }
     }
     if (basis == 'uvc') unawaited(loadIndex());
+  }
+
+  void syncIndexedCard(Map<String, dynamic> card) {
+    index.text = card['creditIndex'].toString();
+    indexDate =
+        DateTime.tryParse(card['creditIndexDate']?.toString() ?? '') ??
+        indexDate;
+    final owed = -indexedCreditUnits(card);
+    uvcDebt.text = (owed < Decimal.zero ? Decimal.zero : owed).toString();
+    uvcAvailable.text = indexedCreditAvailableUnits(card).toString();
   }
 
   Future<void> loadIndex({bool force = false}) async {
@@ -844,9 +859,13 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
     await widget.app.refreshCreditIndex(force: force, forEditor: true);
     if (!mounted) return;
     final quote = widget.app.officialCreditIndex;
+    final current = widget.app.accountById(widget.cardId ?? '');
     setState(() {
       indexLoading = false;
-      if (quote != null) {
+      if (!_uvcAmountsEdited && isIndexedCredit(current)) {
+        syncIndexedCard(current!);
+      } else if (quote != null &&
+          (!_uvcAmountsEdited || parseAmount(index.text) <= 0)) {
         index.text = quote['index'].toString();
         indexDate = DateTime.parse(quote['date']);
       }
@@ -874,6 +893,9 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
   @override
   Widget build(BuildContext context) {
     final t = widget.app.theme;
+    final current = widget.app.accountById(widget.cardId ?? '');
+    final preserveIndexedAmounts =
+        basis == 'uvc' && !_uvcAmountsEdited && isIndexedCredit(current);
     Widget input(String title, TextEditingController controller) => Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Column(
@@ -898,7 +920,12 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
                     controller == holder
                 ? 'Opcional'
                 : '0,00',
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => setState(() {
+              if (controller == uvcDebt || controller == uvcAvailable) {
+                _uvcAmountsEdited = true;
+              }
+              if (controller == minimum) _minimumEdited = true;
+            }),
             inputFormatters: controller == lastFour
                 ? [
                     FilteringTextInputFormatter.digitsOnly,
@@ -939,12 +966,16 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
                     'cardTier': tier,
                     'cardDesign': design,
                     'currency': currency,
-                    'creditLimit': basis == 'uvc'
+                    'creditLimit': preserveIndexedAmounts
+                        ? current!['creditLimit']
+                        : basis == 'uvc'
                         ? (parseAmount(uvcDebt.text) +
                                   parseAmount(uvcAvailable.text)) *
                               parseAmount(index.text)
                         : parseAmount(limit.text),
-                    'balance': basis == 'uvc'
+                    'balance': preserveIndexedAmounts
+                        ? current!['balance']
+                        : basis == 'uvc'
                         ? -parseAmount(uvcDebt.text) * parseAmount(index.text)
                         : -parseAmount(debt.text),
                     'lastFour': lastFour.text,
@@ -1239,7 +1270,24 @@ class _CreditCardEditorState extends State<CreditCardEditor> {
           throw const FormatException(
             'Espera a que termine la consulta del IDI.',
           );
-        setCreditUvcAmounts(card, uvcDebt.text, uvcAvailable.text);
+        if (!_minimumEdited && isIndexedCredit(old)) {
+          card['creditMinimumDue'] = old!['creditMinimumDue'];
+        }
+        if (!_uvcAmountsEdited && isIndexedCredit(old)) {
+          // Cosmetic edits must preserve the live ledger, including refreshes
+          // or payments that occurred while this editor was open.
+          for (final key in [
+            'creditLimit',
+            'balance',
+            'creditIndex',
+            'creditIndexDate',
+          ]) {
+            card[key] = old![key];
+          }
+          refreshIndexedCreditBalance(card);
+        } else {
+          setCreditUvcAmounts(card, uvcDebt.text, uvcAvailable.text);
+        }
         if (widget.app.officialCreditIndex != null) {
           applyOfficialCreditIndex(
             card,

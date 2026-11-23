@@ -111,10 +111,11 @@ void main() {
 
   test('Visa uses Signature and legacy Black cards retain their finances', () {
     expect(creditCardTiersForNetwork('visa'), [
-      'Standard',
+      'Classic',
       'Gold',
       'Platinum',
       'Signature',
+      'Infinite',
     ]);
     expect(creditCardTiersForNetwork('mastercard'), [
       'Standard',
@@ -152,7 +153,7 @@ void main() {
     expect(app.accountById('credit')['creditLimit'], 1000);
   });
 
-  testWidgets('Standard can be selected and previews the franchise artwork', (
+  testWidgets('Classic can be selected and previews the franchise artwork', (
     tester,
   ) async {
     final dynamic app = await fixtures.fixture(tester);
@@ -166,7 +167,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(picker);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Standard').last);
+    await tester.tap(find.text('Classic').last);
     await tester.pumpAndSettle();
     final editorScroll = find.descendant(
       of: find.byType(CreditCardEditor),
@@ -175,7 +176,7 @@ void main() {
     tester.state<ScrollableState>(editorScroll.first).position.jumpTo(0);
     await tester.pumpAndSettle();
     final face = tester.widget<CreditCardFace>(find.byType(CreditCardFace));
-    expect(face.card['cardTier'], 'Standard');
+    expect(face.card['cardTier'], 'Classic');
     expect(face.card['cardDesign'], 'generic');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());

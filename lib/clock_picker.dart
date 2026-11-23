@@ -7,11 +7,13 @@ Future<material.TimeOfDay?> pickClockTime(
 ) => material.showTimePicker(
   context: context,
   initialTime: material.TimeOfDay.fromDateTime(initial),
+  initialEntryMode: material.TimePickerEntryMode.dial,
   helpText: 'Seleccionar hora',
   cancelText: 'Cancelar',
   confirmText: 'Aceptar',
   hourLabelText: 'Hora',
   minuteLabelText: 'Minutos',
+  errorInvalidText: 'Hora no válida',
   builder: (context, child) => material.Theme(
     data: material.ThemeData(
       useMaterial3: true,

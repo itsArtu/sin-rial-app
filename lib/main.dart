@@ -75,11 +75,11 @@ const double _bootstrapBcvRate = 820.1018;
 const Duration _lockGracePeriod = Duration(minutes: 2);
 const _appVersionName = String.fromEnvironment(
   'FLUTTER_BUILD_NAME',
-  defaultValue: '3.6.1',
+  defaultValue: '3.6.2',
 );
 const _appBuildNumber = int.fromEnvironment(
   'FLUTTER_BUILD_NUMBER',
-  defaultValue: 106,
+  defaultValue: 113,
 );
 const _updateFeedUrl = String.fromEnvironment('SIN_RIAL_UPDATE_URL');
 const _githubOwner = String.fromEnvironment(
@@ -124,7 +124,6 @@ const List<List<String>> wallets = [
   ['BINANCE', 'Binance'],
   ['OKX', 'OKX'],
   ['ZINLI', 'Zinli'],
-  ['KONTIGO', 'Kontigo'],
   ['PAYPAL', 'PayPal'],
   ['OTHER', 'Otra billetera'],
 ];
@@ -1385,8 +1384,10 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     });
     rateRefreshTimer = Timer.periodic(const Duration(minutes: 30), (_) {
       if ((!isQuickAccess || widget.quickAction == 'calculator') &&
-          !_privacySuspended)
+          !_privacySuspended) {
         unawaited(refreshRateIfNeeded());
+        if (!isCalculatorAccess) unawaited(refreshCreditIndex());
+      }
     });
   }
 
@@ -2186,6 +2187,7 @@ class _RialAppState extends State<RialApp> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() => locked = false);
     scheduleAutomaticBackup();
+    if (!isCalculatorAccess) unawaited(refreshCreditIndex());
     unawaited(refreshUsdtOnOpen());
     unawaited(refreshRateIfNeeded());
   }
@@ -4419,8 +4421,8 @@ class _ModernSheetState extends State<ModernSheet> {
             );
             return haystack.contains(normalizedQuery);
           }).toList();
-    return FrostedSurface(
-      radius: RialSurface.sheetRadius,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(RialSurface.sheetRadius),
       child: Container(
         width: double.infinity,
         constraints: BoxConstraints(
@@ -4428,9 +4430,7 @@ class _ModernSheetState extends State<ModernSheet> {
           maxWidth: 560,
         ),
         decoration: BoxDecoration(
-          color: theme.card.withValues(
-            alpha: MediaQuery.highContrastOf(context) ? 1 : .92,
-          ),
+          color: theme.card,
           borderRadius: BorderRadius.circular(RialSurface.sheetRadius),
           border: Border.all(color: theme.border),
           boxShadow: [
@@ -4578,23 +4578,27 @@ class ModernSheetTile extends StatelessWidget {
     final color = action.destructive ? theme.red : theme.accent;
     return PressFeedback(
       onTap: () {
+        final route = ModalRoute.of(closeContext);
+        if (route?.isCurrent != true) return;
         Navigator.of(closeContext, rootNavigator: true).pop();
-        Future<void>.microtask(action.onPressed);
+        // Wait for the old sheet to leave before opening the next one.
+        route!.completed.then((_) => action.onPressed());
       },
       child: Container(
         constraints: const BoxConstraints(minHeight: 48),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           color: action.destructive
               ? color.withOpacity(.10)
               : action.selected
               ? theme.accent.withOpacity(.12)
-              : null,
-          border: Border(
-            bottom: BorderSide(
-              color: theme.border.withValues(alpha: .5),
-              width: .5,
-            ),
+              : theme.field,
+          borderRadius: BorderRadius.circular(RialSurface.radius),
+          border: Border.all(
+            color: action.selected
+                ? theme.accent.withValues(alpha: .45)
+                : theme.border.withValues(alpha: .45),
           ),
         ),
         child: Row(
@@ -5271,222 +5275,17 @@ Future<DateTime?> pickModernTime({
   required RTheme theme,
   required DateTime initial,
 }) async {
-  var hour = initial.hour % 12 == 0 ? 12 : initial.hour % 12;
-  var minute = initial.minute;
-  var isPm = initial.hour >= 12;
-  var validHour = true;
-  var validMinute = true;
-  var useClock = false;
-  final numericResult = await showGeneralDialog<DateTime>(
-    context: context,
-    barrierDismissible: true,
-    barrierLabel: 'Cerrar',
-    barrierColor: CupertinoColors.black.withOpacity(theme.dark ? .52 : .30),
-    transitionDuration: MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 240),
-    pageBuilder: (dialogContext, _, __) {
-      return Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(dialogContext).bottom,
-        ),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              child: StatefulBuilder(
-                builder: (context, setDialogState) {
-                  return Container(
-                    margin: const EdgeInsets.all(12),
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-                    decoration: BoxDecoration(
-                      color: theme.card,
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: theme.border),
-                      boxShadow: [
-                        BoxShadow(
-                          color: CupertinoColors.black.withOpacity(
-                            theme.dark ? .35 : .10,
-                          ),
-                          blurRadius: 24,
-                          offset: const Offset(0, -8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: theme.border,
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Seleccionar hora',
-                                style: TextStyle(
-                                  color: theme.ink,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            CircleTool(
-                              theme: theme,
-                              icon: CupertinoIcons.clock,
-                              label: 'Usar reloj',
-                              onTap: () {
-                                FocusScope.of(context).unfocus();
-                                useClock = true;
-                                Navigator.of(dialogContext).pop();
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TimeNumberField(
-                                theme: theme,
-                                label: 'Hora',
-                                value: hour,
-                                minimum: 1,
-                                maximum: 12,
-                                onChanged: (value) => setDialogState(() {
-                                  validHour = value != null;
-                                  if (value != null) hour = value;
-                                }),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: TimeNumberField(
-                                theme: theme,
-                                label: 'Minutos',
-                                value: minute,
-                                minimum: 0,
-                                maximum: 59,
-                                onChanged: (value) => setDialogState(() {
-                                  validMinute = value != null;
-                                  if (value != null) minute = value;
-                                }),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TimePeriodButton(
-                                theme: theme,
-                                label: 'AM',
-                                selected: !isPm,
-                                onPressed: () =>
-                                    setDialogState(() => isPm = false),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: TimePeriodButton(
-                                theme: theme,
-                                label: 'PM',
-                                selected: isPm,
-                                onPressed: () =>
-                                    setDialogState(() => isPm = true),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: CupertinoButton(
-                                padding: EdgeInsets.zero,
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(),
-                                child: Container(
-                                  height: 54,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: theme.field,
-                                    borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(color: theme.border),
-                                  ),
-                                  child: Text(
-                                    'Cancelar',
-                                    style: TextStyle(
-                                      color: theme.ink,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: CupertinoButton(
-                                padding: EdgeInsets.zero,
-                                onPressed: !validHour || !validMinute
-                                    ? null
-                                    : () {
-                                        var hour24 = hour % 12;
-                                        if (isPm) hour24 += 12;
-                                        Navigator.of(dialogContext).pop(
-                                          DateTime(2000, 1, 1, hour24, minute),
-                                        );
-                                      },
-                                child: Container(
-                                  height: 54,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: theme.accent,
-                                    borderRadius: BorderRadius.circular(18),
-                                  ),
-                                  child: const Text(
-                                    'Guardar',
-                                    style: TextStyle(
-                                      color: CupertinoColors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      );
-    },
-    transitionBuilder: softSheetTransition,
-  );
-  if (!useClock || !context.mounted) return numericResult;
-  final picked = await pickClockTime(
-    context,
-    theme,
-    DateTime(2000, 1, 1, hour % 12 + (isPm ? 12 : 0), minute),
-  );
+  FocusManager.instance.primaryFocus?.unfocus();
+  final picked = await pickClockTime(context, theme, initial);
   return picked == null
       ? null
-      : DateTime(2000, 1, 1, picked.hour, picked.minute);
+      : DateTime(
+          initial.year,
+          initial.month,
+          initial.day,
+          picked.hour,
+          picked.minute,
+        );
 }
 
 class TimeNumberField extends StatefulWidget {
@@ -9146,7 +8945,10 @@ class AccountsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = app.theme;
-    final accounts = app.maps('accounts');
+    final accounts = app
+        .maps('accounts')
+        .where((a) => !isCreditCard(a))
+        .toList();
     return CupertinoPageScaffold(
       backgroundColor: t.bg,
       navigationBar: RialNavigationBar(
@@ -9164,14 +8966,6 @@ class AccountsPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
           children: [
-            AccountQuickActionButton(
-              theme: t,
-              label: 'Tarjetas de crédito',
-              icon: CupertinoIcons.creditcard,
-              color: t.accent,
-              onTap: () =>
-                  app.pushPage(context, (_) => CreditCardsPage(app: app)),
-            ),
             if (accounts.isEmpty)
               EmptyCard(theme: t, text: 'Aún no hay cuentas'),
             ...accounts.map((a) => AccountRow(app: app, account: a)),
@@ -13992,6 +13786,7 @@ class _AccountEditorState extends State<AccountEditor> {
               ],
               onChanged: (v) => setState(() {
                 kind = v;
+                cardDesign = 'auto';
                 provider = kind == 'wallet'
                     ? 'OKX'
                     : kind == 'benefit'
@@ -14006,115 +13801,134 @@ class _AccountEditorState extends State<AccountEditor> {
                     : currency;
               }),
             ),
-            if (kind != 'cash')
-              OptionField(
-                theme: t,
-                label: 'Proveedor',
-                value: providerName(provider),
-                logoProvider: provider,
-                onTap: () => pickProvider(context, providers),
-              ),
-            if (kind == 'national')
-              CardDesignPicker(
-                theme: t,
-                provider: provider,
-                value: cardDesign,
-                credit: false,
-                onChanged: (value) => setState(() => cardDesign = value),
-              ),
-            if (kind == 'benefit')
-              OptionField(
-                theme: t,
-                label: 'Tipo de Cestaticket',
-                value: benefitType == 'integral' ? 'Integral' : 'Alimentación',
-                icon: CupertinoIcons.ticket,
-                onTap: () => pickValue(
-                  context,
-                  const ['Alimentación', 'Integral'],
-                  benefitType == 'integral' ? 'Integral' : 'Alimentación',
-                  (value) => setState(
-                    () =>
-                        benefitType = value == 'Integral' ? 'integral' : 'food',
-                  ),
+            AnimatedSize(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 280),
+              curve: Curves.easeInOutCubic,
+              alignment: Alignment.topCenter,
+              child: RevealMotion(
+                key: ValueKey(kind),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (kind != 'cash')
+                      OptionField(
+                        theme: t,
+                        label: 'Proveedor',
+                        value: providerName(provider),
+                        logoProvider: provider,
+                        onTap: () => pickProvider(context, providers),
+                      ),
+
+                    if (kind == 'benefit')
+                      OptionField(
+                        theme: t,
+                        label: 'Tipo de Cestaticket',
+                        value: benefitType == 'integral'
+                            ? 'Integral'
+                            : 'Alimentación',
+                        icon: CupertinoIcons.ticket,
+                        onTap: () => pickValue(
+                          context,
+                          const ['Alimentación', 'Integral'],
+                          benefitType == 'integral'
+                              ? 'Integral'
+                              : 'Alimentación',
+                          (value) => setState(
+                            () => benefitType = value == 'Integral'
+                                ? 'integral'
+                                : 'food',
+                          ),
+                        ),
+                      ),
+                    if (kind == 'national')
+                      OptionField(
+                        theme: t,
+                        label: 'Tipo de cuenta',
+                        value: switch (bankAccountType) {
+                          'current' => 'Corriente',
+                          'savings' => 'Ahorro',
+                          _ => 'Seleccionar',
+                        },
+                        icon: CupertinoIcons.building_2_fill,
+                        onTap: () => pickValue(
+                          context,
+                          const ['Corriente', 'Ahorro'],
+                          bankAccountType == 'savings' ? 'Ahorro' : 'Corriente',
+                          (value) => setState(() {
+                            final next = value == 'Ahorro'
+                                ? 'savings'
+                                : 'current';
+                            bankAccountType = next;
+                          }),
+                        ),
+                      ),
+                    RField(
+                      theme: t,
+                      controller: label,
+                      placeholder: 'Etiqueta opcional',
+                    ),
+                    RField(
+                      theme: t,
+                      controller: balance,
+                      placeholder: 'Saldo',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                    if (kind == 'benefit')
+                      StaticField(theme: t, label: 'Moneda', value: 'Bolívares')
+                    else if (kind == 'wallet')
+                      StaticField(theme: t, label: 'Moneda', value: 'Dólares')
+                    else
+                      OptionField(
+                        theme: t,
+                        label: 'Moneda',
+                        value: displayCurrency(currency),
+                        onTap: () => pickValue(
+                          context,
+                          const ['Bolívares', 'Dólares'],
+                          displayCurrency(currency),
+                          (v) => setState(() {
+                            final next = v.startsWith('Bol') ? 'VES' : 'USD';
+                            currency = next;
+                          }),
+                        ),
+                      ),
+                    if (automaticMaintenance) ...[
+                      const SizedBox(height: 16),
+                      DebtDetailRow(
+                        theme: t,
+                        label: 'Mantenimiento mensual',
+                        value: 'Bs. 684,00',
+                      ),
+                      Text(
+                        'Bs. 684,00 al cierre de cada mes: el día 31, o el día 1 del mes siguiente cuando no hay día 31. El cobro real puede variar por banco; el movimiento se puede editar o eliminar.',
+                        style: TextStyle(
+                          color: t.muted,
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
+                      ),
+                      CupertinoButton(
+                        onPressed: () => NativeStateStore.openUrl(
+                          'https://www.banesco.com/tasas-cargos-y-tarifas/',
+                        ),
+                        child: const Text('Consultar tarifa de referencia'),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                    PrimaryActionButton(
+                      theme: t,
+                      label: widget.account == null
+                          ? 'Agregar cuenta'
+                          : 'Guardar cambios',
+                      onPressed: save,
+                    ),
+                  ],
                 ),
               ),
-            if (kind == 'national')
-              OptionField(
-                theme: t,
-                label: 'Tipo de cuenta',
-                value: switch (bankAccountType) {
-                  'current' => 'Corriente',
-                  'savings' => 'Ahorro',
-                  _ => 'Seleccionar',
-                },
-                icon: CupertinoIcons.building_2_fill,
-                onTap: () => pickValue(
-                  context,
-                  const ['Corriente', 'Ahorro'],
-                  bankAccountType == 'savings' ? 'Ahorro' : 'Corriente',
-                  (value) => setState(() {
-                    final next = value == 'Ahorro' ? 'savings' : 'current';
-                    bankAccountType = next;
-                  }),
-                ),
-              ),
-            RField(
-              theme: t,
-              controller: label,
-              placeholder: 'Etiqueta opcional',
-            ),
-            RField(
-              theme: t,
-              controller: balance,
-              placeholder: 'Saldo',
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-            ),
-            if (kind == 'benefit')
-              StaticField(theme: t, label: 'Moneda', value: 'Bolívares')
-            else if (kind == 'wallet')
-              StaticField(theme: t, label: 'Moneda', value: 'Dólares')
-            else
-              OptionField(
-                theme: t,
-                label: 'Moneda',
-                value: displayCurrency(currency),
-                onTap: () => pickValue(
-                  context,
-                  const ['Bolívares', 'Dólares'],
-                  displayCurrency(currency),
-                  (v) => setState(() {
-                    final next = v.startsWith('Bol') ? 'VES' : 'USD';
-                    currency = next;
-                  }),
-                ),
-              ),
-            if (automaticMaintenance) ...[
-              const SizedBox(height: 16),
-              DebtDetailRow(
-                theme: t,
-                label: 'Mantenimiento mensual',
-                value: 'Bs. 684,00',
-              ),
-              Text(
-                'Bs. 684,00 al cierre de cada mes: el día 31, o el día 1 del mes siguiente cuando no hay día 31. El cobro real puede variar por banco; el movimiento se puede editar o eliminar.',
-                style: TextStyle(color: t.muted, fontSize: 13, height: 1.5),
-              ),
-              CupertinoButton(
-                onPressed: () => NativeStateStore.openUrl(
-                  'https://www.banesco.com/tasas-cargos-y-tarifas/',
-                ),
-                child: const Text('Consultar tarifa de referencia'),
-              ),
-              const SizedBox(height: 20),
-            ],
-            PrimaryActionButton(
-              theme: t,
-              label: widget.account == null
-                  ? 'Agregar cuenta'
-                  : 'Guardar cambios',
-              onPressed: save,
             ),
           ],
         ),
@@ -14187,7 +14001,7 @@ class _AccountEditorState extends State<AccountEditor> {
       'currency': currency,
       'bankAccountType': kind == 'national' ? bankAccountType : '',
       'benefitType': kind == 'benefit' ? benefitType : '',
-      'cardDesign': kind == 'national' ? cardDesign : 'generic',
+      'cardDesign': kind == 'national' || kind == 'wallet' ? 'auto' : 'generic',
       'maintenanceEnabled': enableMaintenance,
       'maintenanceAmount': enableMaintenance ? bankMaintenanceAmount : 0,
       'maintenancePolicy': enableMaintenance ? bankMaintenancePolicy : '',
@@ -15559,7 +15373,6 @@ String? logoAsset(String code) {
     'PAYPAL': 'logo_paypal',
     'ZINLI': 'logo_zinli',
     'WALLY': 'logo_wally',
-    'KONTIGO': 'logo_kontigo',
     'CASHEA': 'logo_cashea',
     'KRECE': 'logo_krece',
     'WEPPA': 'logo_weppa',

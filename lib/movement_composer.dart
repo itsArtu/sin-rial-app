@@ -107,7 +107,8 @@ extension _MovementComposer on _MovementEditorState {
     final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
     final usableHeight =
         MediaQuery.sizeOf(context).height -
-        MediaQuery.paddingOf(context).vertical;
+        MediaQuery.paddingOf(context).vertical -
+        MediaQuery.viewInsetsOf(context).bottom;
     final compact = usableHeight < (transfer ? 780 : 720);
     final roomy =
         !compact && !transfer && (type == 'income' || usableHeight >= 780);
@@ -598,6 +599,28 @@ class _ComposerBodyLayout extends MultiChildLayoutDelegate {
   @override
   void performLayout(Size size) {
     final spacing = compact ? 0.0 : 8.0;
+    if (!keypadVisible) {
+      // The native keyboard replaces the keypad with a full text button.
+      // Its height depends on text scaling, wrapping and button padding; a
+      // fixed 60px allocation clips the label on Android with larger text.
+      final footer = layoutChild(
+        'footer',
+        BoxConstraints.tightFor(width: size.width),
+      );
+      layoutChild(
+        'form',
+        BoxConstraints.tightFor(
+          width: size.width,
+          height: math.max(0, size.height - footer.height - spacing),
+        ),
+      );
+      positionChild('form', Offset.zero);
+      positionChild(
+        'footer',
+        Offset(0, math.max(0, size.height - footer.height)),
+      );
+      return;
+    }
     final minimumFooter = keypadVisible ? (compact ? 194.0 : 218.0) : 60.0;
     // Measure the real form first: extra fees and accessibility text take
     // priority over a taller keypad, without hiding fields or actions.

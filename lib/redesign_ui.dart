@@ -58,27 +58,30 @@ class _RetainedTabTransitionState extends State<RetainedTabTransition>
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: motion,
-    builder: (context, _) {
-      final progress = Curves.easeOutQuart.transform(motion.value);
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          for (var i = 0; i < widget.children.length; i++)
-            if (visited.contains(i))
-              Offstage(
-                key: ValueKey('retained-tab-$i'),
-                offstage: i != widget.index && i != previous,
-                child: TickerMode(
-                  enabled: i == widget.index,
-                  child: ExcludeFocus(
-                    excluding: i != widget.index,
-                    child: ExcludeSemantics(
-                      excluding: i != widget.index,
-                      child: IgnorePointer(
-                        ignoring: i != widget.index,
-                        child: Opacity(
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      for (var i = 0; i < widget.children.length; i++)
+        if (visited.contains(i))
+          Offstage(
+            key: ValueKey('retained-tab-$i'),
+            offstage: i != widget.index && i != previous,
+            child: TickerMode(
+              enabled: i == widget.index,
+              child: ExcludeFocus(
+                excluding: i != widget.index,
+                child: ExcludeSemantics(
+                  excluding: i != widget.index,
+                  child: IgnorePointer(
+                    ignoring: i != widget.index,
+                    child: AnimatedBuilder(
+                      animation: motion,
+                      child: RepaintBoundary(child: pages[i]!),
+                      builder: (context, child) {
+                        final progress = Curves.easeOutQuart.transform(
+                          motion.value,
+                        );
+                        return Opacity(
                           opacity: i == widget.index
                               ? progress
                               : (i == previous
@@ -92,17 +95,17 @@ class _RetainedTabTransitionState extends State<RetainedTabTransition>
                               0,
                               i == widget.index ? 4 * (1 - progress) : 0,
                             ),
-                            child: RepaintBoundary(child: pages[i]!),
+                            child: child,
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                 ),
               ),
-        ],
-      );
-    },
+            ),
+          ),
+    ],
   );
 }
 
@@ -122,73 +125,106 @@ class AppPillSelector extends StatelessWidget {
   final bool showIcons;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(4),
-    decoration: RialSurface.control(theme),
-    child: Row(
-      spacing: 4,
-      children: [
-        for (final item in items)
-          Expanded(
-            child: Semantics(
-              selected: value == item.value,
-              child: PressFeedback(
-                onTap: () => onChanged(item.value),
-                child: AnimatedContainer(
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  constraints: const BoxConstraints(minHeight: 44),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: value == item.value
-                        ? theme.elevated
-                        : const Color(0x00000000),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: value == item.value
-                          ? theme.border
-                          : const Color(0x00000000),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (showIcons) ...[
-                        Icon(
-                          item.icon,
-                          size: 18,
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (items.isEmpty) return const SizedBox.shrink();
+      final scale = MediaQuery.textScalerOf(context).scale(13) / 13;
+      final stacked = items.length > 3 && showIcons;
+      final minimumWidth = 110 * scale;
+      final effectiveColumns =
+          !stacked && constraints.maxWidth / items.length < minimumWidth
+          ? (items.length / 2).ceil()
+          : items.length;
+      final width =
+          (constraints.maxWidth - 10 - 4 * (effectiveColumns - 1)) /
+              effectiveColumns -
+          .1;
+      return Container(
+        padding: const EdgeInsets.all(4),
+        decoration: RialSurface.control(theme),
+        child: Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          children: [
+            for (final item in items)
+              SizedBox(
+                width: width,
+                child: Semantics(
+                  selected: value == item.value,
+                  child: PressFeedback(
+                    onTap: () => onChanged(item.value),
+                    child: AnimatedContainer(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      constraints: const BoxConstraints(minHeight: 44),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: value == item.value
+                            ? theme.elevated
+                            : const Color(0x00000000),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
                           color: value == item.value
-                              ? theme.accent
-                              : theme.muted,
-                        ),
-                        const SizedBox(width: 7),
-                      ],
-                      Flexible(
-                        child: Text(
-                          item.label,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: value == item.value
-                                ? theme.ink
-                                : theme.muted,
-                          ),
+                              ? theme.border
+                              : const Color(0x00000000),
                         ),
                       ),
-                    ],
+                      child: Flex(
+                        direction: stacked ? Axis.vertical : Axis.horizontal,
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (showIcons) ...[
+                            Icon(
+                              item.icon,
+                              size: 18,
+                              color: value == item.value
+                                  ? theme.accent
+                                  : theme.muted,
+                            ),
+                            SizedBox(
+                              width: stacked ? 0 : 7,
+                              height: stacked ? 6 : 0,
+                            ),
+                          ],
+                          Flexible(
+                            flex: stacked ? 0 : 1,
+                            child: SizedBox(
+                              // Keep all labels centered on the same line even
+                              // when a longer label needs to scale down.
+                              height: stacked ? 13 * scale * 1.4 : null,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  item.label,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: value == item.value
+                                        ? theme.ink
+                                        : theme.muted,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-      ],
-    ),
+          ],
+        ),
+      );
+    },
   );
 }
 
@@ -672,16 +708,16 @@ class IconGrid extends StatelessWidget {
                 onTap: item.onTap,
                 child: Container(
                   constraints: const BoxConstraints(minHeight: 64),
+                  margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.symmetric(
                     vertical: 12,
-                    horizontal: 2,
+                    horizontal: 14,
                   ),
                   decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: theme.border.withValues(alpha: .6),
-                        width: .5,
-                      ),
+                    color: theme.card,
+                    borderRadius: BorderRadius.circular(RialSurface.radius),
+                    border: Border.all(
+                      color: theme.border.withValues(alpha: .6),
                     ),
                   ),
                   child: Row(

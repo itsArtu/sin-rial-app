@@ -89,7 +89,7 @@ void main() {
           const Offset(-400, 0),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Tu crédito, a la vista'), findsOneWidget);
+        expect(find.text('Cada cuenta, su banco'), findsOneWidget);
         expect(tester.getRect(find.text('Siguiente')), nextRect);
         final dynamic tour = tester.state(find.byType(ReleaseTour));
         final pageCount = (tour.pages as List).length;
@@ -205,7 +205,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Siguiente'));
     await tester.pump();
-    expect(find.text('Tu crédito, a la vista'), findsOneWidget);
+    expect(find.text('Cada cuenta, su banco'), findsOneWidget);
     await tester.tap(find.text('Omitir'));
     await tester.pumpAndSettle();
     expect(find.byType(HomePage), findsOneWidget);

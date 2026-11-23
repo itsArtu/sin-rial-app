@@ -36,6 +36,7 @@ class LogoBadge extends StatelessWidget {
       'OKX',
       'ZINLI',
       'UBII',
+      'WALLY',
     }.contains(code);
     final inset = fullBleed
         ? 0.0

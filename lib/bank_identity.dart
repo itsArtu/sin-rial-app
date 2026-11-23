@@ -16,7 +16,9 @@ class AccountIdentitySurface extends StatelessWidget {
     final design = resolveCardDesign(account);
     final currency = account['currency']?.toString() ?? 'VES';
     final balance = numberValue(account['balance']);
-    final ink = design?.light == true
+    final ink = design == null
+        ? t.ink
+        : design.light
         ? const Color(0xFF203039)
         : CupertinoColors.white;
     return Column(
@@ -60,7 +62,7 @@ class AccountIdentitySurface extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: AspectRatio(
-                aspectRatio: 1.9,
+                aspectRatio: 1.586,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -71,54 +73,79 @@ class AccountIdentitySurface extends StatelessWidget {
                   ),
                   child: CustomPaint(
                     painter: _BankCardPattern(design?.id ?? 'generic', ink),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              LogoBadge(
-                                provider: account['provider']?.toString() ?? '',
-                                theme: t,
-                                size: 30,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  shortProviderName(
-                                    account['provider']?.toString() ?? '',
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: ink,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              if (design?.id == 'okx')
+                                const _OkxCardWordmark()
+                              else
+                                Row(
+                                  children: [
+                                    LogoBadge(
+                                      provider:
+                                          account['provider']?.toString() ?? '',
+                                      theme: t,
+                                      size: 30,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        shortProviderName(
+                                          account['provider']?.toString() ?? '',
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: design?.id == 'venezuela'
+                                              ? CupertinoColors.white
+                                              : ink,
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
-                          const Spacer(),
-                          Row(
-                            children: [
-                              _CardChip(ink: ink),
-                              const SizedBox(width: 12),
-                              _CardContactless(ink: ink),
                               const Spacer(),
-                              Text(
-                                currency,
-                                style: TextStyle(
-                                  color: ink,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                              Row(
+                                key: const ValueKey('account-card-chip-row'),
+                                children: [
+                                  _CardChip(ink: ink),
+                                  const SizedBox(width: 12),
+                                  _CardContactless(ink: ink),
+                                ],
+                              ),
+                              const Spacer(),
+                              Align(
+                                alignment: Alignment.bottomLeft,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        displayCurrency(currency),
+                                        key: const ValueKey(
+                                          'account-card-currency',
+                                        ),
+                                        style: TextStyle(
+                                          color: ink,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -158,4 +185,46 @@ class AccountIdentitySurface extends StatelessWidget {
       ],
     );
   }
+}
+
+class _OkxCardWordmark extends StatelessWidget {
+  const _OkxCardWordmark();
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'OKX',
+    image: true,
+    child: const SizedBox(
+      key: ValueKey('okx-card-wordmark'),
+      width: 56,
+      height: 19,
+      child: CustomPaint(painter: _OkxWordmarkPainter()),
+    ),
+  );
+}
+
+class _OkxWordmarkPainter extends CustomPainter {
+  const _OkxWordmarkPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    const glyphs = ['111101111', '101110101', '101010101'];
+    final cell = size.height / 3;
+    final paint = Paint()..color = CupertinoColors.white;
+    for (var letter = 0; letter < glyphs.length; letter++) {
+      for (var pixel = 0; pixel < 9; pixel++) {
+        if (glyphs[letter][pixel] != '1') continue;
+        canvas.drawRect(
+          Rect.fromLTWH(
+            (letter * 3 + pixel % 3) * size.width / 9,
+            (pixel ~/ 3) * cell,
+            size.width / 9 - .35,
+            cell - .35,
+          ),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_OkxWordmarkPainter old) => false;
 }

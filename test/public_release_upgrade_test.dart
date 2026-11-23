@@ -2,20 +2,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rial_flutter/main.dart';
 
 void main() {
-  // Run with prior pubspec versions and 106 to test the candidate updater.
+  // Run this test with each prior pubspec version, then 3.6.2+113.
+  // Flutter reserves FLUTTER_BUILD_NAME/NUMBER: change the staging pubspec
+  // for the matrix rather than passing those names through --dart-define.
   const installedBuild = int.fromEnvironment(
     'FLUTTER_BUILD_NUMBER',
-    defaultValue: 106,
+    defaultValue: 113,
   );
   const release = UpdateInfo(
-    version: '3.6.1',
-    build: 106,
+    version: '3.6.2',
+    build: 113,
     apkUrl:
         'https://github.com/itsArtu/sin-rial-app/releases/download/'
-        'v3.6.1%2B106/sin-rial-3.6.1-build106.apk',
+        'v3.6.2%2B113/sin-rial-3.6.2-build113.apk',
   );
 
-  test('Build $installedBuild only offers build 106 when it is newer', () {
+  test('Build $installedBuild only offers build 113 when it is newer', () {
     expect(release.isNewer, installedBuild < release.build);
     expect(release.hasDownload, isTrue);
     expect(
@@ -24,8 +26,8 @@ void main() {
     );
   });
 
-  test('Candidate tag advances public and local builds through 105', () {
-    final latest = parseReleaseVersion('v3.6.1+106');
+  test('Candidate tag advances public and local builds through 112', () {
+    final latest = parseReleaseVersion('v3.6.2+113');
     expect(latest.version, release.version);
     expect(latest.build, release.build);
     for (final tag in [
@@ -39,6 +41,10 @@ void main() {
       'v3.6.0+103',
       'v3.6.0+104',
       'v3.6.0+105',
+      'v3.6.1+106',
+      'v3.6.1+110',
+      'v3.6.1+111',
+      'v3.6.1+112',
     ]) {
       final previous = parseReleaseVersion(tag);
       expect(latest.build, greaterThan(previous.build));

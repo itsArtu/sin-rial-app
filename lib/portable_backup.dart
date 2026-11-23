@@ -89,8 +89,9 @@ Map<String, dynamic> validatePortableState(Object? value) {
   if (value.containsKey('savingsFunds') && value['savingsFunds'] is! Map) {
     throw const FormatException('Fondos no validos.');
   }
-  return Map<String, dynamic>.from(value)
+  final result = Map<String, dynamic>.from(value)
     ..removeWhere((key, _) => isDeviceOnlyBackupKey(key));
+  return result;
 }
 
 Future<SecretKey> _key(String password, List<int> salt) => Pbkdf2(

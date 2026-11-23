@@ -90,36 +90,52 @@ bool applyOfficialCreditIndex(
     return false;
   final oldIndex = numberValue(card['creditIndex']);
   if ((!oldIndex.isFinite || oldIndex <= 0) &&
-      (Decimal.tryParse(card['creditUnits']?.toString() ?? '') == null ||
-          Decimal.tryParse(card['creditLimitUnits']?.toString() ?? '') == null))
+      Decimal.tryParse(card['creditUnits']?.toString() ?? '') == null)
     return false;
+  final before = jsonEncode(card);
   // Migrate existing nominal snapshots once, before replacing their index.
   final units = indexedCreditUnits(card).toString();
-  final limitUnits =
-      card['creditLimitUnits']?.toString() ??
-      creditUnitsFor(
-        numberValue(card['creditLimit']),
-        numberValue(card['creditIndex']),
-      ).toString();
   final history = <String, Map<String, dynamic>>{
     for (final raw
         in (card['creditIndexHistory'] as List? ?? []).whereType<Map>())
       raw['date'].toString(): Map<String, dynamic>.from(raw),
+    // Imported caches can contain malformed rows. Apply the same validation as
+    // quote selection before retaining history, so one bad row cannot prevent
+    // every indexed card from refreshing at startup or after unlocking.
     for (final item in quotes.where(
-      (q) => !DateTime.parse(q['date']).isAfter(now),
+      (q) => creditIndexForDate([q], now) != null,
     ))
       item['date'].toString(): item,
   };
   card.addAll({
     'creditUnits': units,
-    'creditLimitUnits': limitUnits,
     'creditIndex': quote['index'],
     'creditIndexDate': quote['date'],
     'creditIndexHistory': history.values.toList(),
     'creditIndexSource': 'BCV',
   });
   refreshIndexedCreditBalance(card);
-  return true;
+  return jsonEncode(card) != before;
+}
+
+bool shouldFetchCreditIndex({
+  required DateTime now,
+  required Iterable<dynamic> quotes,
+  DateTime? checkedAt,
+  DateTime? lastAttempt,
+  bool force = false,
+}) {
+  if (force) return true;
+  final quote = creditIndexForDate(quotes, now);
+  if (checkedAt != null &&
+      isSameDate(checkedAt, now) &&
+      quote != null &&
+      isSameDate(DateTime.parse(quote['date']), now)) {
+    return false;
+  }
+  return lastAttempt == null ||
+      now.difference(lastAttempt).isNegative ||
+      now.difference(lastAttempt) >= const Duration(minutes: 5);
 }
 
 extension _CreditIndexActions on _RialAppState {
@@ -132,16 +148,28 @@ extension _CreditIndexActions on _RialAppState {
     bool force = false,
     bool forEditor = false,
   }) {
+    if (!mounted || _restoringBackup) return Future.value();
     if (_creditIndexPending != null) return _creditIndexPending!;
     final now = DateTime.now();
+    final cachedQuotes = ((state['creditIndexQuotes'] as List?) ?? [])
+        .whereType<Map>()
+        .map((q) => Map<String, dynamic>.from(q))
+        .toList();
+    var changed = false;
+    for (final card in maps('accounts')) {
+      changed = applyOfficialCreditIndex(card, cachedQuotes, now) || changed;
+    }
+    if (changed) mutate(() {});
     final checked = DateTime.tryParse(
       state['creditIndexCheckedAt']?.toString() ?? '',
     );
-    if (!force && checked != null && isSameDate(checked, now))
-      return Future.value();
-    if (!force &&
-        _creditIndexAttempt != null &&
-        now.difference(_creditIndexAttempt!) < const Duration(minutes: 5))
+    if (!shouldFetchCreditIndex(
+      now: now,
+      quotes: cachedQuotes,
+      checkedAt: checked,
+      lastAttempt: _creditIndexAttempt,
+      force: force,
+    ))
       return Future.value();
     if (!force && !forEditor && !maps('accounts').any(isIndexedCredit))
       return Future.value();
@@ -152,12 +180,13 @@ extension _CreditIndexActions on _RialAppState {
         final quotes = await fetchCreditIndex();
         if (!mounted || _restoringBackup || !identical(state, originalState))
           return;
-        if (creditIndexForDate(quotes, now) == null) return;
+        final receivedAt = DateTime.now();
+        if (creditIndexForDate(quotes, receivedAt) == null) return;
         mutate(() {
           state['creditIndexQuotes'] = quotes;
-          state['creditIndexCheckedAt'] = now.toIso8601String();
+          state['creditIndexCheckedAt'] = receivedAt.toIso8601String();
           for (final card in maps('accounts')) {
-            applyOfficialCreditIndex(card, quotes, now);
+            applyOfficialCreditIndex(card, quotes, receivedAt);
           }
         });
       } catch (_) {

@@ -9,7 +9,8 @@ bool isCashBolivarTransfer(
 ) =>
     source?['currency'] == 'VES' &&
     target?['currency'] == 'VES' &&
-    (isCashAccount(source) || isCashAccount(target));
+    isNationalBankAccount(source) &&
+    isCashAccount(target);
 
 double receivedDollarFee(double sent, double received) {
   if (!sent.isFinite ||

@@ -59,6 +59,16 @@ Decimal indexedCreditUnits(Map<String, dynamic> card) =>
       numberValue(card['creditIndex']),
     );
 
+Decimal indexedCreditAvailableUnits(Map<String, dynamic> card) {
+  final available =
+      creditUnitsFor(
+        numberValue(card['creditLimit']),
+        numberValue(card['creditIndex']),
+      ) +
+      indexedCreditUnits(card);
+  return available < Decimal.zero ? Decimal.zero : available;
+}
+
 void setCreditUvcAmounts(
   Map<String, dynamic> card,
   String debt,
@@ -77,13 +87,17 @@ void setCreditUvcAmounts(
       'Indica la deuda y el disponible en UVC con valores válidos.',
     );
   }
-  if (numberValue(card['creditIndex']) <= 0) {
+  final index = numberValue(card['creditIndex']);
+  if (!index.isFinite || index <= 0 || index > 1000000000) {
     throw const FormatException(
       'Necesitamos el IDI publicado por el BCV. Conéctate e inténtalo de nuevo.',
     );
   }
   card['creditUnits'] = (-owed).toString();
-  card['creditLimitUnits'] = (owed + remaining).toString();
+  // Only an explicit statement reconciliation establishes the approved limit.
+  card['creditLimit'] = debtMoney(
+    ((owed + remaining) * _decimal(index)).toDouble(),
+  );
   refreshIndexedCreditBalance(card);
 }
 
@@ -91,12 +105,11 @@ void refreshIndexedCreditBalance(Map<String, dynamic> card) {
   if (!isIndexedCredit(card)) return;
   final index = Decimal.parse(card['creditIndex'].toString());
   card['balance'] = debtMoney((indexedCreditUnits(card) * index).toDouble());
-  final limitUnits = Decimal.tryParse(
-    card['creditLimitUnits']?.toString() ?? '',
-  );
-  if (limitUnits != null) {
-    card['creditLimit'] = debtMoney((limitUnits * index).toDouble());
-  }
+  // The approved VES limit is not a debt and must not grow with the IDI.
+  card['creditLimitUnits'] = creditUnitsFor(
+    numberValue(card['creditLimit']),
+    numberValue(card['creditIndex']),
+  ).toString();
   updateCreditMinimum(card);
 }
 

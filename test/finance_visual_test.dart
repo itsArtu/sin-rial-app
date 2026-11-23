@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:fl_chart/fl_chart.dart' as charts;
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rial_flutter/main.dart';
@@ -279,18 +280,14 @@ void main() {
           initial: DateTime(2026, 9, 22, 19, 30),
         );
         await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(material.Icons.keyboard_outlined));
+        await tester.pumpAndSettle();
         tester.view.viewInsets = const FakeViewPadding(bottom: 280);
         addTearDown(tester.view.resetViewInsets);
         await tester.pumpAndSettle();
-        await tester.enterText(
-          find.byKey(const ValueKey('time-input-hour')),
-          '8',
-        );
-        await tester.enterText(
-          find.byKey(const ValueKey('time-input-minute')),
-          '45',
-        );
-        await tester.ensureVisible(find.text('Guardar'));
+        await tester.enterText(find.byType(material.TextField).first, '8');
+        await tester.enterText(find.byType(material.TextField).last, '45');
+        await tester.ensureVisible(find.text('Aceptar'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         if (const bool.fromEnvironment('FINANCE_GOLDENS')) {

@@ -457,10 +457,12 @@ void main() {
         ],
       );
       await tester.pumpAndSettle();
-      expect(
-        tester.getSize(find.byType(ModernSheetTile).first).height,
-        lessThanOrEqualTo(60),
-      );
+      final accountTile = tester.getRect(find.byType(ModernSheetTile).first);
+      // Rounded rows include vertical spacing while retaining a useful touch
+      // target and enough room for the account name and currency.
+      expect(accountTile.height, inInclusiveRange(48, 72));
+      expect(tester.getRect(find.text('Cuenta 0')).top, greaterThanOrEqualTo(accountTile.top));
+      expect(tester.getRect(find.text('Bolívares').first).bottom, lessThanOrEqualTo(accountTile.bottom));
       final list = tester.widget<ListView>(
         find.descendant(
           of: find.byType(ModernSheet),

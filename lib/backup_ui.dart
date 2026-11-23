@@ -461,7 +461,7 @@ class _BackupPageState extends State<BackupPage> {
                     ],
                     if (step == _BackupStep.automatic) ...[
                       Text(
-                        'Se guardan al usar la app, en la carpeta que elijas.',
+                        'Se guardan al usar la app, en la carpeta que elijas. Si la app está cerrada, la copia pendiente se intentará al volver a abrirla y desbloquearla.',
                         style: TextStyle(
                           color: t.muted,
                           fontSize: 15,

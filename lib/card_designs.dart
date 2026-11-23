@@ -1,13 +1,17 @@
 part of 'main.dart';
 
 List<String> creditCardTiersForNetwork(String network) => [
-  'Standard',
+  network == 'mastercard' ? 'Standard' : 'Classic',
   'Gold',
   'Platinum',
   network == 'mastercard' ? 'Black' : 'Signature',
+  if (network == 'visa') 'Infinite',
 ];
 
 String creditTierForNetwork(String network, String tier) {
+  if (network == 'visa' && tier == 'Standard') return 'Classic';
+  if (network == 'mastercard' && tier == 'Classic') return 'Standard';
+  if (network == 'mastercard' && tier == 'Infinite') return 'Black';
   if (network == 'visa' && tier == 'Black') return 'Signature';
   if (network == 'mastercard' && tier == 'Signature') return 'Black';
   return tier;
@@ -21,9 +25,9 @@ String creditTier(Map<String, dynamic> card) => creditTierForNetwork(
 List<Color> creditNetworkColors(String network, String tier) {
   final visa = network == 'visa';
   return switch (tier) {
-    'Standard' =>
+    'Standard' || 'Classic' =>
       visa
-          ? const [Color(0xFF244765), Color(0xFF102D48)]
+          ? const [Color(0xFF123CCB), Color(0xFF04269B)]
           : const [Color(0xFFF1F0EC), Color(0xFFC9CFD0)],
     'Platinum' =>
       visa
@@ -33,6 +37,7 @@ List<Color> creditNetworkColors(String network, String tier) {
       visa
           ? const [Color(0xFF262D36), Color(0xFF0C1118)]
           : const [Color(0xFF383634), Color(0xFF121110)],
+    'Infinite' => const [Color(0xFF063C50), Color(0xFF001D2B)],
     _ =>
       visa
           ? const [Color(0xFFD5B97C), Color(0xFFC9A966)]
@@ -43,7 +48,8 @@ List<Color> creditNetworkColors(String network, String tier) {
 bool creditNetworkLight(String network, String tier) =>
     tier != 'Black' &&
     tier != 'Signature' &&
-    !(tier == 'Standard' && network == 'visa');
+    tier != 'Infinite' &&
+    !((tier == 'Standard' || tier == 'Classic') && network == 'visa');
 
 class BankCardDesign {
   const BankCardDesign(
@@ -182,14 +188,10 @@ const bankCardDesigns = [
     Color(0xFF171717),
     Color(0xFF030303),
   ]),
-  BankCardDesign('okx', 'OKX', 'OKX', [Color(0xFF424343), Color(0xFF171919)]),
+  BankCardDesign('okx', 'OKX', 'OKX', [Color(0xFF161719), Color(0xFF060708)]),
   BankCardDesign('paypal', 'PayPal', 'PAYPAL', [
     Color(0xFF1268AD),
     Color(0xFF04387B),
-  ]),
-  BankCardDesign('kontigo', 'Kontigo', 'KONTIGO', [
-    Color(0xFF28564A),
-    Color(0xFF122C26),
   ]),
   BankCardDesign('bnc-soytechno', 'SoyTechno', '0191', [
     Color(0xFF286BA1),
@@ -219,8 +221,15 @@ List<BankCardDesign> designsForBank(String provider, {required bool credit}) =>
         .toList();
 
 BankCardDesign? resolveCardDesign(Map<String, dynamic> account) {
-  final id = account['cardDesign']?.toString() ?? 'auto';
-  if (id == 'generic') return null;
+  // Bank and wallet identities follow the provider, including imported records
+  // that still contain a design selected in an older version.
+  final id = isCreditCard(account)
+      ? account['cardDesign']?.toString() ?? 'auto'
+      : 'auto';
+  // Older wallet accounts were saved as generic even when a design existed.
+  if (id == 'plain' || (id == 'generic' && account['kind'] != 'wallet')) {
+    return null;
+  }
   if (id == 'auto' && isCreditCard(account)) return null;
   final options = designsForBank(
     account['provider']?.toString() ?? '',
@@ -238,7 +247,8 @@ BankCardDesign? resolveCardDesign(Map<String, dynamic> account) {
 }
 
 String cardDesignLabel(String id, String provider, bool credit) {
-  if (id == 'generic') return credit ? 'Por franquicia' : 'Clásica';
+  if (id == 'plain') return 'Clásica';
+  if (id == 'generic' && credit) return 'Por franquicia';
   for (final d in designsForBank(provider, credit: credit)) {
     if (d.id == id) return d.label;
   }
@@ -273,7 +283,11 @@ class CardDesignPicker extends StatelessWidget {
           title: 'Automático',
           subtitle: shortProviderName(provider),
           icon: CupertinoIcons.sparkles,
-          selected: value == 'auto',
+          selected:
+              value == 'auto' ||
+              (!credit &&
+                  value == 'generic' &&
+                  wallets.any((wallet) => wallet.first == provider)),
           onPressed: () => onChanged('auto'),
         ),
         for (final d in designsForBank(provider, credit: credit))
@@ -288,8 +302,12 @@ class CardDesignPicker extends StatelessWidget {
           title: credit ? 'Por franquicia' : 'Clásica',
           subtitle: credit ? 'Visa / Mastercard' : null,
           icon: CupertinoIcons.creditcard,
-          selected: value == 'generic',
-          onPressed: () => onChanged('generic'),
+          selected:
+              value == 'plain' ||
+              (value == 'generic' &&
+                  (credit ||
+                      !wallets.any((wallet) => wallet.first == provider))),
+          onPressed: () => onChanged(credit ? 'generic' : 'plain'),
         ),
       ],
     ),
@@ -439,7 +457,7 @@ class BankCardFace extends StatelessWidget {
                   : _BankCardPattern(design.id, ink),
               child: compact
                   ? Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -463,7 +481,9 @@ class BankCardFace extends StatelessWidget {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: ink,
+                                        color: design?.id == 'venezuela'
+                                            ? CupertinoColors.white
+                                            : ink,
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -474,26 +494,40 @@ class BankCardFace extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          Text('Crédito disponible', style: labelStyle),
+                          Text(
+                            'Crédito disponible',
+                            style: design?.id == 'venezuela'
+                                ? labelStyle.copyWith(
+                                    color: CupertinoColors.white,
+                                  )
+                                : labelStyle,
+                          ),
                           const SizedBox(height: 4),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
+                          FractionallySizedBox(
+                            widthFactor: design?.id == 'venezuela' ? .68 : 1,
                             alignment: Alignment.centerLeft,
-                            child: Text(
-                              app.secureMoney(
-                                creditAvailable(account),
-                                currency,
-                              ),
-                              key: ValueKey(
-                                'home-credit-available-${account['id']}',
-                              ),
-                              style: TextStyle(
-                                color: ink,
-                                fontSize: 27,
-                                fontWeight: FontWeight.w700,
-                                fontFeatures: const [
-                                  ui.FontFeature.tabularFigures(),
-                                ],
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                app.secureMoney(
+                                  creditAvailable(account),
+                                  currency,
+                                ),
+                                key: ValueKey(
+                                  'home-credit-available-${account['id']}',
+                                ),
+                                style: TextStyle(
+                                  backgroundColor: design?.id == 'venezuela'
+                                      ? const Color(0xFFC4C4C4)
+                                      : null,
+                                  color: ink,
+                                  fontSize: 27,
+                                  fontWeight: FontWeight.w700,
+                                  fontFeatures: const [
+                                    ui.FontFeature.tabularFigures(),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -517,7 +551,7 @@ class BankCardFace extends StatelessWidget {
                                     ),
                                   ),
                                 )
-                              else
+                              else if (design?.id != 'venezuela')
                                 SizedBox(
                                   width: 48,
                                   height: 26,
@@ -536,6 +570,12 @@ class BankCardFace extends StatelessWidget {
                           ),
                         ],
                       ),
+                    )
+                  : design?.id == 'venezuela'
+                  ? _VenezuelaCreditContent(
+                      account: account,
+                      app: app,
+                      ink: ink,
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
@@ -583,9 +623,7 @@ class BankCardFace extends StatelessWidget {
                                       CardPartnerMark(
                                         design: design!.id,
                                         ink: ink,
-                                      )
-                                    else
-                                      _CardContactless(ink: ink),
+                                      ),
                                   ],
                                 ),
                                 const SizedBox(height: 12),
@@ -596,24 +634,28 @@ class BankCardFace extends StatelessWidget {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        _CardChip(
-                                          ink: ink,
-                                          silver: network == 'mastercard',
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            _CardChip(
+                                              ink: ink,
+                                              silver: network == 'mastercard',
+                                            ),
+                                            const SizedBox(width: 8),
+                                            _CardContactless(ink: ink),
+                                          ],
                                         ),
                                         const SizedBox(height: 8),
-                                        if (partner)
-                                          _CardContactless(ink: ink)
-                                        else
-                                          Text(
-                                            network == 'mastercard'
-                                                ? tier.toLowerCase()
-                                                : tier,
-                                            style: TextStyle(
-                                              color: ink,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
-                                            ),
+                                        Text(
+                                          network == 'mastercard'
+                                              ? tier.toLowerCase()
+                                              : tier,
+                                          style: TextStyle(
+                                            color: ink,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
                                           ),
+                                        ),
                                       ],
                                     ),
                                     const SizedBox(width: 18),
@@ -668,7 +710,7 @@ class BankCardFace extends StatelessWidget {
                                           Text(
                                             last.isNotEmpty
                                                 ? '•••• $last'
-                                                : 'Tarjeta de crédito',
+                                                : 'credit',
                                             style: labelStyle,
                                           ),
                                           if (holder.isNotEmpty) ...[
@@ -756,6 +798,150 @@ class BankCardFace extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Keep financial text on the clear left side of the bank's ribbon artwork.
+class _VenezuelaCreditContent extends StatelessWidget {
+  const _VenezuelaCreditContent({
+    required this.account,
+    required this.app,
+    required this.ink,
+  });
+  final Map<String, dynamic> account;
+  final _RialAppState app;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) {
+    final currency = account['currency']?.toString() ?? 'VES';
+    final last = account['lastFour']?.toString() ?? '';
+    final holder = account['cardholderName']?.toString().trim() ?? '';
+    final labelStyle = TextStyle(
+      color: ink.withValues(alpha: .85),
+      fontSize: 12,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Leave room for the ribbon's slanted edge at every text baseline.
+        final clearWidth = constraints.maxWidth * .68 - 18;
+        return ConstrainedBox(
+          key: const ValueKey('bank-card-face'),
+          constraints: BoxConstraints(minHeight: constraints.maxWidth / 1.586),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: clearWidth,
+                  child: Row(
+                    children: [
+                      LogoBadge(
+                        provider: account['provider']?.toString() ?? '',
+                        kind: 'credit',
+                        theme: app.theme,
+                        size: 26,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          accountPrimaryName(account),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: CupertinoColors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _CardChip(ink: ink),
+                    const SizedBox(width: 10),
+                    const _CardContactless(ink: CupertinoColors.white),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  key: const ValueKey('venezuela-credit-clear-content'),
+                  width: clearWidth,
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC4C4C4),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Disponible', style: labelStyle),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          app.secureMoney(creditAvailable(account), currency),
+                          style: TextStyle(
+                            color: ink,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: const [
+                              ui.FontFeature.tabularFigures(),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        numberValue(account['balance']) > 0
+                            ? 'Saldo a favor ${app.secureMoney(numberValue(account['balance']), currency)}'
+                            : 'Deuda ${app.secureMoney(creditDebt(account), currency)}',
+                        style: labelStyle,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            last.isEmpty ? creditTier(account) : '•••• $last',
+                            style: labelStyle,
+                          ),
+                          if (holder.isNotEmpty)
+                            Text(
+                              holder,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: ink,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -938,7 +1124,10 @@ class _CreditNetworkPattern extends CustomPainter {
         sheen,
         Paint()..color = CupertinoColors.white.withValues(alpha: .045),
       );
-      if (tier == 'Standard' || tier == 'Signature') {
+      if (tier == 'Standard' ||
+          tier == 'Classic' ||
+          tier == 'Signature' ||
+          tier == 'Infinite') {
         for (var i = 0; i < 5; i++) {
           canvas.drawLine(
             Offset(size.width * .65 + i * 16, 0),
@@ -953,6 +1142,44 @@ class _CreditNetworkPattern extends CustomPainter {
   @override
   bool shouldRepaint(_CreditNetworkPattern old) =>
       old.network != network || old.tier != tier || old.ink != ink;
+}
+
+Path _bancamigaMark() {
+  final blade = Path()
+    ..moveTo(-.77, -.63)
+    ..cubicTo(-.36, -1.03, .29, -1.08, .70, -.69)
+    ..cubicTo(.98, -.43, .83, -.08, .55, -.08)
+    ..cubicTo(.25, -.08, .14, -.48, -.18, -.57)
+    ..cubicTo(-.39, -.64, -.61, -.65, -.77, -.63)
+    ..close();
+  final mark = Path();
+  for (var i = 0; i < 3; i++) {
+    final angle = i * math.pi * 2 / 3;
+    mark.addPath(
+      blade.transform(
+        Float64List.fromList([
+          math.cos(angle),
+          math.sin(angle),
+          0,
+          0,
+          -math.sin(angle),
+          math.cos(angle),
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+        ]),
+      ),
+      Offset.zero,
+    );
+  }
+  return mark;
 }
 
 // Fixed brand motifs are cached by RepaintBoundary; they never animate per frame.
@@ -1002,22 +1229,21 @@ class _BankCardPattern extends CustomPainter {
         final center = Offset(w * .74, h * .52);
         final extent = math.min(w * .26, h * .48);
         final dots = Paint();
-        // Three curved blades, with tapered dot sizes along each blade.
-        for (var ring = 2; ring <= 15; ring++) {
-          final fraction = ring / 15;
-          final radius = fraction * extent;
-          final count = ring * 7;
-          for (var i = 0; i < count; i++) {
-            final angle = i * math.pi * 2 / count;
-            final phase = (angle + fraction * 1.1) * 3;
-            final blade = (math.sin(phase) + 1) / 2;
-            final strength = blade * (1 - math.pow(fraction, 3) * .65);
-            if (blade < .22) continue;
+        final mark = _bancamigaMark();
+        for (var row = -19; row <= 19; row++) {
+          for (var column = -19; column <= 19; column++) {
+            final point = Offset(
+              (column + (row.isOdd ? .5 : 0)) / 19,
+              row / 19,
+            );
+            if (point.distance > 1) continue;
+            final inside = mark.contains(point);
+            final edge = (1 - point.distance).clamp(0.0, 1.0);
             dots.color = const Color(0xFF12B8EF)
-                .withValues(alpha: .20 + strength * .58);
+                .withValues(alpha: inside ? .52 + edge * .38 : .055);
             canvas.drawCircle(
-              center + Offset(math.cos(angle), math.sin(angle)) * radius,
-              extent * (.007 + .014 * strength),
+              center + point * extent,
+              extent * (inside ? .012 + edge * .008 : .008),
               dots,
             );
           }
@@ -1070,7 +1296,6 @@ class _BankCardPattern extends CustomPainter {
           ], ink.withValues(alpha: i.isEven ? .07 : .13));
         }
       case 'mercantil':
-      case 'bancamiga-usd':
         for (var i = 0; i < 5; i++) {
           canvas.drawArc(
             Rect.fromCenter(
@@ -1087,6 +1312,26 @@ class _BankCardPattern extends CustomPainter {
               ..strokeWidth = 12,
           );
         }
+      case 'bancamiga-usd':
+        canvas.save();
+        canvas.translate(w * .69, h * .55);
+        canvas.scale(w * .53, h * .76);
+        canvas.drawPath(
+          _bancamigaMark(),
+          Paint()..color = const Color(0xFF35383C).withValues(alpha: .42),
+        );
+        canvas.restore();
+        canvas.save();
+        canvas.translate(w * .69 - 1, h * .55 - 1);
+        canvas.scale(w * .53, h * .76);
+        canvas.drawPath(
+          _bancamigaMark(),
+          Paint()
+            ..color = CupertinoColors.white.withValues(alpha: .075)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = .009,
+        );
+        canvas.restore();
       case 'bnc-soytechno':
       case 'exterior':
         final line = Paint()
@@ -1123,45 +1368,116 @@ class _BankCardPattern extends CustomPainter {
           );
         }
       case 'venezuela':
-        const colors = [
-          Color(0xFF1380B3),
-          Color(0xFFE4BC28),
-          Color(0xFFCE1644),
-          Color(0xFF85B54A),
-          Color(0xFF804F9D),
+        // Match the two gray halves and five independently staggered pieces.
+        // Drawing from the bottom piece up preserves the overlaps in the card.
+        canvas.drawRect(
+          Rect.fromLTWH(0, 0, w, h * .46),
+          Paint()..color = const Color(0xFF747D82),
+        );
+        canvas.drawRect(
+          Rect.fromLTWH(0, h * .46, w, h * .54),
+          Paint()..color = const Color(0xFFC4C4C4),
+        );
+        const pieces = [
+          (174.0, 155.0, 85.0, 112.0, Color(0xFFE4003B)),
+          (234.0, 125.0, 82.0, 104.0, Color(0xFFFFCB05)),
+          (271.0, 74.0, 79.0, 102.0, Color(0xFF009C89)),
+          (234.0, 14.0, 82.0, 102.0, Color(0xFF006AA9)),
+          (204.0, -8.0, 74.0, 80.0, Color(0xFF56317B)),
         ];
-        for (var i = 0; i < colors.length; i++) {
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              Rect.fromLTWH(w * i / 5 - 8, h * .42 + (i % 3) * 15, w / 4, 35),
-              const Radius.circular(4),
-            ),
-            Paint()..color = colors[i],
-          );
-        }
-      case 'wally':
-        for (var i = 0; i < 2; i++) {
+        canvas.save();
+        canvas.scale(w / 380, h / 247);
+        for (final piece in pieces) {
           canvas.save();
-          canvas.translate(w * .66 + i * 30, h * .54);
-          canvas.rotate(math.pi / 4);
+          final slant = piece.$4 * .20;
+          canvas.translate(piece.$1 + slant, piece.$2);
+          canvas.skew(-.20, 0);
           canvas.drawRRect(
             RRect.fromRectAndRadius(
-              const Rect.fromLTWH(-26, -26, 52, 52),
-              const Radius.circular(8),
+              Rect.fromLTWH(0, 0, piece.$3 - slant, piece.$4),
+              const Radius.circular(5),
             ),
-            Paint()..color = const Color(0xFFF3A53B).withValues(alpha: .9),
+            Paint()..color = piece.$5,
           );
           canvas.restore();
         }
+        canvas.restore();
+      case 'wally':
+        canvas.save();
+        canvas.translate(w * .61, h * .34);
+        canvas.scale(w * .31, h * .46);
+        polygon(const [
+          Offset(0, .34),
+          Offset(.18, .10),
+          Offset(.27, .10),
+          Offset(.5, .36),
+          Offset(.73, .10),
+          Offset(.82, .10),
+          Offset(1, .34),
+          Offset(1, .43),
+          Offset(.59, .90),
+          Offset(.5, .90),
+          Offset(.41, .90),
+          Offset(0, .43),
+        ], const Color(0xFFFFA800));
+        polygon(const [
+          Offset(.18, .10),
+          Offset(.27, .10),
+          Offset(.69, .58),
+          Offset(.69, .67),
+          Offset(.50, .90),
+          Offset(.41, .90),
+          Offset(0, .43),
+          Offset(0, .34),
+        ], const Color(0xFFFF9400));
+        polygon(const [
+          Offset(.39, .10),
+          Offset(.48, .10),
+          Offset(.88, .57),
+          Offset(.59, .90),
+          Offset(.50, .90),
+          Offset(.20, .56),
+          Offset(.20, .47),
+        ], const Color(0xFFFFAB00));
+        canvas.restore();
       case 'okx':
-        for (var y = 0.0; y < h; y += 13) {
-          for (var x = w * .35; x < w; x += 17) {
-            final rect = Rect.fromLTWH(x + (y % 26 == 0 ? 5 : 0), y, 12, 10);
-            canvas.drawRect(
-              rect.shift(const Offset(1, 1)),
-              Paint()..color = const Color(0xFF050606).withValues(alpha: .7),
+        final shadow = Paint()
+          ..color = const Color(0xFF000000).withValues(alpha: .60)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = .8;
+        final highlight = Paint()
+          ..color = CupertinoColors.white.withValues(alpha: .045)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = .55;
+        Offset warp(double x, double y) {
+          final dx = x - .48, dy = y - .76;
+          final bend = math.exp(-(dx * dx * 12 + dy * dy * 22));
+          return Offset(
+            (x + .065 * bend * math.sin(y * 5)) * w,
+            (y - .09 * bend * math.sin(x * 5)) * h,
+          );
+        }
+        for (var row = -1; row < 13; row++) {
+          for (var column = -1; column < 27; column++) {
+            final x = column / 25, y = row / 11;
+            final path = Path()
+              ..addPolygon([
+                warp(x, y),
+                warp(x + .031, y),
+                warp(x + .031, y + .077),
+                warp(x, y + .077),
+              ], true);
+            canvas.drawPath(
+              path,
+              Paint()
+                ..color = Color.lerp(
+                  const Color(0xFF0B0C0D),
+                  const Color(0xFF242628),
+                  (x * .52 + (1 - y) * .22).clamp(0, 1),
+                )!,
             );
-            canvas.drawRect(rect, Paint()..color = ink.withValues(alpha: .045));
+            canvas.drawPath(path.shift(const Offset(.5, .7)), shadow);
+            canvas.drawPath(path, highlight);
           }
         }
       case 'bfc':

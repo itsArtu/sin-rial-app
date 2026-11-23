@@ -273,6 +273,9 @@ void main() {
         150,
         scrollable: find.byType(Scrollable).last,
       );
+      await tester.ensureVisible(find.text('Mayo'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mayo').hitTestable(), findsOneWidget);
       await tester.tap(find.text('Mayo'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirmar fecha'));
